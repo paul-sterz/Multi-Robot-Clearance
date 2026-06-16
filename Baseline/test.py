@@ -86,7 +86,7 @@ if run:
     st.session_state.trajectories = trajectories
     st.session_state.graph_data = (obstacles, V, P, regularEdges, H, W)
     st.session_state.strategy = strategy
-    st.session_state.step = 0  # Zurueck auf Anfang
+    st.session_state.step = 0  
 
 
 # --------------------------------------------------

@@ -104,13 +104,42 @@ def graphSearch(nodes, edges, root, numOfTrees):
         return strategy
         
     
-    # ---------------------------------------------------
+    # -------------------------------------------------------------------------------------
     # TRANSFORMING THE STRATEGY FROM TREE TO GRAPH
-    # Not yet implement because paper is to unspecific
-    # ---------------------------------------------------
+    # Approach from paper "The Graph Clear Problem..." by Kolling used since the baseline is to unspecific about this
+    # -------------------------------------------------------------------------------------
 
-    def transformStrategy():
-        print("Hello World!")
+    def transformStrategy(nodes, GraphEdges, strategy):
+        contaminationArea = set(nodes)
+        rCounter = [0] * len(nodes)
+        for i in range(len(strategy)):
+            if strategy[i][1] in contaminationArea:
+                contaminationArea.remove(strategy[i][1])
+                
+            if strategy[i][0] != None:
+                rCounter[strategy[i][0]] = rCounter[strategy[i][0]] - strategy[i][2]
+            
+            rCounter[strategy[i][1]] = rCounter[strategy[i][1]] + strategy[i][2]
+
+            if strategy[i][0] != None and rCounter[strategy[i][0]] == 0: #Are there still any robots left on the last node?
+                for (u,v) in GraphEdges: 
+                    if u in contaminationArea and v == strategy[i][0]: #Is there an edge that leads to recontamination?
+                        currNode = None
+                        for j in range(i):
+                            u, v, k = strategy[j]
+                            if u == currNode:
+                                strategy[j] = (u, v, k + 1)
+                                currNode = v
+                            if v == strategy[i][0]:
+                                break
+
+                        rCounter[strategy[i][0]] = 1
+                        break
+
+        return strategy
+
+            
+
 
 
     # ---------------------------------------------------
@@ -159,8 +188,8 @@ def graphSearch(nodes, edges, root, numOfTrees):
     for i in range(numOfTrees):
         Vi, Ei = computeRandomSpanningTree(nodes,edges,root)
         treeStrategy = treeSearch(Vi,Ei, root)
-        #graphStrategy = transformStrategy(treeStrategy)
-        if treeStrategy[0][2] < minCost:
+        graphStrategy = transformStrategy(nodes, edges, treeStrategy)
+        if graphStrategy[0][2] < minCost:
             minCost = treeStrategy[0][2]
             bestStrategy = treeStrategy
 
