@@ -1,0 +1,207 @@
+import numpy as np
+import random
+
+def graphSearch(nodes, edges, root, numOfTrees, priors ,aerialSpeed, groundSpeed, aerialBattery, groundBattery, trajectoryTimes):
+    #INPUT:
+    # nodes: a list containing all nodes of the graph
+    # edges: a dictionary containing all directed edges of the graph and as key value a needed travel time is stored 
+    # root: index of the root node
+    # numOfTrees: an integer which represents the number of evaluated trees
+    # priors: a list containing a target detection probability for each node
+    # aerialSpeed: an integer value that represents the speed of the aerial robots
+    # groundSpeed: an integer value that represents the speed of the ground robots
+    # aerialBattery: unsure
+    # groundBattery: unsure
+    # trajectoryTimes: a dictionary containg all edges
+
+    #OUTPUT:
+    #bestStrategy: A list containing the best strategy where each entry is in the form (source node,target node, amount of Robots)
+
+    # ---------------------------------------------------
+    # COMPUTING EDGE LABLES FOR THE TREE SEARCH 
+    # Remark: Lables represent the amount of robots needed for this path
+    # To-DO: Add new edge lables that save the represent the weighted formular between estimated_Search and robot_cost for each subtree. In this formular also other Robots specific parameters could be included.
+    # ---------------------------------------------------
+
+    def computeLabels(nodes, edges, root, parent):
+
+        #Saving labels in a dictionary of the form: (x,y) | lambda((x,y))
+        edgeLabels = {} 
+
+        #Saving pi meaning all nodes to the children of root
+        childLabels = [] 
+
+        # Calculating lables recursive for children
+        for (x, y) in edges:
+
+            if x == root and y != parent:
+
+                subLabels = computeLabels(nodes, edges, y, root)
+
+                edgeLabels.update(subLabels)
+
+                childLabels.append(subLabels[(root, y)])
+
+        # Check if leaf
+        if len(childLabels) == 0:
+
+            edgeLabels[(parent, root)] = 1
+
+        else:
+
+            #formula from the paper
+            childLabels.sort(reverse=True)
+
+            p1 = childLabels[0]
+            if len(childLabels) > 1:  
+                p2 = childLabels[1]
+            else: p2 = 0
+ 
+            if p1 == 1:
+                currentLabel = p1 + 1
+            else:
+                currentLabel = max(p1, p2 + 1)
+
+            edgeLabels[(parent, root)] = currentLabel
+
+        return edgeLabels     
+    
+    # ---------------------------------------------------
+    # CALCULATING A STRATEGY FOR TREES 
+    # Note: A Strategy is safed in the format [(source node,target node, amount of Robots),...]
+    # TO-DO: Check if this still works. I think it should. Probably some more information has to be saved like the cummilated probability of a subtree
+    # ---------------------------------------------------
+                    
+    def treeSearch(nodes, edges, root):
+
+        labels = computeLabels(nodes, edges, root, None)
+
+        def explorePath(node, parent):
+            
+            strategy = []
+            currentLables = []
+            
+            for (x,y) in edges:
+                if x == node:
+                    currentLables.append((labels[(x,y)], y))
+
+            if len(currentLables) > 0:
+                currentLables.sort(key=lambda x: x[0]) #Sorting the lables ascending
+
+                counter = 1
+                for (robotsNeeded, y) in currentLables:
+                    if counter == len(currentLables) and robotsNeeded != 1: #Don't allow slide moves!
+                        strategy.append((node,y,robotsNeeded-1))
+                        strategy.append((node,y,1))
+                        strategy.extend(explorePath(y,node))
+                        strategy.append((y,node,robotsNeeded))
+                    else:
+                        strategy.append((node,y,robotsNeeded))
+                        strategy.extend(explorePath(y,node))
+                        strategy.append((y,node,robotsNeeded))    
+                        counter = counter + 1        
+            
+            return strategy
+
+        strategy = explorePath(root, None)
+
+        robotCost = labels[(None, root)]
+
+        strategy.insert(0, (None,root,robotCost))
+
+        return strategy
+        
+    
+    # -------------------------------------------------------------------------------------
+    # TRANSFORMING THE STRATEGY FROM TREE TO GRAPH
+    # TO-DO: Make sure that slide moves are only prevented if neicessary. This could be done by adding in each strategy step a 0 or a 1 which represents if this is done to prevent a slide move. Or by transforming the strategy while determining it.
+    # -------------------------------------------------------------------------------------
+
+    def transformStrategy(nodes, GraphEdges, strategy):
+        contaminationArea = set(nodes)
+        rCounter = [0] * len(nodes)
+        for i in range(len(strategy)):
+            if strategy[i][1] in contaminationArea:
+                contaminationArea.remove(strategy[i][1])
+                
+            if strategy[i][0] != None:
+                rCounter[strategy[i][0]] = rCounter[strategy[i][0]] - strategy[i][2]
+            
+            rCounter[strategy[i][1]] = rCounter[strategy[i][1]] + strategy[i][2]
+
+            if strategy[i][0] != None and rCounter[strategy[i][0]] == 0: #Are there still any robots left on the last node?
+                for (u,v) in GraphEdges: 
+                    if u in contaminationArea and v == strategy[i][0]: #Is there an edge that leads to recontamination?
+                        currNode = None
+                        for j in range(i):
+                            u, v, k = strategy[j]
+                            if u == currNode:
+                                strategy[j] = (u, v, k + 1)
+                                currNode = v
+                            if v == strategy[i][0]:
+                                break
+
+                        rCounter[strategy[i][0]] = 1
+                        break
+
+        return strategy
+
+            
+
+
+
+    # ---------------------------------------------------
+    # COMPUTING A RANDOM SPANNING TREE WITH DFS
+    # For the moment ok. Speak with Markus if we want to improve this. Currently i think this makes no sense.
+    # ---------------------------------------------------
+
+    def computeRandomSpanningTree(nodes, edges, root):
+        visited = set()
+        treeEdges = []
+
+        def dfs(node):
+
+            visited.add(node)
+
+            neighbours = []
+
+            for (u,v) in edges:
+                if u == node:
+                    neighbours.append(v)
+
+
+            random.shuffle(neighbours)
+
+            for neighbour in neighbours:
+
+                if neighbour in visited:
+                    continue
+
+                treeEdges.append((node, neighbour))
+
+                dfs(neighbour)
+
+        dfs(root)
+        return nodes, treeEdges
+
+
+
+
+    # ------------------------------------------------------------
+    # THE REAL GRAPH SEARCH ALGORITHIM USING EVERYTHING FROM ABOVE
+    # TO-DO: Using a formular that evaluates the strategys. If there are not enough robots either use the old one if for this there are enough robots or calculate closing exists for the new one and save it
+    # ------------------------------------------------------------
+
+    minCost = np.inf
+    bestStrategy = None
+
+    for i in range(numOfTrees):
+        Vi, Ei = computeRandomSpanningTree(nodes,edges,root)
+        treeStrategy = treeSearch(Vi,Ei, root)
+        graphStrategy = transformStrategy(nodes, edges, treeStrategy)
+        if graphStrategy[0][2] < minCost:
+            minCost = treeStrategy[0][2]
+            bestStrategy = treeStrategy
+
+    return bestStrategy
+
