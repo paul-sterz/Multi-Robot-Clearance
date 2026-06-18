@@ -74,13 +74,25 @@ if run:
     root = (0, 0)
 
     with st.spinner("Building graph..."):
-        V, P, D, regularEdges, shadyEdges = graphBuilder(obstacles, lambda p, obs: detectionFnc(p, obs, detection_radius), root)
+        G, shadyEdges, D = graphBuilder(obstacles, lambda p, obs: detectionFnc(p, obs, detection_radius), root)
+
+    print(str(G.edges.keys()))
 
     with st.spinner("Computing strategy..."):
-        strategy = graphSearch(V, regularEdges, 0, numOfTrees=num_trees)
+        strategy = graphSearch(G, numOfTrees=num_trees)
 
     with st.spinner("Planning trajectories..."):
-        trajectories = computeTrajectory(obstacles, P, strategy, alpha)
+        trajectories = computeTrajectory(obstacles, G, strategy, alpha)
+
+    V = []
+    for i in range(len(G.nodes)):
+        V.append(i)
+
+    P = []
+    for i in range(len(G.nodes)):
+        P.append(G.nodes[i].pos)
+
+    regularEdges = G.edges.keys()
 
     # Alles in session_state speichern
     st.session_state.trajectories = trajectories

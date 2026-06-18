@@ -1,7 +1,8 @@
 import numpy as np
 import random
+from Graph import Graph, Node, Edge
 
-def graphSearch(nodes, edges, root, numOfTrees):
+def graphSearch(G : Graph, numOfTrees):
     #INPUT:
     # nodes: a list containing all nodes of the graph
     # edges: a list containing all directed edges of the graph
@@ -16,7 +17,7 @@ def graphSearch(nodes, edges, root, numOfTrees):
     # Remark: Lables represent the amount of robots needed for this path
     # ---------------------------------------------------
 
-    def computeLabels(nodes, edges, root, parent):
+    def computeLabels(T : Graph, root, parent):
 
         #Saving labels in a dictionary of the form: (x,y) | lambda((x,y))
         edgeLabels = {} 
@@ -25,15 +26,14 @@ def graphSearch(nodes, edges, root, numOfTrees):
         childLabels = [] 
 
         # Calculating lables recursive for children
-        for (x, y) in edges:
+        for y in T.adj[T.nodes[root]]:
+            if y.idx != parent:
 
-            if x == root and y != parent:
-
-                subLabels = computeLabels(nodes, edges, y, root)
+                subLabels = computeLabels(T, y.idx, root)
 
                 edgeLabels.update(subLabels)
 
-                childLabels.append(subLabels[(root, y)])
+                childLabels.append(subLabels[(root, y.idx)])
 
         # Check if leaf
         if len(childLabels) == 0:
@@ -64,18 +64,17 @@ def graphSearch(nodes, edges, root, numOfTrees):
     # Note: A Strategy is safed in the format [(source node,target node, amount of Robots),...]
     # ---------------------------------------------------
                     
-    def treeSearch(nodes, edges, root):
+    def treeSearch(T : Graph):
 
-        labels = computeLabels(nodes, edges, root, None)
+        labels = computeLabels(T,0, None)
 
-        def explorePath(node, parent):
+        def explorePath(node):
             
             strategy = []
             currentLables = []
-            
-            for (x,y) in edges:
-                if x == node:
-                    currentLables.append((labels[(x,y)], y))
+    
+            for y in T.adj[T.nodes[node]]:
+                    currentLables.append((labels[(node,y.idx)], y.idx))
 
             if len(currentLables) > 0:
                 currentLables.sort(key=lambda x: x[0]) #Sorting the lables ascending
@@ -85,21 +84,21 @@ def graphSearch(nodes, edges, root, numOfTrees):
                     if counter == len(currentLables) and robotsNeeded != 1: #Don't allow slide moves!
                         strategy.append((node,y,robotsNeeded-1))
                         strategy.append((node,y,1))
-                        strategy.extend(explorePath(y,node))
+                        strategy.extend(explorePath(y))
                         strategy.append((y,node,robotsNeeded))
                     else:
                         strategy.append((node,y,robotsNeeded))
-                        strategy.extend(explorePath(y,node))
+                        strategy.extend(explorePath(y))
                         strategy.append((y,node,robotsNeeded))    
                         counter = counter + 1        
             
             return strategy
 
-        strategy = explorePath(root, None)
+        strategy = explorePath(0)
 
-        robotCost = labels[(None, root)]
+        robotCost = labels[(None, 0)]
 
-        strategy.insert(0, (None,root,robotCost))
+        strategy.insert(0, (None,0,robotCost))
 
         return strategy
         
@@ -109,9 +108,14 @@ def graphSearch(nodes, edges, root, numOfTrees):
     # Approach from paper "The Graph Clear Problem..." by Kolling used since the baseline is to unspecific about this
     # -------------------------------------------------------------------------------------
 
-    def transformStrategy(nodes, GraphEdges, strategy):
-        contaminationArea = set(nodes)
-        rCounter = [0] * len(nodes)
+    def transformStrategy(G : Graph, strategy):
+
+        contaminationArea = set()
+        for i in range(len(G.nodes)):
+            contaminationArea.add(i)
+
+        rCounter = [0] * len(G.nodes)
+
         for i in range(len(strategy)):
             if strategy[i][1] in contaminationArea:
                 contaminationArea.remove(strategy[i][1])
@@ -120,9 +124,10 @@ def graphSearch(nodes, edges, root, numOfTrees):
                 rCounter[strategy[i][0]] = rCounter[strategy[i][0]] - strategy[i][2]
             
             rCounter[strategy[i][1]] = rCounter[strategy[i][1]] + strategy[i][2]
+            
 
             if strategy[i][0] != None and rCounter[strategy[i][0]] == 0: #Are there still any robots left on the last node?
-                for (u,v) in GraphEdges: 
+                for (u,v) in G.edges.keys(): 
                     if u in contaminationArea and v == strategy[i][0]: #Is there an edge that leads to recontamination?
                         currNode = None
                         for j in range(i):
@@ -146,34 +151,34 @@ def graphSearch(nodes, edges, root, numOfTrees):
     # COMPUTING A RANDOM SPANNING TREE WITH DFS
     # ---------------------------------------------------
 
-    def computeRandomSpanningTree(nodes, edges, root):
+    def computeRandomSpanningTree(G : Graph):
+     
+        T = Graph()
+        for i in range(len(G.nodes)):
+            T.add_node2(G.nodes[i])
+        
+        root = 0
         visited = set()
-        treeEdges = []
 
         def dfs(node):
 
             visited.add(node)
 
-            neighbours = []
-
-            for (u,v) in edges:
-                if u == node:
-                    neighbours.append(v)
-
+            neighbours = list(G.adj[G.nodes[node]])
 
             random.shuffle(neighbours)
 
             for neighbour in neighbours:
 
-                if neighbour in visited:
+                if neighbour.idx in visited:
                     continue
 
-                treeEdges.append((node, neighbour))
+                T.add_edge(T.nodes[node], T.nodes[neighbour.idx])
 
-                dfs(neighbour)
+                dfs(neighbour.idx)
 
         dfs(root)
-        return nodes, treeEdges
+        return T
 
 
 
@@ -186,12 +191,12 @@ def graphSearch(nodes, edges, root, numOfTrees):
     bestStrategy = None
 
     for i in range(numOfTrees):
-        Vi, Ei = computeRandomSpanningTree(nodes,edges,root)
-        treeStrategy = treeSearch(Vi,Ei, root)
-        graphStrategy = transformStrategy(nodes, edges, treeStrategy)
+        T = computeRandomSpanningTree(G)
+        treeStrategy = treeSearch(T)
+        graphStrategy = transformStrategy(G, treeStrategy)
         if graphStrategy[0][2] < minCost:
-            minCost = treeStrategy[0][2]
-            bestStrategy = treeStrategy
+            minCost = graphStrategy[0][2]
+            bestStrategy = graphStrategy
 
     return bestStrategy
 

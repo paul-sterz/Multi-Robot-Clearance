@@ -1,8 +1,9 @@
 import numpy as np
 from collections import deque
 import heapq
+from Graph import Graph, Node, Edge
 
-def computeTrajectory(obstacles, P, strategy, alpha=1):
+def computeTrajectory(obstacles, G : Graph, strategy, alpha=1):
     #INPUT:
     #obstacles:(H,W) dimensional numpy array that represents the enviroment, 1=obstacle, 0=free
     #P: a list containing for every vertex a corresponding position (x,y) in the 2D obstacles array
@@ -152,6 +153,9 @@ def computeTrajectory(obstacles, P, strategy, alpha=1):
     # ---------------------------------------------------
     # THE REAL TRAJECTORY ALGORITHIM USING EVERYTHING FROM ABOVE
     # ---------------------------------------------------
+    P = []
+    for i in range(len(G.nodes)):
+        P.append(G.nodes[i].pos)
 
     distanceMap = computeObstacleDistance(obstacles)
     trajectorys = []

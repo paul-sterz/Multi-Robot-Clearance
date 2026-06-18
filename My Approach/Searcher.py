@@ -1,7 +1,7 @@
 import numpy as np
 import random
 
-def graphSearch(nodes, edges, root, numOfTrees, priors , availableRobots):
+def graphSearch(graph, root, numOfTrees, priors , availableRobots):
     #INPUT:
     # nodes: a list containing all nodes of the graph
     # edges: a dictionary with elements of the form {(u,v) : (robottype, travel time)}

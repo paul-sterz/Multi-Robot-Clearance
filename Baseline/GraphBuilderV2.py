@@ -1,5 +1,8 @@
 import random
 import numpy as np
+from Graph import Graph, Node, Edge
+
+
 
 
 def graphBuilder(obstacles, detectionFnc, root):
@@ -33,16 +36,14 @@ def graphBuilder(obstacles, detectionFnc, root):
     # PART 1: VERTEX GENERATION
     # ---------------------------------------------------
 
-    V = []   # vertex ids
-    P = []   # positions
+    G = Graph()
     D = []   # detection sets
 
     covered = set()
     uncovered = E
     
     #Adding root
-    V.append(0)
-    P.append(root)
+    G.add_node(0,root)
     Di = set(detectionFnc(root, obstacles))
     Di = Di & E 
     D.append(Di)
@@ -58,8 +59,7 @@ def graphBuilder(obstacles, detectionFnc, root):
         if obstacles[pi[0]][pi[1]] == 1:
             continue
 
-        V.append(i)
-        P.append(pi)
+        G.add_node(i,pi)
 
         Di = set(detectionFnc(pi, obstacles))
         Di = Di & E  # Only consider intersection with traversable points
@@ -94,7 +94,6 @@ def graphBuilder(obstacles, detectionFnc, root):
     # PART 3: EDGE CONSTRUCTION
     # ---------------------------------------------------
 
-    edges_regular = []
     edges_shady = []
 
     n = len(D)
@@ -125,6 +124,6 @@ def graphBuilder(obstacles, detectionFnc, root):
             if is_shady:
                 edges_shady.append((i, j))
             else:
-                edges_regular.append((i, j))
+                G.add_edge(G.nodes[i], G.nodes[j])
 
-    return V, P, D, edges_regular, edges_shady
+    return G, edges_shady, D
