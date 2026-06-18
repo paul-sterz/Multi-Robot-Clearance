@@ -1,10 +1,10 @@
 import numpy as np
 import random
 
-def graphSearch(nodes, edges, root, numOfTrees, priors ,aerialSpeed, groundSpeed, aerialBattery, groundBattery, trajectoryTimes):
+def graphSearch(nodes, edges, root, numOfTrees, priors , availableRobots):
     #INPUT:
     # nodes: a list containing all nodes of the graph
-    # edges: a dictionary containing all directed edges of the graph and as key value a needed travel time is stored 
+    # edges: a dictionary with elements of the form {(u,v) : (robottype, travel time)}
     # root: index of the root node
     # numOfTrees: an integer which represents the number of evaluated trees
     # priors: a list containing a target detection probability for each node
@@ -18,38 +18,44 @@ def graphSearch(nodes, edges, root, numOfTrees, priors ,aerialSpeed, groundSpeed
     #bestStrategy: A list containing the best strategy where each entry is in the form (source node,target node, amount of Robots)
 
     # ---------------------------------------------------
-    # COMPUTING EDGE LABLES FOR THE TREE SEARCH 
+    # COMPUTING EDGE LABLES FOR THE TREE SEARCH THAT REPRESENT THE AMOUNT OF NEEDED ROBOTS
     # Remark: Lables represent the amount of robots needed for this path
-    # To-DO: Add new edge lables that save the represent the weighted formular between estimated_Search and robot_cost for each subtree. In this formular also other Robots specific parameters could be included.
     # ---------------------------------------------------
 
-    def computeLabels(nodes, edges, root, parent):
+    def computeLabels(nodes, edges, root, parent, priors):
 
         #Saving labels in a dictionary of the form: (x,y) | lambda((x,y))
-        edgeLabels = {} 
+        edgeLabelsRobotCost = {} 
+        edgeLabelsEfficiency = {} 
+        sumI = 0
+        sumT = 0
 
         #Saving pi meaning all nodes to the children of root
         childLabels = [] 
 
         # Calculating lables recursive for children
-        for (x, y) in edges:
+        for (x, y, a, b) in edges:
 
             if x == root and y != parent:
+                
+                #Computing all edgelables from y 
+                subLabelsRobotCost, subLablesEfficiency, sumI, sumT = computeLabels(nodes, edges, y, root, priors)
 
-                subLabels = computeLabels(nodes, edges, y, root)
+                edgeLabelsRobotCost.update(subLabelsRobotCost)
+                edgeLabelsEfficiency.update(subLablesEfficiency)
 
-                edgeLabels.update(subLabels)
-
-                childLabels.append(subLabels[(root, y)])
+                childLabels.append(subLabelsRobotCost[(root, y)])
 
         # Check if leaf
         if len(childLabels) == 0:
 
-            edgeLabels[(parent, root)] = 1
+            edgeLabelsRobotCost[(parent, root)] = 1
+
+            edgeLabelsEfficiency[(parent, root)] = priors[root] / edges[(parent,root)]
 
         else:
 
-            #formula from the paper
+            #formula from the paper for calculating the amount of robots needed 
             childLabels.sort(reverse=True)
 
             p1 = childLabels[0]
@@ -62,14 +68,17 @@ def graphSearch(nodes, edges, root, numOfTrees, priors ,aerialSpeed, groundSpeed
             else:
                 currentLabel = max(p1, p2 + 1)
 
-            edgeLabels[(parent, root)] = currentLabel
+            edgeLabelsRobotCost[(parent, root)] = currentLabel
 
-        return edgeLabels     
+
+
+        return edgeLabelsRobotCost, edgeLabelsEfficiency     
+    
     
     # ---------------------------------------------------
     # CALCULATING A STRATEGY FOR TREES 
     # Note: A Strategy is safed in the format [(source node,target node, amount of Robots),...]
-    # TO-DO: Check if this still works. I think it should. Probably some more information has to be saved like the cummilated probability of a subtree
+    # TO-DO: Compute both lables function. Define a formular for choosing a lable and then the rest should stay more or less the same.
     # ---------------------------------------------------
                     
     def treeSearch(nodes, edges, root):
@@ -151,11 +160,10 @@ def graphSearch(nodes, edges, root, numOfTrees, priors ,aerialSpeed, groundSpeed
 
 
     # ---------------------------------------------------
-    # COMPUTING A RANDOM SPANNING TREE WITH DFS
-    # For the moment ok. Speak with Markus if we want to improve this. Currently i think this makes no sense.
+    # COMPUTING A SPANNING TREE WITH DFS
     # ---------------------------------------------------
 
-    def computeRandomSpanningTree(nodes, edges, root):
+    def computeRandomSpanningTree(nodes, edges, root, priors):
         visited = set()
         treeEdges = []
 
@@ -163,16 +171,16 @@ def graphSearch(nodes, edges, root, numOfTrees, priors ,aerialSpeed, groundSpeed
 
             visited.add(node)
 
-            neighbours = []
+            neighbours = {}
 
             for (u,v) in edges:
                 if u == node:
-                    neighbours.append(v)
+                    neighbours[v] = priors(v)
+                
 
+            sortedNeighbours = sorted(neighbours.items(), key=lambda item: item[1], reverse=True)
 
-            random.shuffle(neighbours)
-
-            for neighbour in neighbours:
+            for neighbour, prio in sortedNeighbours:
 
                 if neighbour in visited:
                     continue
@@ -183,7 +191,15 @@ def graphSearch(nodes, edges, root, numOfTrees, priors ,aerialSpeed, groundSpeed
 
         dfs(root)
         return nodes, treeEdges
+    
 
+    # ---------------------------------------------------
+    # COMPUTING THE CLOSING EXISTS STRATEGY IF NOT ENOUGH ROBOTS ARE GIVEN
+    # TO-DO: Implement method
+    # ---------------------------------------------------
+
+    def computeClosingExits(graphStrategy, nodes, edges, priors):
+        print("Hello World!")
 
 
 
@@ -193,15 +209,23 @@ def graphSearch(nodes, edges, root, numOfTrees, priors ,aerialSpeed, groundSpeed
     # ------------------------------------------------------------
 
     minCost = np.inf
+    minEff = np.inf
     bestStrategy = None
 
     for i in range(numOfTrees):
         Vi, Ei = computeRandomSpanningTree(nodes,edges,root)
         treeStrategy = treeSearch(Vi,Ei, root)
         graphStrategy = transformStrategy(nodes, edges, treeStrategy)
-        if graphStrategy[0][2] < minCost:
-            minCost = treeStrategy[0][2]
-            bestStrategy = treeStrategy
-
+        if graphStrategy[0][2] < availableRobots:
+            #Check if strategy is perfomable. If not use closing exists strategy
+            if graphStrategy[0][2] < minEff:
+                minCost = treeStrategy[0][2]
+                bestStrategy = treeStrategy
+        else:
+            graphStrategy, eff = computeClosingExits(graphStrategy, nodes, edges, priors)
+            if eff < minEff:
+                minEff = eff
+                bestStrategy = graphStrategy
+            
     return bestStrategy
 
