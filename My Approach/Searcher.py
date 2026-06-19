@@ -1,18 +1,15 @@
 import numpy as np
 import random
+from Graph import Graph, Node, Edge
 
-def graphSearch(graph, root, numOfTrees, priors , availableRobots):
+def graphSearch(G : Graph, shadyEdges, numOfTrees, availableRobots):
     #INPUT:
-    # nodes: a list containing all nodes of the graph
-    # edges: a dictionary with elements of the form {(u,v) : (robottype, travel time)}
-    # root: index of the root node
+    # G: a Graph object repesenting the merged navigationgraph
     # numOfTrees: an integer which represents the number of evaluated trees
-    # priors: a list containing a target detection probability for each node
-    # aerialSpeed: an integer value that represents the speed of the aerial robots
-    # groundSpeed: an integer value that represents the speed of the ground robots
-    # aerialBattery: unsure
-    # groundBattery: unsure
-    # trajectoryTimes: a dictionary containg all edges
+    # aerialSpeed: TO-DO
+    # groundSpeed: TO-DO
+    # aerialBattery: TO-DO
+    # groundBattery: TO-DO
 
     #OUTPUT:
     #bestStrategy: A list containing the best strategy where each entry is in the form (source node,target node, amount of Robots)
@@ -20,49 +17,50 @@ def graphSearch(graph, root, numOfTrees, priors , availableRobots):
     # ---------------------------------------------------
     # COMPUTING EDGE LABLES FOR THE TREE SEARCH THAT REPRESENT THE AMOUNT OF NEEDED ROBOTS
     # Remark: Lables represent the amount of robots needed for this path
-    # ---------------------------------------------------
+    # --------------------------------------------------- 
 
-    def computeLabels(nodes, edges, root, parent, priors):
+    def computeLabels(T : Graph, root, parent):
 
         #Saving labels in a dictionary of the form: (x,y) | lambda((x,y))
         edgeLabelsRobotCost = {} 
         edgeLabelsEfficiency = {} 
-        sumI = 0
-        sumT = 0
 
-        #Saving pi meaning all nodes to the children of root
+        # Keep track of total prior and time in subtree
+        totalTime = 0
+        totalPrior = 0
+
+        #Saving pi meaning all children of the root
         childLabels = [] 
 
         # Calculating lables recursive for children
-        for (x, y, a, b) in edges:
+        for y in T.adj[T.nodes[root]]:
+            if y.idx != parent:
+                subLabelsRobotCost, subLablesEfficiency, sumTime, sumPrior = computeLabels(T, y.idx, root)
+                totalTime += sumTime
+                totalPrior += sumPrior
 
-            if x == root and y != parent:
-                
-                #Computing all edgelables from y 
-                subLabelsRobotCost, subLablesEfficiency, sumI, sumT = computeLabels(nodes, edges, y, root, priors)
-
-                edgeLabelsRobotCost.update(subLabelsRobotCost)
                 edgeLabelsEfficiency.update(subLablesEfficiency)
 
-                childLabels.append(subLabelsRobotCost[(root, y)])
-
+                edgeLabelsRobotCost.update(subLabelsRobotCost)
+                childLabels.append(subLabelsRobotCost[(root, y.idx)])
+  
         # Check if leaf
         if len(childLabels) == 0:
-
             edgeLabelsRobotCost[(parent, root)] = 1
-
-            edgeLabelsEfficiency[(parent, root)] = priors[root] / edges[(parent,root)]
-
+               
+            totalPrior += T.nodes[root].prior 
+            totalTime +=  T.edges[(parent,root)].time
+            edgeLabelsEfficiency[(parent, root)] = totalPrior / totalTime
         else:
 
-            #formula from the paper for calculating the amount of robots needed 
+            #formula from the paper for robot cost
             childLabels.sort(reverse=True)
 
             p1 = childLabels[0]
             if len(childLabels) > 1:  
                 p2 = childLabels[1]
             else: p2 = 0
- 
+    
             if p1 == 1:
                 currentLabel = p1 + 1
             else:
@@ -70,9 +68,15 @@ def graphSearch(graph, root, numOfTrees, priors , availableRobots):
 
             edgeLabelsRobotCost[(parent, root)] = currentLabel
 
+            #setting the efficiency edgelable
+            totalPrior = T.nodes[root].prior + totalPrior
+            if parent != None:
+                totalTime = T.edges[(parent,root)].time + totalTime
+            else:
+                totalTime = 1
+            edgeLabelsEfficiency[(parent, root)] = totalPrior / totalTime
 
-
-        return edgeLabelsRobotCost, edgeLabelsEfficiency     
+        return edgeLabelsRobotCost, edgeLabelsEfficiency, totalTime, totalPrior
     
     
     # ---------------------------------------------------
@@ -81,42 +85,89 @@ def graphSearch(graph, root, numOfTrees, priors , availableRobots):
     # TO-DO: Compute both lables function. Define a formular for choosing a lable and then the rest should stay more or less the same.
     # ---------------------------------------------------
                     
-    def treeSearch(nodes, edges, root):
+    def treeSearch(T : Graph):
 
-        labels = computeLabels(nodes, edges, root, None)
+        labelsRobotCost, lablesEficiency, _ , _ = computeLabels(T,0, None)
 
-        def explorePath(node, parent):
+        def explorePath(node):
             
             strategy = []
-            currentLables = []
-            
-            for (x,y) in edges:
-                if x == node:
-                    currentLables.append((labels[(x,y)], y))
+            currentLablesRobotCost = []
+            currentLablesEfficiency = []
+            combinedLables = []
+    
+            for y in T.adj[T.nodes[node]]:
+                currentLablesRobotCost.append((labelsRobotCost[(node,y.idx)], y.idx))
+                currentLablesEfficiency.append((lablesEficiency[(node, y.idx)], y.idx))
+                combinedLables.append(lablesEficiency[(node, y.idx)], labelsRobotCost[(node,y.idx)], y.idx)
+               
 
-            if len(currentLables) > 0:
-                currentLables.sort(key=lambda x: x[0]) #Sorting the lables ascending
+            if len(currentLablesRobotCost) > 0:
+                combinedLables.sort(key=lambda x: x[0]) #Sorting the lables ascending
+                currentLablesRobotCost.sort(key=lambda x: x[0], reverse = True)
 
+                # Check if the max amount of robots is needed twice. Than the order of exploring can't effect the robot cost
+                twice = False
+                if currentLablesRobotCost[0][0] == currentLablesRobotCost[1][0]:
+                    twice = True
+                
                 counter = 1
-                for (robotsNeeded, y) in currentLables:
-                    if counter == len(currentLables) and robotsNeeded != 1: #Don't allow slide moves!
-                        strategy.append((node,y,robotsNeeded-1))
-                        strategy.append((node,y,1))
-                        strategy.extend(explorePath(y,node))
-                        strategy.append((y,node,robotsNeeded))
-                    else:
-                        strategy.append((node,y,robotsNeeded))
-                        strategy.extend(explorePath(y,node))
-                        strategy.append((y,node,robotsNeeded))    
-                        counter = counter + 1        
+                if twice:
+                    for (eff, robotsNeeded, y) in combinedLables: #Always explore the subtree with best efficiency
+                        if counter == len(currentLablesRobotCost) and robotsNeeded != 1: #Don't allow slide moves! Note that they can only be neicessary in the last move
+                            strategy.append((node,y,robotsNeeded-1))
+                            strategy.append((node,y,1))
+                            strategy.extend(explorePath(y))
+                            strategy.append((y,node,robotsNeeded))
+                        else:
+                            strategy.append((node,y,robotsNeeded))
+                            strategy.extend(explorePath(y))
+                            strategy.append((y,node,robotsNeeded))    
+                            counter = counter + 1       
+                else:   
+                    max = currentLablesRobotCost[0][0]
+                    for k in range(len(combinedLables)):
+                        (eff, robotsNeeded, y) = combinedLables[k]
+                        if robotsNeeded == max and counter != len(currentLablesRobotCost): #Check if we want to enter the biggest subtree early
+                            if eff > 2 * combinedLables[k+1]: #Score twice as good than we take the robot more
+                                # adding the robot more on every move before
+                                currNode = None
+                                for j in range(len(strategy)):
+                                    u, v, k = strategy[j]
+                                    if u == currNode:
+                                        strategy[j] = (u, v, k + 1)
+                                        currNode = v
+                                    if v == strategy[i][0]:
+                                        break
+                                # adding the strategy step
+                                strategy.append((node,y,robotsNeeded))
+                                strategy.extend(explorePath(y))
+                                strategy.append((y,node,robotsNeeded))    
+                                counter = counter + 1 
+                                continue  
+                            else:    
+                                save = combinedLables[k] 
+                                combinedLables[k] = combinedLables[k+1]
+                                combinedLables[k+1] = save
+                                (eff, robotsNeeded, y) = combinedLables[k]
             
+                        if counter == len(currentLablesRobotCost) and robotsNeeded != 1: #Don't allow slide moves! Note that they can only be neicessary in the last move
+                            strategy.append((node,y,robotsNeeded-1))
+                            strategy.append((node,y,1))
+                            strategy.extend(explorePath(y))
+                            strategy.append((y,node,robotsNeeded))
+                        else:
+                            strategy.append((node,y,robotsNeeded))
+                            strategy.extend(explorePath(y))
+                            strategy.append((y,node,robotsNeeded))    
+                            counter = counter + 1        
             return strategy
 
-        strategy = explorePath(root, None)
+        strategy = explorePath(0)
 
-        robotCost = labels[(None, root)]
+        robotCost = labelsRobotCost[(None, 0)]
 
-        strategy.insert(0, (None,root,robotCost))
+        strategy.insert(0, (None,0,robotCost))
 
         return strategy
         
@@ -126,9 +177,14 @@ def graphSearch(graph, root, numOfTrees, priors , availableRobots):
     # TO-DO: Make sure that slide moves are only prevented if neicessary. This could be done by adding in each strategy step a 0 or a 1 which represents if this is done to prevent a slide move. Or by transforming the strategy while determining it.
     # -------------------------------------------------------------------------------------
 
-    def transformStrategy(nodes, GraphEdges, strategy):
-        contaminationArea = set(nodes)
-        rCounter = [0] * len(nodes)
+    def transformStrategy(G : Graph, shadyEdges, strategy):
+
+        contaminationArea = set()
+        for i in range(len(G.nodes)):
+            contaminationArea.add(i)
+
+        rCounter = [0] * len(G.nodes)
+
         for i in range(len(strategy)):
             if strategy[i][1] in contaminationArea:
                 contaminationArea.remove(strategy[i][1])
@@ -137,9 +193,13 @@ def graphSearch(graph, root, numOfTrees, priors , availableRobots):
                 rCounter[strategy[i][0]] = rCounter[strategy[i][0]] - strategy[i][2]
             
             rCounter[strategy[i][1]] = rCounter[strategy[i][1]] + strategy[i][2]
+            
 
             if strategy[i][0] != None and rCounter[strategy[i][0]] == 0: #Are there still any robots left on the last node?
-                for (u,v) in GraphEdges: 
+
+                exists = False
+
+                for (u,v) in G.edges.keys(): #check regular edges
                     if u in contaminationArea and v == strategy[i][0]: #Is there an edge that leads to recontamination?
                         currNode = None
                         for j in range(i):
@@ -151,46 +211,61 @@ def graphSearch(graph, root, numOfTrees, priors , availableRobots):
                                 break
 
                         rCounter[strategy[i][0]] = 1
+                        exists = True
                         break
+                
+                if exists == False:
+                    for (u,v) in shadyEdges: #check shady edges
+                        if u in contaminationArea and v == strategy[i][0]: #Is there an edge that leads to recontamination?
+                            currNode = None
+                            for j in range(i):
+                                u, v, k = strategy[j]
+                                if u == currNode:
+                                    strategy[j] = (u, v, k + 1)
+                                    currNode = v
+                                if v == strategy[i][0]:
+                                    break
+
+                            rCounter[strategy[i][0]] = 1
+                            break
 
         return strategy
-
             
-
-
 
     # ---------------------------------------------------
     # COMPUTING A SPANNING TREE WITH DFS
+    # The generation uses a greedy choice for the node with the highest prior
     # ---------------------------------------------------
 
-    def computeRandomSpanningTree(nodes, edges, root, priors):
+    def computeSpanningTree(G : Graph):
+     
+        T = Graph()
+        for i in range(len(G.nodes)):
+            T.add_node2(G.nodes[i])
+        
+        root = 0
         visited = set()
-        treeEdges = []
 
         def dfs(node):
 
             visited.add(node)
 
-            neighbours = {}
+            neighbours = list(G.adj[G.nodes[node]])
 
-            for (u,v) in edges:
-                if u == node:
-                    neighbours[v] = priors(v)
-                
+            # Sorting the neighbours in respect to their prior
+            neighbours.sort(key=lambda x: x.prior, reverse = True)
+            
+            for neighbour in neighbours:
 
-            sortedNeighbours = sorted(neighbours.items(), key=lambda item: item[1], reverse=True)
-
-            for neighbour, prio in sortedNeighbours:
-
-                if neighbour in visited:
+                if neighbour.idx in visited:
                     continue
 
-                treeEdges.append((node, neighbour))
+                T.add_edge(T.nodes[node], T.nodes[neighbour.idx])
 
-                dfs(neighbour)
+                dfs(neighbour.idx)
 
         dfs(root)
-        return nodes, treeEdges
+        return T
     
 
     # ---------------------------------------------------
@@ -198,7 +273,15 @@ def graphSearch(graph, root, numOfTrees, priors , availableRobots):
     # TO-DO: Implement method
     # ---------------------------------------------------
 
-    def computeClosingExits(graphStrategy, nodes, edges, priors):
+    def computeClosingExits(graphStrategy, G):
+        print("Hello World!")
+
+
+    # ---------------------------------------------------
+    # COMPUTING EFFICENCY WITH WHICH TWO STRATEGYS ARE COMPARED
+    # TO-DO: Implement method
+    # ---------------------------------------------------
+    def computeEfficiency(graphStrategy, G):
         print("Hello World!")
 
 
@@ -213,19 +296,21 @@ def graphSearch(graph, root, numOfTrees, priors , availableRobots):
     bestStrategy = None
 
     for i in range(numOfTrees):
-        Vi, Ei = computeRandomSpanningTree(nodes,edges,root)
-        treeStrategy = treeSearch(Vi,Ei, root)
-        graphStrategy = transformStrategy(nodes, edges, treeStrategy)
+        T = computeSpanningTree(G)
+        treeStrategy = treeSearch(T)
+        graphStrategy = transformStrategy(G,shadyEdges, treeStrategy)
+        #Check if strategy is perfomable. If not use closing exists strategy
         if graphStrategy[0][2] < availableRobots:
-            #Check if strategy is perfomable. If not use closing exists strategy
-            if graphStrategy[0][2] < minEff:
-                minCost = treeStrategy[0][2]
-                bestStrategy = treeStrategy
-        else:
-            graphStrategy, eff = computeClosingExits(graphStrategy, nodes, edges, priors)
+            # Compute efficiency score of strategy
+            eff = computeEfficiency(graphStrategy)
             if eff < minEff:
                 minEff = eff
                 bestStrategy = graphStrategy
-            
+        else:
+            graphStrategy, eff = computeClosingExits(graphStrategy, G)
+            if eff < minEff:
+                minEff = eff
+                bestStrategy = graphStrategy
+
     return bestStrategy
 
