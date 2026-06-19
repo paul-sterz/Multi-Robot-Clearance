@@ -6,7 +6,7 @@ from Graph import Graph, Node, Edge
 def computeTrajectory(obstacles, G : Graph, strategy, alpha=1):
     #INPUT:
     #obstacles:(H,W) dimensional numpy array that represents the enviroment, 1=obstacle, 0=free
-    #P: a list containing for every vertex a corresponding position (x,y) in the 2D obstacles array
+    #G: a Graph object repesenting the given Graph
     #strategy:A list containing the best strategy where each entry is in the form (source node,target node, amount of Robots)
 
     #OUTPUT:

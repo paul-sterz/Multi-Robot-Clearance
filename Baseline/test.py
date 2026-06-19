@@ -79,7 +79,7 @@ if run:
     print(str(G.edges.keys()))
 
     with st.spinner("Computing strategy..."):
-        strategy = graphSearch(G, numOfTrees=num_trees)
+        strategy = graphSearch(G, shadyEdges,numOfTrees=num_trees)
 
     with st.spinner("Planning trajectories..."):
         trajectories = computeTrajectory(obstacles, G, strategy, alpha)
@@ -96,7 +96,7 @@ if run:
 
     # Alles in session_state speichern
     st.session_state.trajectories = trajectories
-    st.session_state.graph_data = (obstacles, V, P, regularEdges, H, W)
+    st.session_state.graph_data = (obstacles, V, P, shadyEdges, regularEdges, H, W)
     st.session_state.strategy = strategy
     st.session_state.step = 0  
 
@@ -115,7 +115,7 @@ if st.session_state.graph_data is None:
 # LOADING DATA
 # --------------------------------------------------
 
-obstacles, V, P, regularEdges, H, W = st.session_state.graph_data
+obstacles, V, P, shadyEdges, regularEdges, H, W = st.session_state.graph_data
 trajectories = st.session_state.trajectories
 current_step = st.session_state.step  # How many trajectorys are already visible
 strategy = st.session_state.strategy
@@ -253,6 +253,20 @@ for idx, (u, v) in enumerate(regularEdges):
         name="Edge" if idx == 0 else "",
         hoverinfo="skip",
     ))
+
+for idx, (u, v) in enumerate(shadyEdges):
+    p1, p2 = P[u], P[v]
+    fig.add_trace(go.Scatter(
+        x=[p1[1], p2[1]],
+        y=[p1[0], p2[0]],
+        mode="lines",
+        line=dict(color="red", width=1.2),
+        opacity=0.5,
+        showlegend=(idx == 0),
+        name="Edge" if idx == 0 else "",
+        hoverinfo="skip",
+    ))
+
 
 
 # -- Nodes -------------------------------------------------------------------

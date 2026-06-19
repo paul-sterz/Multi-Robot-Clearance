@@ -6,17 +6,16 @@ from Graph import Graph, Node, Edge
 
 
 def graphBuilder(obstacles, detectionFnc, root):
-    #INPUT:
-    #obstacles: (H,W) dimensional numpy array that represents the enviroment, 1=obstacle, 0=free
-    #detectionFnc: function p -> set of detected cells
-    #root: tuple of point where the robots start
+    # INPUT:
+    # obstacles: (H,W) dimensional numpy array that represents the enviroment, 1=obstacle, 0=free
+    # detectionFnc: function p -> set of detected cells
+    # root: tuple of point where the robots start
 
-    #OUTPUT:
-    #V: a list containing all vertex ids
-    #P:a list containing for every vertex a corresponding position (x,y) in the 2D obstacles array
-    #D:a list containing the detection set for every point in P
-    #edges_regular: a list containing all regular edges in the form (i,j)
-    #edges_shady:a list containing all shady edges in the form (i,j)
+    # OUTPUT:
+    # G: a Graph object representing the created Graph using only the regular edges
+    # edges_shady:a list containing all shady edges in the form (i,j)
+    #D :a list containing the detection set for every point in P
+
     
 
     # ---------------------------------------------------

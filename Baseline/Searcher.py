@@ -2,11 +2,10 @@ import numpy as np
 import random
 from Graph import Graph, Node, Edge
 
-def graphSearch(G : Graph, numOfTrees):
+def graphSearch(G : Graph, shadyEdges, numOfTrees):
     #INPUT:
-    # nodes: a list containing all nodes of the graph
-    # edges: a list containing all directed edges of the graph
-    # root: index of the root node
+    # G: a Graph object repesenting the given Graph
+    # edges_shady:a list containing all shady edges in the form (i,j)
     # numOfTrees: an integer which represents the number of evaluated trees
 
     #OUTPUT:
@@ -108,7 +107,7 @@ def graphSearch(G : Graph, numOfTrees):
     # Approach from paper "The Graph Clear Problem..." by Kolling used since the baseline is to unspecific about this
     # -------------------------------------------------------------------------------------
 
-    def transformStrategy(G : Graph, strategy):
+    def transformStrategy(G : Graph, shadyEdges, strategy):
 
         contaminationArea = set()
         for i in range(len(G.nodes)):
@@ -127,7 +126,10 @@ def graphSearch(G : Graph, numOfTrees):
             
 
             if strategy[i][0] != None and rCounter[strategy[i][0]] == 0: #Are there still any robots left on the last node?
-                for (u,v) in G.edges.keys(): 
+
+                exists = False
+
+                for (u,v) in G.edges.keys(): #check regular edges
                     if u in contaminationArea and v == strategy[i][0]: #Is there an edge that leads to recontamination?
                         currNode = None
                         for j in range(i):
@@ -139,7 +141,23 @@ def graphSearch(G : Graph, numOfTrees):
                                 break
 
                         rCounter[strategy[i][0]] = 1
+                        exists = True
                         break
+                
+                if exists == False:
+                    for (u,v) in shadyEdges: #check shady edges
+                        if u in contaminationArea and v == strategy[i][0]: #Is there an edge that leads to recontamination?
+                            currNode = None
+                            for j in range(i):
+                                u, v, k = strategy[j]
+                                if u == currNode:
+                                    strategy[j] = (u, v, k + 1)
+                                    currNode = v
+                                if v == strategy[i][0]:
+                                    break
+
+                            rCounter[strategy[i][0]] = 1
+                            break
 
         return strategy
 
@@ -193,7 +211,7 @@ def graphSearch(G : Graph, numOfTrees):
     for i in range(numOfTrees):
         T = computeRandomSpanningTree(G)
         treeStrategy = treeSearch(T)
-        graphStrategy = transformStrategy(G, treeStrategy)
+        graphStrategy = transformStrategy(G,shadyEdges, treeStrategy)
         if graphStrategy[0][2] < minCost:
             minCost = graphStrategy[0][2]
             bestStrategy = graphStrategy
