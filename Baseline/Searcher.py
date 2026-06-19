@@ -21,7 +21,7 @@ def graphSearch(G : Graph, shadyEdges, numOfTrees):
         #Saving labels in a dictionary of the form: (x,y) | lambda((x,y))
         edgeLabels = {} 
 
-        #Saving pi meaning all nodes to the children of root
+        #Saving pi meaning all children of the root
         childLabels = [] 
 
         # Calculating lables recursive for children
@@ -34,13 +34,12 @@ def graphSearch(G : Graph, shadyEdges, numOfTrees):
 
                 childLabels.append(subLabels[(root, y.idx)])
 
+
         # Check if leaf
         if len(childLabels) == 0:
-
             edgeLabels[(parent, root)] = 1
 
         else:
-
             #formula from the paper
             childLabels.sort(reverse=True)
 
@@ -48,7 +47,7 @@ def graphSearch(G : Graph, shadyEdges, numOfTrees):
             if len(childLabels) > 1:  
                 p2 = childLabels[1]
             else: p2 = 0
- 
+    
             if p1 == 1:
                 currentLabel = p1 + 1
             else:
@@ -73,14 +72,14 @@ def graphSearch(G : Graph, shadyEdges, numOfTrees):
             currentLables = []
     
             for y in T.adj[T.nodes[node]]:
-                    currentLables.append((labels[(node,y.idx)], y.idx))
+                currentLables.append((labels[(node,y.idx)], y.idx))
 
             if len(currentLables) > 0:
                 currentLables.sort(key=lambda x: x[0]) #Sorting the lables ascending
 
                 counter = 1
                 for (robotsNeeded, y) in currentLables:
-                    if counter == len(currentLables) and robotsNeeded != 1: #Don't allow slide moves!
+                    if counter == len(currentLables) and robotsNeeded != 1: #Don't allow slide moves! Note that they can only be neicessary in the last move
                         strategy.append((node,y,robotsNeeded-1))
                         strategy.append((node,y,1))
                         strategy.extend(explorePath(y))
