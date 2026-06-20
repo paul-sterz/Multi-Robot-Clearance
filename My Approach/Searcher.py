@@ -56,7 +56,7 @@ def graphSearch(G : Graph, shadyEdges, numOfTrees, availableRobots, startNodes):
                 totalTime +=  T.edges[(parent,root)].time
             else:
                 totalPrior += T.nodes[root].prior 
-                totalTime +=  T.edges[(parent,root)].time
+                totalTime +=  1
 
             edgeLabelsEfficiency[(parent, root)] = totalPrior / totalTime
         else:
@@ -77,7 +77,7 @@ def graphSearch(G : Graph, shadyEdges, numOfTrees, availableRobots, startNodes):
             edgeLabelsRobotCost[(parent, root)] = currentLabel
 
             #setting the efficiency edgelable
-            totalPrior = T.nodes[root].prior + totalPrior
+            totalPrior += T.nodes[root].prior 
             if parent != None:
                 totalTime = T.edges[(parent,root)].time + totalTime
             else:
