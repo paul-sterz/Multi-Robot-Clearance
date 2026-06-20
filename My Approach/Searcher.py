@@ -1,5 +1,6 @@
 import numpy as np
 import math
+import random
 from Graph import Graph, Node, Edge
 
 def graphSearch(G : Graph, shadyEdges, numOfTrees, availableRobots):
@@ -244,7 +245,7 @@ def graphSearch(G : Graph, shadyEdges, numOfTrees, availableRobots):
     # The generation uses a greedy choice for the node with the highest prior
     # ---------------------------------------------------
 
-    def computeSpanningTree(G : Graph):
+    def computeGreedySpanningTree(G : Graph):
      
         T = Graph()
         for i in range(len(G.nodes)):
@@ -268,6 +269,40 @@ def graphSearch(G : Graph, shadyEdges, numOfTrees, availableRobots):
                     continue
 
                 T.add_edge(T.nodes[node], T.nodes[neighbour.idx], G.edges[(node,neighbour.idx)].time, 2)
+
+                dfs(neighbour.idx)
+
+        dfs(root)
+        return T
+    
+    # ---------------------------------------------------
+    # COMPUTING A RANDOM SPANNING TREE WITH DFS
+    # So that each iteration considers a new spanning tree
+    # ---------------------------------------------------
+    
+    def computeRandomSpanningTree(G : Graph):
+     
+        T = Graph()
+        for i in range(len(G.nodes)):
+            T.add_node2(G.nodes[i])
+        
+        root = 0
+        visited = set()
+
+        def dfs(node):
+
+            visited.add(node)
+
+            neighbours = list(G.adj[G.nodes[node]])
+
+            random.shuffle(neighbours)
+
+            for neighbour in neighbours:
+
+                if neighbour.idx in visited:
+                    continue
+
+                T.add_edge(T.nodes[node], T.nodes[neighbour.idx], G.edges[(node,neighbour.idx)].time, G.edges[(node,neighbour.idx)].robotType)
 
                 dfs(neighbour.idx)
 
@@ -322,7 +357,10 @@ def graphSearch(G : Graph, shadyEdges, numOfTrees, availableRobots):
     bestStrategy = None
 
     for i in range(numOfTrees):
-        T = computeSpanningTree(G)
+        if i == 1:
+            T = computeGreedySpanningTree(G)
+        else:
+            T = computeRandomSpanningTree(G)
         treeStrategy = treeSearch(T)
         graphStrategy = transformStrategy(G,shadyEdges, treeStrategy)
         #Check if strategy is perfomable. If not use closing exists strategy
