@@ -29,7 +29,7 @@ class Graph:
     def __init__(self):
         self.nodes = []
         self.edges = {}                     # Saving all edges in the form {(u,v) : e}
-        self.adj = defaultdict(list)   # Saving all adjacent nodes for each node
+        self.adj = defaultdict(list)        # Saving all adjacent nodes for each node
                      
     #Adding a new node
     def add_node(self, idx, pos, prior):

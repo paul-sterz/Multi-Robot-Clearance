@@ -1,5 +1,5 @@
 import numpy as np
-import random
+import math
 from Graph import Graph, Node, Edge
 
 def graphSearch(G : Graph, shadyEdges, numOfTrees, availableRobots):
@@ -47,9 +47,14 @@ def graphSearch(G : Graph, shadyEdges, numOfTrees, availableRobots):
         # Check if leaf
         if len(childLabels) == 0:
             edgeLabelsRobotCost[(parent, root)] = 1
-               
-            totalPrior += T.nodes[root].prior 
-            totalTime +=  T.edges[(parent,root)].time
+            
+            if parent != None:
+                totalPrior += T.nodes[root].prior 
+                totalTime +=  T.edges[(parent,root)].time
+            else:
+                totalPrior += T.nodes[root].prior 
+                totalTime +=  T.edges[(parent,root)].time
+
             edgeLabelsEfficiency[(parent, root)] = totalPrior / totalTime
         else:
 
@@ -81,13 +86,13 @@ def graphSearch(G : Graph, shadyEdges, numOfTrees, availableRobots):
     
     # ---------------------------------------------------
     # CALCULATING A STRATEGY FOR TREES 
-    # Note: A Strategy is safed in the format [(source node,target node, amount of Robots),...]
+    # Note: A Strategy is safed in the format [(source node idx,target node idx, amount of Robots),...]
     # TO-DO: Compute both lables function. Define a formular for choosing a lable and then the rest should stay more or less the same.
     # ---------------------------------------------------
                     
     def treeSearch(T : Graph):
 
-        labelsRobotCost, lablesEficiency, _ , _ = computeLabels(T,0, None)
+        labelsRobotCost, lablesEfficiency, _ , _ = computeLabels(T,0, None)
 
         def explorePath(node):
             
@@ -98,8 +103,8 @@ def graphSearch(G : Graph, shadyEdges, numOfTrees, availableRobots):
     
             for y in T.adj[T.nodes[node]]:
                 currentLablesRobotCost.append((labelsRobotCost[(node,y.idx)], y.idx))
-                currentLablesEfficiency.append((lablesEficiency[(node, y.idx)], y.idx))
-                combinedLables.append(lablesEficiency[(node, y.idx)], labelsRobotCost[(node,y.idx)], y.idx)
+                currentLablesEfficiency.append((lablesEfficiency[(node, y.idx)], y.idx))
+                combinedLables.append((lablesEfficiency[(node, y.idx)], labelsRobotCost[(node,y.idx)], y.idx))
                
 
             if len(currentLablesRobotCost) > 0:
@@ -108,9 +113,11 @@ def graphSearch(G : Graph, shadyEdges, numOfTrees, availableRobots):
 
                 # Check if the max amount of robots is needed twice. Than the order of exploring can't effect the robot cost
                 twice = False
-                if currentLablesRobotCost[0][0] == currentLablesRobotCost[1][0]:
-                    twice = True
-                
+                if len(currentLablesRobotCost) > 1: #Is there more than one children
+                    if currentLablesRobotCost[0][0] == currentLablesRobotCost[1][0]:
+                        twice = True
+                else:   #If there is only one children there is no order
+                    twice = True 
                 counter = 1
                 if twice:
                     for (eff, robotsNeeded, y) in combinedLables: #Always explore the subtree with best efficiency
@@ -125,11 +132,11 @@ def graphSearch(G : Graph, shadyEdges, numOfTrees, availableRobots):
                             strategy.append((y,node,robotsNeeded))    
                             counter = counter + 1       
                 else:   
-                    max = currentLablesRobotCost[0][0]
+                    maximum = currentLablesRobotCost[0][0]
                     for k in range(len(combinedLables)):
                         (eff, robotsNeeded, y) = combinedLables[k]
-                        if robotsNeeded == max and counter != len(currentLablesRobotCost): #Check if we want to enter the biggest subtree early
-                            if eff > 2 * combinedLables[k+1]: #Score twice as good than we take the robot more
+                        if robotsNeeded == maximum and counter != len(currentLablesRobotCost): #Check if we want to enter the biggest subtree early
+                            if eff > 2 * combinedLables[k+1][0] : #Score twice as good than we take the robot more
                                 # adding the robot more on every move before
                                 currNode = None
                                 for j in range(len(strategy)):
@@ -137,7 +144,7 @@ def graphSearch(G : Graph, shadyEdges, numOfTrees, availableRobots):
                                     if u == currNode:
                                         strategy[j] = (u, v, k + 1)
                                         currNode = v
-                                    if v == strategy[i][0]:
+                                    if v == node:
                                         break
                                 # adding the strategy step
                                 strategy.append((node,y,robotsNeeded))
@@ -241,7 +248,7 @@ def graphSearch(G : Graph, shadyEdges, numOfTrees, availableRobots):
      
         T = Graph()
         for i in range(len(G.nodes)):
-            T.add_node2(G.nodes[i])
+            T.add_node(G.nodes[i].idx, G.nodes[i].pos, G.nodes[i].prior)
         
         root = 0
         visited = set()
@@ -260,7 +267,7 @@ def graphSearch(G : Graph, shadyEdges, numOfTrees, availableRobots):
                 if neighbour.idx in visited:
                     continue
 
-                T.add_edge(T.nodes[node], T.nodes[neighbour.idx])
+                T.add_edge(T.nodes[node], T.nodes[neighbour.idx], G.edges[(node,neighbour.idx)].time, 2)
 
                 dfs(neighbour.idx)
 
@@ -279,10 +286,30 @@ def graphSearch(G : Graph, shadyEdges, numOfTrees, availableRobots):
 
     # ---------------------------------------------------
     # COMPUTING EFFICENCY WITH WHICH TWO STRATEGYS ARE COMPARED
-    # TO-DO: Implement method
     # ---------------------------------------------------
-    def computeEfficiency(graphStrategy, G):
-        print("Hello World!")
+    def computeEfficiency(graphStrategy, G: Graph):
+        visited = set()
+        eff = 0
+        time = 0
+        for (source, target, robotsneeded) in graphStrategy:
+            if len(visited) == len(G.nodes): #Only count time until graph is cleared and not the walking back to root
+                break
+            if source != None:
+                #Note that for walking backwords a shady edge can be used which is not saved in the edges
+                if (source,target) in G.edges: #is the used edge regular?
+                    time += G.edges[(source,target)].time
+                else: #The other direction has to be regular edge so just use this time. TO-DO: Improve this by using the real shady edges
+                    time += G.edges[(target,source)].time
+            else:
+                time += 1
+
+            if target not in visited:
+                visited.add(target)
+                eff += G.nodes[target].prior * math.exp(-time) #exponential decrese of prior importance 
+
+        return eff
+
+
 
 
 
@@ -291,8 +318,7 @@ def graphSearch(G : Graph, shadyEdges, numOfTrees, availableRobots):
     # TO-DO: Using a formular that evaluates the strategys. If there are not enough robots either use the old one if for this there are enough robots or calculate closing exists for the new one and save it
     # ------------------------------------------------------------
 
-    minCost = np.inf
-    minEff = np.inf
+    minEff = -np.inf
     bestStrategy = None
 
     for i in range(numOfTrees):
@@ -300,15 +326,15 @@ def graphSearch(G : Graph, shadyEdges, numOfTrees, availableRobots):
         treeStrategy = treeSearch(T)
         graphStrategy = transformStrategy(G,shadyEdges, treeStrategy)
         #Check if strategy is perfomable. If not use closing exists strategy
-        if graphStrategy[0][2] < availableRobots:
+        if graphStrategy[0][2] <= availableRobots:
             # Compute efficiency score of strategy
-            eff = computeEfficiency(graphStrategy)
-            if eff < minEff:
+            eff = computeEfficiency(graphStrategy, G)
+            if eff > minEff:
                 minEff = eff
                 bestStrategy = graphStrategy
         else:
             graphStrategy, eff = computeClosingExits(graphStrategy, G)
-            if eff < minEff:
+            if eff > minEff:
                 minEff = eff
                 bestStrategy = graphStrategy
 
