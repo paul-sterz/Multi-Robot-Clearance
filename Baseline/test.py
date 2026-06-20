@@ -5,6 +5,7 @@ import plotly.graph_objects as go
 from GraphBuilderV2 import graphBuilder
 from Searcher import graphSearch
 from TrajectoryPlanning import computeTrajectory
+from Graph import Graph, Node, Edge
 
 
 # --------------------------------------------------
@@ -76,10 +77,8 @@ if run:
     with st.spinner("Building graph..."):
         G, shadyEdges, D = graphBuilder(obstacles, lambda p, obs: detectionFnc(p, obs, detection_radius), root)
 
-    print(str(G.edges.keys()))
-
     with st.spinner("Computing strategy..."):
-        strategy = graphSearch(G, shadyEdges,numOfTrees=num_trees)
+        strategy = graphSearch(G, shadyEdges,num_trees)
 
     with st.spinner("Planning trajectories..."):
         trajectories = computeTrajectory(obstacles, G, strategy, alpha)
