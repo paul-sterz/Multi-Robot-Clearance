@@ -72,13 +72,13 @@ if run:
     obstacles = np.zeros((H, W))
     obstacles[1:4, 5] = 1
     obstacles[4, 3:7] = 1
-    root = (0, 0)
+    root = {(0, 0), (0,1), (1,0)}
 
     with st.spinner("Building graph..."):
-        G, shadyEdges, D = graphBuilder(obstacles, lambda p, obs: detectionFnc(p, obs, detection_radius), root)
+        G, shadyEdges, D, startNodes = graphBuilder(obstacles, lambda p, obs: detectionFnc(p, obs, detection_radius), root)
 
     with st.spinner("Computing strategy..."):
-        strategy = graphSearch(G, shadyEdges,num_trees)
+        strategy = graphSearch(G, shadyEdges,num_trees, startNodes)
 
     with st.spinner("Planning trajectories..."):
         trajectories = computeTrajectory(obstacles, G, strategy, alpha)

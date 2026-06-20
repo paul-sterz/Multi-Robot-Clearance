@@ -5,7 +5,7 @@ from Graph import Graph, Node, Edge
 
 
 
-def graphBuilder(obstacles, detectionFnc, root):
+def graphBuilder(obstacles, detectionFnc, startRegion):
     # INPUT:
     # obstacles: (H,W) dimensional numpy array that represents the enviroment, 1=obstacle, 0=free
     # detectionFnc: function p -> set of detected cells
@@ -41,13 +41,17 @@ def graphBuilder(obstacles, detectionFnc, root):
     covered = set()
     uncovered = E
     
-    #Adding root
-    G.add_node(0,root)
-    Di = set(detectionFnc(root, obstacles))
-    Di = Di & E 
-    D.append(Di)
-    covered = covered | Di 
-    uncovered = uncovered - Di
+    #Adding start region
+    while len(startRegion & uncovered) > 0:
+        root = random.choice(tuple(startRegion & uncovered))
+        Di = set(detectionFnc(root, obstacles))
+        Di = Di & E 
+        D.append(Di)
+        G.add_node(0,root)
+        covered = covered | Di 
+        uncovered = uncovered - Di
+
+    startNodes = len(G.nodes)
 
     i = 1
 
@@ -125,4 +129,4 @@ def graphBuilder(obstacles, detectionFnc, root):
             else:
                 G.add_edge(G.nodes[i], G.nodes[j])
 
-    return G, edges_shady, D
+    return G, edges_shady, D, startNodes

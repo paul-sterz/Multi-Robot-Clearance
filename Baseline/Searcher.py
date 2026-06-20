@@ -2,7 +2,7 @@ import numpy as np
 import random
 from Graph import Graph, Node, Edge
 
-def graphSearch(G : Graph, shadyEdges, numOfTrees):
+def graphSearch(G : Graph, shadyEdges, numOfTrees, startNodes):
     #INPUT:
     # G: a Graph object repesenting the given Graph
     # edges_shady:a list containing all shady edges in the form (i,j)
@@ -62,9 +62,9 @@ def graphSearch(G : Graph, shadyEdges, numOfTrees):
     # Note: A Strategy is safed in the format [(source node,target node, amount of Robots),...]
     # ---------------------------------------------------
                     
-    def treeSearch(T : Graph):
+    def treeSearch(T : Graph, root):
 
-        labels = computeLabels(T,0, None)
+        labels = computeLabels(T,root, None)
 
         def explorePath(node):
             
@@ -92,11 +92,11 @@ def graphSearch(G : Graph, shadyEdges, numOfTrees):
             
             return strategy
 
-        strategy = explorePath(0)
+        strategy = explorePath(root)
 
-        robotCost = labels[(None, 0)]
+        robotCost = labels[(None, root)]
 
-        strategy.insert(0, (None,0,robotCost))
+        strategy.insert(0, (None,root,robotCost))
 
         return strategy
         
@@ -168,13 +168,12 @@ def graphSearch(G : Graph, shadyEdges, numOfTrees):
     # COMPUTING A RANDOM SPANNING TREE WITH DFS
     # ---------------------------------------------------
 
-    def computeRandomSpanningTree(G : Graph):
+    def computeRandomSpanningTree(G : Graph, root):
      
         T = Graph()
         for i in range(len(G.nodes)):
             T.add_node2(G.nodes[i])
         
-        root = 0
         visited = set()
 
         def dfs(node):
@@ -208,8 +207,9 @@ def graphSearch(G : Graph, shadyEdges, numOfTrees):
     bestStrategy = None
 
     for i in range(numOfTrees):
-        T = computeRandomSpanningTree(G)
-        treeStrategy = treeSearch(T)
+        root = random.randint(0,startNodes-1)
+        T = computeRandomSpanningTree(G,root)
+        treeStrategy = treeSearch(T,root)
         graphStrategy = transformStrategy(G,shadyEdges, treeStrategy)
         if graphStrategy[0][2] < minCost:
             minCost = graphStrategy[0][2]
