@@ -5,17 +5,17 @@ from Graph import Graph, Node, Edge
 
 
 
-def graphBuilder(obstacles, priors, detectionFnc, root):
+def graphBuilder(obstacles, priors, detectionFnc, startRegion):
     # INPUT:
     # obstacles: (H,W) dimensional numpy array that represents the enviroment, 1=obstacle, 0=free
     # priors: (H,W) dimensional numpy array that represents the enviroment and has the prior values for each cell
     # detectionFnc: function p -> set of detected cells
-    # root: tuple of point where the robots start
+    # startRegion: set of tuples of point where the robots can start
 
     # OUTPUT:
     # G: a Graph object representing the created Graph using only the regular edges
     # edges_shady:a list containing all shady edges in the form (i,j)
-    #D :a list containing the detection set for every point in P
+    # D :a list containing the detection set for every point in P
 
     
 
@@ -42,17 +42,20 @@ def graphBuilder(obstacles, priors, detectionFnc, root):
     covered = set()
     uncovered = E
     
-    #Adding root
-   
-    Di = set(detectionFnc(root, obstacles))
-    Di = Di & E 
-    D.append(Di)
-    p = 0
-    for (x,y) in Di:
-        p += priors[x,y]
-    G.add_node(0,root, p)
-    covered = covered | Di 
-    uncovered = uncovered - Di
+    #Adding start region
+    while len(startRegion & uncovered) > 0:
+        root = random.choice(tuple(startRegion & uncovered))
+        Di = set(detectionFnc(root, obstacles))
+        Di = Di & E 
+        D.append(Di)
+        p = 0
+        for (x,y) in Di:
+            p += priors[x,y]
+        G.add_node(0,root, p)
+        covered = covered | Di 
+        uncovered = uncovered - Di
+
+    startNodes = len(G.nodes)
 
     i = 1
 
@@ -134,4 +137,4 @@ def graphBuilder(obstacles, priors, detectionFnc, root):
             else:
                 G.add_edge(G.nodes[i], G.nodes[j],1,2)
 
-    return G, edges_shady, D
+    return G, edges_shady, D, startNodes

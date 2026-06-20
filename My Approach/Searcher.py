@@ -3,10 +3,12 @@ import math
 import random
 from Graph import Graph, Node, Edge
 
-def graphSearch(G : Graph, shadyEdges, numOfTrees, availableRobots):
+def graphSearch(G : Graph, shadyEdges, numOfTrees, availableRobots, startNodes):
     #INPUT:
     # G: a Graph object repesenting the merged navigationgraph
     # numOfTrees: an integer which represents the number of evaluated trees
+    # availableRobots: an integer representing the amount of robots available
+    # startNodes:  an integer representing that all nodes from 0 to startNode-1 are valid startNodes for our Algorithim
     # aerialSpeed: TO-DO
     # groundSpeed: TO-DO
     # aerialBattery: TO-DO
@@ -91,9 +93,9 @@ def graphSearch(G : Graph, shadyEdges, numOfTrees, availableRobots):
     # TO-DO: Compute both lables function. Define a formular for choosing a lable and then the rest should stay more or less the same.
     # ---------------------------------------------------
                     
-    def treeSearch(T : Graph):
+    def treeSearch(T : Graph, root):
 
-        labelsRobotCost, lablesEfficiency, _ , _ = computeLabels(T,0, None)
+        labelsRobotCost, lablesEfficiency, _ , _ = computeLabels(T,root, None)
 
         def explorePath(node):
             
@@ -171,11 +173,11 @@ def graphSearch(G : Graph, shadyEdges, numOfTrees, availableRobots):
                             counter = counter + 1        
             return strategy
 
-        strategy = explorePath(0)
+        strategy = explorePath(root)
 
-        robotCost = labelsRobotCost[(None, 0)]
+        robotCost = labelsRobotCost[(None, root)]
 
-        strategy.insert(0, (None,0,robotCost))
+        strategy.insert(0, (None,root,robotCost))
 
         return strategy
         
@@ -245,13 +247,12 @@ def graphSearch(G : Graph, shadyEdges, numOfTrees, availableRobots):
     # The generation uses a greedy choice for the node with the highest prior
     # ---------------------------------------------------
 
-    def computeGreedySpanningTree(G : Graph):
+    def computeGreedySpanningTree(G : Graph, root):
      
         T = Graph()
         for i in range(len(G.nodes)):
             T.add_node(G.nodes[i].idx, G.nodes[i].pos, G.nodes[i].prior)
         
-        root = 0
         visited = set()
 
         def dfs(node):
@@ -280,13 +281,12 @@ def graphSearch(G : Graph, shadyEdges, numOfTrees, availableRobots):
     # So that each iteration considers a new spanning tree
     # ---------------------------------------------------
     
-    def computeRandomSpanningTree(G : Graph):
+    def computeRandomSpanningTree(G : Graph, root):
      
         T = Graph()
         for i in range(len(G.nodes)):
             T.add_node2(G.nodes[i])
         
-        root = 0
         visited = set()
 
         def dfs(node):
@@ -355,13 +355,19 @@ def graphSearch(G : Graph, shadyEdges, numOfTrees, availableRobots):
 
     minEff = -np.inf
     bestStrategy = None
+    counter = [0] * startNodes
 
     for i in range(numOfTrees):
-        if i == 1:
-            T = computeGreedySpanningTree(G)
+
+        root = random.randint(0,startNodes-1)
+
+        if counter[root] == 0:
+            T = computeGreedySpanningTree(G,root)
+            counter[root] += 1
         else:
-            T = computeRandomSpanningTree(G)
-        treeStrategy = treeSearch(T)
+            T = computeRandomSpanningTree(G,root)
+
+        treeStrategy = treeSearch(T,root)
         graphStrategy = transformStrategy(G,shadyEdges, treeStrategy)
         #Check if strategy is perfomable. If not use closing exists strategy
         if graphStrategy[0][2] <= availableRobots:
