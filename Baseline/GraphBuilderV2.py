@@ -75,20 +75,25 @@ def graphBuilder(obstacles, detectionFnc, startRegion):
 
     # ---------------------------------------------------
     # PART 2: BOUNDARY COMPUTATION
-    # Note: Each cell in the detection set with neighbours outside the set is contained in the boundary 
+    # Note: Each cell in the detection set with neighbours outside or a Node outside the detection set with a neighbour inside is contained in the boundary 
     # ---------------------------------------------------
 
     def compute_boundary(Di):
         boundary = set()
 
-        for (x, y) in Di:
+        for (x, y) in E:
             neighbors = [(x+1, y), (x-1, y), (x, y+1), (x, y-1)]
 
-            for nx, ny in neighbors:
-                if (nx, ny) in E and (nx, ny) not in Di:
-                    boundary.add((x, y))
-                    break
-
+            if (x, y) in Di:
+                for nx, ny in neighbors:
+                    if (nx, ny) in E and (nx, ny) not in Di:
+                        boundary.add((x, y))
+                        break
+            elif (x,y) not in Di:
+                for nx, ny in neighbors:
+                    if (nx, ny) in E and (nx, ny) in Di:
+                        boundary.add((x, y))
+                        break
         return boundary
 
     boundaries = [compute_boundary(Di) for Di in D] #Calculating boundaries for every detection set

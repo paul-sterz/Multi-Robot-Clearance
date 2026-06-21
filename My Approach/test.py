@@ -9,7 +9,8 @@ from Graph import Graph, Node, Edge
 
 
 # --------------------------------------------------
-# DETECTION FUNCTION
+# SIMPLE DETECTION FUNCTION
+# -> Just returing all cells within radius ignoring obstacles
 # --------------------------------------------------
 
 def detectionFnc(p, obstacles, radius=3):
@@ -34,7 +35,8 @@ st.title("Multi-Robot Clearance")
 
 
 # --------------------------------------------------
-# SIDEBAR
+# SIDEBAR WITH SLIDERS
+# Note: Sliderformat is (min, max, default)
 # --------------------------------------------------
 
 with st.sidebar:
@@ -64,6 +66,8 @@ with st.sidebar:
 
 # --------------------------------------------------
 # SESSION STATE
+# -> Streamlit deletes all variables after each run. 
+#    st.session_state is retained through all runs
 # --------------------------------------------------
 
 def _init_grid(H, W):
