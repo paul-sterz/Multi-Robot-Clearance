@@ -106,6 +106,9 @@ def graphBuilder(obstacles, priors, detectionFnc, startRegion):
 
     boundaries = [compute_boundary(Di) for Di in D] #Calculating boundaries for every detection set
 
+    print(boundaries[0])
+    print(D[0])
+
     # ---------------------------------------------------
     # PART 3: EDGE CONSTRUCTION
     # ---------------------------------------------------
@@ -141,5 +144,6 @@ def graphBuilder(obstacles, priors, detectionFnc, startRegion):
                 edges_shady.append((i, j))
             else:
                 G.add_edge(G.nodes[i], G.nodes[j],1,2)
+
 
     return G, edges_shady, D, startNodes

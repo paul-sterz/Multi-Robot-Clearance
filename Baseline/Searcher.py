@@ -126,7 +126,6 @@ def graphSearch(G : Graph, shadyEdges, numOfTrees, startNodes):
 
             if strategy[i][0] != None and rCounter[strategy[i][0]] == 0: #Are there still any robots left on the last node?
 
-                exists = False
 
                 for (u,v) in G.edges.keys(): #check regular edges
                     if u in contaminationArea and v == strategy[i][0]: #Is there an edge that leads to recontamination?
@@ -140,23 +139,7 @@ def graphSearch(G : Graph, shadyEdges, numOfTrees, startNodes):
                                 break
 
                         rCounter[strategy[i][0]] = 1
-                        exists = True
                         break
-                
-                if exists == False:
-                    for (u,v) in shadyEdges: #check shady edges
-                        if u in contaminationArea and v == strategy[i][0]: #Is there an edge that leads to recontamination?
-                            currNode = None
-                            for j in range(i):
-                                u, v, k = strategy[j]
-                                if u == currNode:
-                                    strategy[j] = (u, v, k + 1)
-                                    currNode = v
-                                if v == strategy[i][0]:
-                                    break
-
-                            rCounter[strategy[i][0]] = 1
-                            break
 
         return strategy
 

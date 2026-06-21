@@ -195,7 +195,10 @@ def graphSearch(G : Graph, shadyEdges, numOfTrees, availableRobots, startNodes):
 
         rCounter = [0] * len(G.nodes)
 
-        for i in range(len(strategy)):
+        i = 0
+
+        while i < len(strategy):
+
             if strategy[i][1] in contaminationArea:
                 contaminationArea.remove(strategy[i][1])
                 
@@ -207,10 +210,9 @@ def graphSearch(G : Graph, shadyEdges, numOfTrees, availableRobots, startNodes):
 
             if strategy[i][0] != None and rCounter[strategy[i][0]] == 0: #Are there still any robots left on the last node?
 
-                exists = False
-
-                for (u,v) in G.edges.keys(): #check regular edges
+                for (u,v) in G.edges.keys(): #Note that only regular edges have to be checked since shady ones are included in an regular edge
                     if u in contaminationArea and v == strategy[i][0]: #Is there an edge that leads to recontamination?
+
                         currNode = None
                         for j in range(i):
                             u, v, k = strategy[j]
@@ -220,24 +222,13 @@ def graphSearch(G : Graph, shadyEdges, numOfTrees, availableRobots, startNodes):
                             if v == strategy[i][0]:
                                 break
 
+                        if strategy[i][2] == 1 and strategy[i-1][0] == strategy[i][0] and strategy[i-1][1] == strategy[i][1]: #Check if there is a slide move which now gets unnecessary
+                            strategy.pop(i) #delete the slide move
+                            strategy[i-1] = (strategy[i-1][0],strategy[i-1][1] ,strategy[i-1][2] + 1)
+                            i -= 1
                         rCounter[strategy[i][0]] = 1
-                        exists = True
                         break
-                
-                if exists == False:
-                    for (u,v) in shadyEdges: #check shady edges
-                        if u in contaminationArea and v == strategy[i][0]: #Is there an edge that leads to recontamination?
-                            currNode = None
-                            for j in range(i):
-                                u, v, k = strategy[j]
-                                if u == currNode:
-                                    strategy[j] = (u, v, k + 1)
-                                    currNode = v
-                                if v == strategy[i][0]:
-                                    break
-
-                            rCounter[strategy[i][0]] = 1
-                            break
+            i += 1
 
         return strategy
             
