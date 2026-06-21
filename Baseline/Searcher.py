@@ -205,6 +205,7 @@ def graphSearch(G : Graph, shadyEdges, numOfTrees, startNodes):
 
     minCost = np.inf
     bestStrategy = None
+    bestTree = None
 
     for i in range(numOfTrees):
         root = random.randint(0,startNodes-1)
@@ -214,6 +215,7 @@ def graphSearch(G : Graph, shadyEdges, numOfTrees, startNodes):
         if graphStrategy[0][2] < minCost:
             minCost = graphStrategy[0][2]
             bestStrategy = graphStrategy
+            bestTree = T
 
-    return bestStrategy
+    return bestStrategy, bestTree
 

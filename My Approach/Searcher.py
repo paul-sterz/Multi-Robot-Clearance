@@ -355,6 +355,7 @@ def graphSearch(G : Graph, shadyEdges, numOfTrees, availableRobots, startNodes):
 
     minEff = -np.inf
     bestStrategy = None
+    bestTree = None
     counter = [0] * startNodes
 
     for i in range(numOfTrees):
@@ -376,11 +377,13 @@ def graphSearch(G : Graph, shadyEdges, numOfTrees, availableRobots, startNodes):
             if eff > minEff:
                 minEff = eff
                 bestStrategy = graphStrategy
+                bestTree = T
         else:
             graphStrategy, eff = computeClosingExits(graphStrategy, G)
             if eff > minEff:
                 minEff = eff
                 bestStrategy = graphStrategy
+                bestTree = T
 
-    return bestStrategy
+    return bestStrategy, bestTree
 
