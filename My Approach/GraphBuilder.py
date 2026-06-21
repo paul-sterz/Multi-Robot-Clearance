@@ -41,7 +41,7 @@ def graphBuilder(obstacles, priors, detectionFnc, startRegion):
 
     covered = set()
     uncovered = E
-    
+    k = 0
     #Adding start region
     while len(startRegion & uncovered) > 0:
         root = random.choice(tuple(startRegion & uncovered))
@@ -51,13 +51,14 @@ def graphBuilder(obstacles, priors, detectionFnc, startRegion):
         p = 0
         for (x,y) in Di:
             p += priors[x,y]
-        G.add_node(0,root, p)
+        G.add_node(k,root, p)
         covered = covered | Di 
         uncovered = uncovered - Di
+        k += 1
 
-    startNodes = len(G.nodes)
+    startNodes = k
 
-    i = 1
+    i = startNodes
 
     while len(uncovered) > 0:
 
@@ -106,8 +107,6 @@ def graphBuilder(obstacles, priors, detectionFnc, startRegion):
 
     boundaries = [compute_boundary(Di) for Di in D] #Calculating boundaries for every detection set
 
-    print(boundaries[0])
-    print(D[0])
 
     # ---------------------------------------------------
     # PART 3: EDGE CONSTRUCTION
@@ -144,6 +143,5 @@ def graphBuilder(obstacles, priors, detectionFnc, startRegion):
                 edges_shady.append((i, j))
             else:
                 G.add_edge(G.nodes[i], G.nodes[j],1,2)
-
 
     return G, edges_shady, D, startNodes

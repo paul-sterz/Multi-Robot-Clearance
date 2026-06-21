@@ -239,7 +239,7 @@ def graphSearch(G : Graph, shadyEdges, numOfTrees, availableRobots, startNodes):
     # ---------------------------------------------------
 
     def computeGreedySpanningTree(G : Graph, root):
-     
+        
         T = Graph()
         for i in range(len(G.nodes)):
             T.add_node(G.nodes[i].idx, G.nodes[i].pos, G.nodes[i].prior)

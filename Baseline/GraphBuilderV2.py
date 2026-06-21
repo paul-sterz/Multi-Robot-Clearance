@@ -40,20 +40,22 @@ def graphBuilder(obstacles, detectionFnc, startRegion):
 
     covered = set()
     uncovered = E
-    
+    k = 0
+
     #Adding start region
     while len(startRegion & uncovered) > 0:
         root = random.choice(tuple(startRegion & uncovered))
         Di = set(detectionFnc(root, obstacles))
         Di = Di & E 
         D.append(Di)
-        G.add_node(0,root)
+        G.add_node(k,root)
+        k += 1
         covered = covered | Di 
         uncovered = uncovered - Di
 
-    startNodes = len(G.nodes)
+    startNodes = k
 
-    i = 1
+    i = startNodes
 
     while len(uncovered) > 0:
 
