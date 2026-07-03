@@ -9,19 +9,59 @@ from Graph import Graph, Node, Edge
 
 
 # --------------------------------------------------
-# DETECTION FUNCTION
+# SIMPLE DETECTION FUNCTION
 # --------------------------------------------------
 
 def detectionFnc(p, obstacles, radius=3):
     H, W = obstacles.shape
     px, py = p
+
+    # Simplified version of the Bresenham Algorithm
+    def has_clear_line_of_sight(x0, y0, x1, y1):
+        xold = x0
+        yold = y0
+        dx = x1 - x0
+        dy = y1 - y0
+        steps = max(abs(dx), abs(dy))
+        
+        if steps == 0:
+            return True
+        
+        for i in range(1, steps + 1):
+            #Calculating the new position
+            x = round(x0 + dx * i / steps)
+            y = round(y0 + dy * i / steps)
+
+            # If it's a cross move also check the cells to get there
+            if x != xold and y != yold:
+                if abs(dy) == abs(dx):
+                    if obstacles[x, yold] == 1 or obstacles[xold, y] == 1:
+                        return False    
+                elif steps == abs(dx): 
+                    if obstacles[x, yold] == 1:
+                        return False
+                else:
+                    if obstacles[xold, y] == 1:
+                        return False
+
+            # Check the new position
+            if obstacles[x, y] == 1:
+                return False
+            
+            xold = x
+            yold = y
+        
+        return True
+
+
     visible = set()
     for x in range(H):
         for y in range(W):
             if obstacles[x, y] == 1:
                 continue
             if np.sqrt((x - px) ** 2 + (y - py) ** 2) <= radius:
-                visible.add((x, y))
+                if has_clear_line_of_sight(px, py, x, y):
+                    visible.add((x, y))
     return visible
 
 
