@@ -127,7 +127,12 @@ def graphSearch(G : Graph, shadyEdges, numOfTrees, availableRobots, startNodes):
                 if twice:
                     for (eff, robotsNeeded, y) in combinedLables: #Always explore the subtree with best efficiency
                         if counter == len(currentLablesRobotCost) and robotsNeeded != 1: #Don't allow slide moves! Note that they can only be neicessary in the last move
-                            strategy.append((node,y,robotsNeeded))
+                            if len(currentLablesRobotCost) == 1: 
+                                strategy.append((node,y,robotsNeeded - 1))
+                                strategy.append((node,y,1))
+                            else: # If same amount of robot appears twice than we have one robot in spare hence no slide move has to be prevented
+                                strategy.append((node,y,robotsNeeded))
+
                             visited[y] = 1
                             strategy.extend(explorePath(y))
                             # Check if there is need for backtracking or if everything is visited so we are finished
@@ -327,7 +332,7 @@ def graphSearch(G : Graph, shadyEdges, numOfTrees, availableRobots, startNodes):
     # ---------------------------------------------------
     # COMPUTING EFFICENCY WITH WHICH TWO STRATEGYS ARE COMPARED
     # ---------------------------------------------------
-    def computeEfficiency(graphStrategy, G: Graph):
+    def computeExpTime(graphStrategy, G: Graph):
         visited = set()
         eff = 0
         time = 0
@@ -358,7 +363,7 @@ def graphSearch(G : Graph, shadyEdges, numOfTrees, availableRobots, startNodes):
     # TO-DO: Using a formular that evaluates the strategys. If there are not enough robots either use the old one if for this there are enough robots or calculate closing exists for the new one and save it
     # ------------------------------------------------------------
 
-    minEff = -np.inf
+    minExpTime = np.inf
     bestStrategy = None
     bestTree = None
     counter = [0] * startNodes
@@ -378,15 +383,15 @@ def graphSearch(G : Graph, shadyEdges, numOfTrees, availableRobots, startNodes):
         #Check if strategy is perfomable. If not use closing exists strategy
         if graphStrategy[0][2] <= availableRobots:
             # Compute efficiency score of strategy
-            eff = computeEfficiency(graphStrategy, G)
-            if eff > minEff:
-                minEff = eff
+            expTime = computeExpTime(graphStrategy, G)
+            if expTime < minExpTime:
+                minExpTime = expTime
                 bestStrategy = graphStrategy
                 bestTree = T
         else:
-            graphStrategy, eff = computeClosingExits(graphStrategy, G)
-            if eff > minEff:
-                minEff = eff
+            graphStrategy, expTime = computeClosingExits(graphStrategy, G)
+            if expTime < minExpTime:
+                minExpTime = expTime
                 bestStrategy = graphStrategy
                 bestTree = T
 
