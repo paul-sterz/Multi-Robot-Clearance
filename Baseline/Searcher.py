@@ -66,6 +66,9 @@ def graphSearch(G : Graph, shadyEdges, numOfTrees, startNodes):
 
         labels = computeLabels(T,root, None)
 
+        visited = [0] * len(T.nodes)
+        visited[root] = 1
+
         def explorePath(node):
             
             strategy = []
@@ -81,13 +84,19 @@ def graphSearch(G : Graph, shadyEdges, numOfTrees, startNodes):
                 for (robotsNeeded, y) in currentLables:
                     if counter == len(currentLables) and robotsNeeded != 1: #Don't allow slide moves! Note that they can only be neicessary in the last move
                         strategy.append((node,y,robotsNeeded-1))
+                        visited[y] = 1
                         strategy.append((node,y,1))
                         strategy.extend(explorePath(y))
-                        strategy.append((y,node,robotsNeeded))
+                        # Check if there is need for backtracking or if everything is visited so we are finished
+                        if visited != [1] * len(visited):
+                            strategy.append((y,node,robotsNeeded))
                     else:
                         strategy.append((node,y,robotsNeeded))
+                        visited[y] = 1
                         strategy.extend(explorePath(y))
-                        strategy.append((y,node,robotsNeeded))    
+                        # Check if there is need for backtracking or if everything is visited so we are finished
+                        if visited != [1] * len(visited):
+                            strategy.append((y,node,robotsNeeded))    
                         counter = counter + 1        
             
             return strategy

@@ -97,6 +97,9 @@ def graphSearch(G : Graph, shadyEdges, numOfTrees, availableRobots, startNodes):
 
         labelsRobotCost, lablesEfficiency, _ , _ = computeLabels(T,root, None)
 
+        visited = [0] * len(T.nodes)
+        visited[root] = 1
+
         def explorePath(node):
             
             strategy = []
@@ -126,13 +129,19 @@ def graphSearch(G : Graph, shadyEdges, numOfTrees, availableRobots, startNodes):
                     for (eff, robotsNeeded, y) in combinedLables: #Always explore the subtree with best efficiency
                         if counter == len(currentLablesRobotCost) and robotsNeeded != 1: #Don't allow slide moves! Note that they can only be neicessary in the last move
                             strategy.append((node,y,robotsNeeded-1))
+                            visited[y] = 1
                             strategy.append((node,y,1))
                             strategy.extend(explorePath(y))
-                            strategy.append((y,node,robotsNeeded))
+                            # Check if there is need for backtracking or if everything is visited so we are finished
+                            if visited != [1] * len(visited):
+                                strategy.append((y,node,robotsNeeded))
                         else:
                             strategy.append((node,y,robotsNeeded))
+                            visited[y] = 1
                             strategy.extend(explorePath(y))
-                            strategy.append((y,node,robotsNeeded))    
+                            # Check if there is need for backtracking or if everything is visited so we are finished
+                            if visited != [1] * len(visited):
+                                strategy.append((y,node,robotsNeeded))    
                             counter = counter + 1       
                 else:   
                     maximum = currentLablesRobotCost[0][0]
@@ -151,8 +160,11 @@ def graphSearch(G : Graph, shadyEdges, numOfTrees, availableRobots, startNodes):
                                         break
                                 # adding the strategy step
                                 strategy.append((node,y,robotsNeeded))
+                                visited[y] = 1
                                 strategy.extend(explorePath(y))
-                                strategy.append((y,node,robotsNeeded))    
+                                # Check if there is need for backtracking or if everything is visited so we are finished
+                                if visited != [1] * len(visited):
+                                    strategy.append((y,node,robotsNeeded))    
                                 counter = counter + 1 
                                 continue  
                             else:    
@@ -163,18 +175,23 @@ def graphSearch(G : Graph, shadyEdges, numOfTrees, availableRobots, startNodes):
             
                         if counter == len(currentLablesRobotCost) and robotsNeeded != 1: #Don't allow slide moves! Note that they can only be neicessary in the last move
                             strategy.append((node,y,robotsNeeded-1))
+                            visited[y] = 1
                             strategy.append((node,y,1))
                             strategy.extend(explorePath(y))
-                            strategy.append((y,node,robotsNeeded))
+                            # Check if there is need for backtracking or if everything is visited so we are finished
+                            if visited != [1] * len(visited):
+                                strategy.append((y,node,robotsNeeded))
                         else:
                             strategy.append((node,y,robotsNeeded))
+                            visited[y] = 1
                             strategy.extend(explorePath(y))
-                            strategy.append((y,node,robotsNeeded))    
+                            # Check if there is need for backtracking or if everything is visited so we are finished
+                            if visited != [1] * len(visited):
+                                strategy.append((y,node,robotsNeeded))    
                             counter = counter + 1        
             return strategy
 
         strategy = explorePath(root)
-
         robotCost = labelsRobotCost[(None, root)]
 
         strategy.insert(0, (None,root,robotCost))
@@ -184,7 +201,6 @@ def graphSearch(G : Graph, shadyEdges, numOfTrees, availableRobots, startNodes):
     
     # -------------------------------------------------------------------------------------
     # TRANSFORMING THE STRATEGY FROM TREE TO GRAPH
-    # TO-DO: Make sure that slide moves are only prevented if neicessary. This could be done by adding in each strategy step a 0 or a 1 which represents if this is done to prevent a slide move. Or by transforming the strategy while determining it.
     # -------------------------------------------------------------------------------------
 
     def transformStrategy(G : Graph, shadyEdges, strategy):
