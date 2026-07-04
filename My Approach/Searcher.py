@@ -90,7 +90,6 @@ def graphSearch(G : Graph, shadyEdges, numOfTrees, availableRobots, startNodes):
     # ---------------------------------------------------
     # CALCULATING A STRATEGY FOR TREES 
     # Note: A Strategy is safed in the format [(source node idx,target node idx, amount of Robots),...]
-    # TO-DO: Compute both lables function. Define a formular for choosing a lable and then the rest should stay more or less the same.
     # ---------------------------------------------------
                     
     def treeSearch(T : Graph, root):
@@ -128,9 +127,8 @@ def graphSearch(G : Graph, shadyEdges, numOfTrees, availableRobots, startNodes):
                 if twice:
                     for (eff, robotsNeeded, y) in combinedLables: #Always explore the subtree with best efficiency
                         if counter == len(currentLablesRobotCost) and robotsNeeded != 1: #Don't allow slide moves! Note that they can only be neicessary in the last move
-                            strategy.append((node,y,robotsNeeded-1))
+                            strategy.append((node,y,robotsNeeded))
                             visited[y] = 1
-                            strategy.append((node,y,1))
                             strategy.extend(explorePath(y))
                             # Check if there is need for backtracking or if everything is visited so we are finished
                             if visited != [1] * len(visited):
@@ -347,7 +345,7 @@ def graphSearch(G : Graph, shadyEdges, numOfTrees, availableRobots, startNodes):
 
             if target not in visited:
                 visited.add(target)
-                eff += G.nodes[target].prior * math.exp(-time) #exponential decrese of prior importance 
+                eff += G.nodes[target].prior * time # calculate the expected value of detection time
 
         return eff
 
