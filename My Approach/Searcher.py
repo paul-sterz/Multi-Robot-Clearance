@@ -2,8 +2,9 @@ import numpy as np
 import math
 import random
 from Graph import Graph, Node, Edge
+from itertools import combinations
 
-def graphSearch(G : Graph, shadyEdges, numOfTrees, availableRobots, startNodes):
+def graphSearch(G : Graph, numOfTrees, availableRobots, startNodes):
     #INPUT:
     # G: a Graph object repesenting the merged navigationgraph
     # numOfTrees: an integer which represents the number of evaluated trees
@@ -18,15 +19,18 @@ def graphSearch(G : Graph, shadyEdges, numOfTrees, availableRobots, startNodes):
     #bestStrategy: A list containing the best strategy where each entry is in the form (source node,target node, amount of Robots)
 
     # ---------------------------------------------------
-    # COMPUTING EDGE LABLES FOR THE TREE SEARCH THAT REPRESENT THE AMOUNT OF NEEDED ROBOTS
+    # COMPUTING EDGE LABLES FOR THE TREE SEARCH THAT REPRESENT THE AMOUNT OF NEEDED ROBOTS AND THE EFFICIENCY OF EACH SUBTREE
     # Remark: Lables represent the amount of robots needed for this path
     # --------------------------------------------------- 
 
     def computeLabels(T : Graph, root, parent):
 
-        #Saving labels in a dictionary of the form: (x,y) | lambda((x,y))
+        #Saving labels in a dictionary of the form: ((x,y) | lambda((x,y))
         edgeLabelsRobotCost = {} 
-        edgeLabelsEfficiency = {} 
+        edgeLabelsEfficiency = {}
+
+        #All options to take multiple edges at once Saved in the Form (root | (children, robotcost, efficiency))
+        multipleAtOnce = {} 
 
         # Keep track of total prior and time in subtree
         totalTime = 0
@@ -34,18 +38,25 @@ def graphSearch(G : Graph, shadyEdges, numOfTrees, availableRobots, startNodes):
 
         #Saving pi meaning all children of the root
         childLabels = [] 
+        children = []
+        subTreePriors = {} #in form (child | subTreePrior)
+        subTreeTimes = {} #in form (child | subTreeTime)
 
         # Calculating lables recursive for children
         for y in T.adj[T.nodes[root]]:
             if y.idx != parent:
-                subLabelsRobotCost, subLablesEfficiency, sumTime, sumPrior = computeLabels(T, y.idx, root)
+                subLabelsRobotCost, subLablesEfficiency, subMultipleAtOnce, sumTime, sumPrior = computeLabels(T, y.idx, root)
                 totalTime += sumTime
                 totalPrior += sumPrior
 
-                edgeLabelsEfficiency.update(subLablesEfficiency)
+                subTreePriors[y.idx] = sumPrior
+                subTreeTimes[y.idx] =  sumTime
 
+                edgeLabelsEfficiency.update(subLablesEfficiency)
+                multipleAtOnce.update(subMultipleAtOnce)
                 edgeLabelsRobotCost.update(subLabelsRobotCost)
                 childLabels.append(subLabelsRobotCost[(root, y.idx)])
+                children.append(y.idx)
   
         # Check if leaf
         if len(childLabels) == 0:
@@ -84,7 +95,23 @@ def graphSearch(G : Graph, shadyEdges, numOfTrees, availableRobots, startNodes):
                 totalTime = 1
             edgeLabelsEfficiency[(parent, root)] = totalPrior / totalTime
 
-        return edgeLabelsRobotCost, edgeLabelsEfficiency, totalTime, totalPrior
+            #calculating the efficency when multiple subtrees can be explored at the same time
+            multipleAtOnce[root] = []
+            if len(childLabels) >= 2:
+                for r in range(2,len(childLabels) + 1):
+                    for perumtation in combinations(children,r):
+                        robotCost = sum(edgeLabelsRobotCost[(root, child)]for child in  perumtation)
+
+                        tmax = 0
+                        for child in perumtation:
+                            if subTreeTimes[child] > tmax:
+                                tmax = subTreeTimes[child]
+
+                        efficiency = sum(subTreePriors[child] for child in perumtation) / tmax
+                        multipleAtOnce[root].append((perumtation,robotCost, efficiency))
+                  
+
+        return edgeLabelsRobotCost, edgeLabelsEfficiency, multipleAtOnce, totalTime, totalPrior
     
     
     # ---------------------------------------------------
@@ -92,11 +119,14 @@ def graphSearch(G : Graph, shadyEdges, numOfTrees, availableRobots, startNodes):
     # Note: A Strategy is safed in the format [(source node idx,target node idx, amount of Robots, timestamp),...]
     # ---------------------------------------------------
                     
-    def treeSearch(T : Graph, root):
+    def treeSearch(T : Graph, root, availableRobots):
 
-        labelsRobotCost, lablesEfficiency, _ , _ = computeLabels(T,root, None)
+        time = 0 
+        clearance = True #Can a true graph clear be performed or is the amount of available robots to small for this tree? 
 
-        visited = [0] * len(T.nodes)
+        labelsRobotCost, lablesEfficiency, totalTime , totalPrior = computeLabels(T,root, None)
+
+        visited = [0] * len(T.nodes) #Saving which notes where already visited so we can stop backtracking if the graph is cleared and no unneicessary moves are done.
         visited[root] = 1
 
         def explorePath(node):
@@ -105,11 +135,13 @@ def graphSearch(G : Graph, shadyEdges, numOfTrees, availableRobots, startNodes):
             currentLablesRobotCost = []
             currentLablesEfficiency = []
             combinedLables = []
-    
+                
             for y in T.adj[T.nodes[node]]:
                 currentLablesRobotCost.append((labelsRobotCost[(node,y.idx)], y.idx))
                 currentLablesEfficiency.append((lablesEfficiency[(node, y.idx)], y.idx))
                 combinedLables.append((lablesEfficiency[(node, y.idx)], labelsRobotCost[(node,y.idx)], y.idx))
+                                
+                
                
 
             if len(currentLablesRobotCost) > 0:
@@ -206,7 +238,7 @@ def graphSearch(G : Graph, shadyEdges, numOfTrees, availableRobots, startNodes):
     # TRANSFORMING THE STRATEGY FROM TREE TO GRAPH
     # -------------------------------------------------------------------------------------
 
-    def transformStrategy(G : Graph, shadyEdges, strategy):
+    def transformStrategy(G : Graph, strategy):
 
         contaminationArea = set()
         for i in range(len(G.nodes)):
@@ -378,9 +410,11 @@ def graphSearch(G : Graph, shadyEdges, numOfTrees, availableRobots, startNodes):
         else:
             T = computeRandomSpanningTree(G,root)
 
-        treeStrategy = treeSearch(T,root)
-        graphStrategy = transformStrategy(G,shadyEdges, treeStrategy)
+        treeStrategy = treeSearch(T,root, availableRobots)
+        graphStrategy = transformStrategy(G, treeStrategy) #Will be merged in treeSearch
         #Check if strategy is perfomable. If not use closing exists strategy
+
+        #This will also have to be altered since i will always use all of the robots.
         if graphStrategy[0][2] <= availableRobots:
             # Compute efficiency score of strategy
             expTime = computeExpTime(graphStrategy, G)
