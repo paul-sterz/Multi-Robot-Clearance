@@ -59,6 +59,8 @@ def graphSearch(G : Graph, shadyEdges, numOfTrees, startNodes):
     
     # ---------------------------------------------------
     # CALCULATING A STRATEGY FOR TREES 
+    # TO-DO: Add Timestamps to the strategy and allow moves at the same time if amount of robots is not reached. 
+    #        Note that this will only work if I merge this with the Transform to Graph method.
     # Note: A Strategy is safed in the format [(source node,target node, amount of Robots),...]
     # ---------------------------------------------------
                     
@@ -80,12 +82,22 @@ def graphSearch(G : Graph, shadyEdges, numOfTrees, startNodes):
             if len(currentLables) > 0:
                 currentLables.sort(key=lambda x: x[0]) #Sorting the lables ascending
 
+                # Check if max edge robot costs appear twice, than no slide moves have to be prevented
+                twice = False
+                if len(currentLables) > 1: #Is there more than one children
+                    if currentLables[0][0] == currentLables[1][0]:
+                        twice = True
+
                 counter = 1
                 for (robotsNeeded, y) in currentLables:
                     if counter == len(currentLables) and robotsNeeded != 1: #Don't allow slide moves! Note that they can only be neicessary in the last move
-                        strategy.append((node,y,robotsNeeded-1))
+                        if twice: # If same robot cose appears twice we need a spare robot hence no slide move prevention is neicessary
+                            strategy.append((node,y,robotsNeeded))
+                        else:
+                            strategy.append((node,y,robotsNeeded-1))
+                            strategy.append((node,y,1))
+
                         visited[y] = 1
-                        strategy.append((node,y,1))
                         strategy.extend(explorePath(y))
                         # Check if there is need for backtracking or if everything is visited so we are finished
                         if visited != [1] * len(visited):
@@ -115,6 +127,7 @@ def graphSearch(G : Graph, shadyEdges, numOfTrees, startNodes):
     # Approach from paper "The Graph Clear Problem..." by Kolling used since the baseline is to unspecific about this
     # -------------------------------------------------------------------------------------
 
+
     def transformStrategy(G : Graph, shadyEdges, strategy):
 
         contaminationArea = set()
@@ -123,7 +136,10 @@ def graphSearch(G : Graph, shadyEdges, numOfTrees, startNodes):
 
         rCounter = [0] * len(G.nodes)
 
-        for i in range(len(strategy)):
+        i = 0
+
+        while i < len(strategy):
+
             if strategy[i][1] in contaminationArea:
                 contaminationArea.remove(strategy[i][1])
                 
@@ -135,9 +151,9 @@ def graphSearch(G : Graph, shadyEdges, numOfTrees, startNodes):
 
             if strategy[i][0] != None and rCounter[strategy[i][0]] == 0: #Are there still any robots left on the last node?
 
-
-                for (u,v) in G.edges.keys(): #check regular edges
+                for (u,v) in G.edges.keys(): #Note that only regular edges have to be checked since shady ones are included in an regular edge
                     if u in contaminationArea and v == strategy[i][0]: #Is there an edge that leads to recontamination?
+
                         currNode = None
                         for j in range(i):
                             u, v, k = strategy[j]
@@ -147,14 +163,16 @@ def graphSearch(G : Graph, shadyEdges, numOfTrees, startNodes):
                             if v == strategy[i][0]:
                                 break
 
+                        if strategy[i][2] == 1 and strategy[i-1][0] == strategy[i][0] and strategy[i-1][1] == strategy[i][1]: #Check if there is a slide move which now gets unnecessary
+                            strategy.pop(i) #delete the slide move
+                            strategy[i-1] = (strategy[i-1][0],strategy[i-1][1] ,strategy[i-1][2] + 1)
+                            i -= 1
                         rCounter[strategy[i][0]] = 1
                         break
+            i += 1
 
         return strategy
-
             
-
-
 
     # ---------------------------------------------------
     # COMPUTING A RANDOM SPANNING TREE WITH DFS
