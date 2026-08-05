@@ -89,7 +89,7 @@ def graphSearch(G : Graph, shadyEdges, numOfTrees, availableRobots, startNodes):
     
     # ---------------------------------------------------
     # CALCULATING A STRATEGY FOR TREES 
-    # Note: A Strategy is safed in the format [(source node idx,target node idx, amount of Robots),...]
+    # Note: A Strategy is safed in the format [(source node idx,target node idx, amount of Robots, timestamp),...]
     # ---------------------------------------------------
                     
     def treeSearch(T : Graph, root):
