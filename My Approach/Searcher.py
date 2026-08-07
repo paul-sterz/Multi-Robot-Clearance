@@ -1,6 +1,7 @@
 import numpy as np
 import math
 import random
+import sys
 from Graph import Graph, Node, Edge
 from itertools import combinations
 
@@ -116,20 +117,24 @@ def graphSearch(G : Graph, numOfTrees, availableRobots, startNodes):
     
     # ---------------------------------------------------
     # CALCULATING A STRATEGY FOR TREES 
-    # Note: A Strategy is safed in the format [(source node idx,target node idx, amount of Robots, timestamp),...]
+    # Note: A Strategy is safed in the format [(source node idx,target node idx, amount of Robots, time_Depature, time_Arrival),...]
     # ---------------------------------------------------
                     
     def treeSearch(T : Graph, root, availableRobots):
 
-        time = 0 
-        clearance = True #Can a true graph clear be performed or is the amount of available robots to small for this tree? 
+        clearance = True #Can a true graph clear be performed or is the amount of available robots to small for this tree? If not try to change the decisions towards robotcosts instead of efficiency
 
-        labelsRobotCost, lablesEfficiency, totalTime , totalPrior = computeLabels(T,root, None)
+        labelsRobotCost, lablesEfficiency, multipleAtOnce , _ , _ = computeLabels(T,root, None)
 
         visited = [0] * len(T.nodes) #Saving which notes where already visited so we can stop backtracking if the graph is cleared and no unneicessary moves are done.
         visited[root] = 1
 
-        def explorePath(node):
+        finishTime = sys.maxsize
+
+        robotCountPerNode = [0] * len(labelsRobotCost) #Saving how many robots are on each node at every time
+        robotCountPerNode[root] = availableRobots
+
+        def explorePath(node, enteringTime):
             
             strategy = []
             currentLablesRobotCost = []
@@ -138,99 +143,312 @@ def graphSearch(G : Graph, numOfTrees, availableRobots, startNodes):
                 
             for y in T.adj[T.nodes[node]]:
                 currentLablesRobotCost.append((labelsRobotCost[(node,y.idx)], y.idx))
-                currentLablesEfficiency.append((lablesEfficiency[(node, y.idx)], y.idx))
+                currentLablesEfficiency.append((lablesEfficiency[(node, y.idx)], y.idx))                
                 combinedLables.append((lablesEfficiency[(node, y.idx)], labelsRobotCost[(node,y.idx)], y.idx))
+
                                 
+
+            if len(currentLablesRobotCost) > 0: #Check if leaf because then there is nothing to do in this subtree
+
+                if len(currentLablesRobotCost) == 1: #Check if there exists exactly one children, then there are no multiple strategys and efficiency does not matter
+                    #---------------------------------------------------------------
+                    # Case: There exists only one children
+                    #---------------------------------------------------------------
+                    (eff, robotsNeeded, y) = combinedLables[0]
+                    if robotCountPerNode[node] >= robotsNeeded: #Are there enough robots to clear
+
+                        
+
+                        if robotCountPerNode[node] == robotsNeeded:
+                            strategy.append(node, y, robotsNeeded - 1, enteringTime, enteringTime + T.edges[(node,y)].time)
+                            strategy.append(node, y, 1, enteringTime + T.edges[(node,y)].time, enteringTime +2 * T.edges[(node,y)].time)
+                            enteringTime += 2 * T.edges[(node,y)].time
+                        else:
+                            strategy.append(node, y, robotsNeeded, enteringTime + T.edges[(node,y)].time, enteringTime + T.edges[(node,y)].time)
+                            enteringTime += T.edges[(node,y)].time
+
+                        robotCountPerNode[node] -= robotsNeeded
+                        robotCountPerNode[y] += robotsNeeded
+                        visited[y] = 1
+                        if visited == [1] * len(visited):
+                            finishTime = enteringTime
+
+                        subStrategy, feasible = explorePath(y, enteringTime)
+                        if feasible == False: #Check if there are enough robots to explore the subtree
+                            return strategy, False
+                        
+                        strategy.extend(subStrategy) #extending the Strategy with the subtree strategy
+                        if visited != [1] * len(visited): #check if every node is cleared hence we are finished if not we have move our robots back to where they came from
+                            strategy.append(y, node, robotsNeeded, strategy[len(strategy)-1][4],strategy[len(strategy)-1][4] + T.edges[(node,y)].time)
+                            robotCountPerNode[y] -= robotsNeeded
+                            robotCountPerNode[node] +=  robotsNeeded
+                            enteringTime = strategy[len(strategy)-1][4]
                 
-               
+                        return strategy, True
+                    else:
+                        # --------------TODO-------------------is it possible to get more robots from elsewhere
+                        return strategy, False
 
-            if len(currentLablesRobotCost) > 0:
-                combinedLables.sort(key=lambda x: x[0]) #Sorting the lables ascending
-                currentLablesRobotCost.sort(key=lambda x: x[0], reverse = True)
+                else: #There exits at least 2 children hence multiple strategys exist and an order for efficency has to be regared
 
-                # Check if the max amount of robots is needed twice. Than the order of exploring can't effect the robot cost
-                twice = False
-                if len(currentLablesRobotCost) > 1: #Is there more than one children
-                    if currentLablesRobotCost[0][0] == currentLablesRobotCost[1][0]:
-                        twice = True
-                else:   #If there is only one children there is no order
-                    twice = True 
-                counter = 1
-                if twice:
-                    for (eff, robotsNeeded, y) in combinedLables: #Always explore the subtree with best efficiency
-                        if counter == len(currentLablesRobotCost) and robotsNeeded != 1: #Don't allow slide moves! Note that they can only be neicessary in the last move
-                            if len(currentLablesRobotCost) == 1: 
-                                strategy.append((node,y,robotsNeeded - 1))
-                                strategy.append((node,y,1))
-                            else: # If same amount of robot appears twice than we have one robot in spare hence no slide move has to be prevented
-                                strategy.append((node,y,robotsNeeded))
+                    unExplored = [e[2] for e in combinedLables] #Saving all children / Subtrees that have to be cleared and are still unexplored
 
-                            visited[y] = 1
-                            strategy.extend(explorePath(y))
-                            # Check if there is need for backtracking or if everything is visited so we are finished
-                            if visited != [1] * len(visited):
-                                strategy.append((y,node,robotsNeeded))
-                        else:
-                            strategy.append((node,y,robotsNeeded))
-                            visited[y] = 1
-                            strategy.extend(explorePath(y))
-                            # Check if there is need for backtracking or if everything is visited so we are finished
-                            if visited != [1] * len(visited):
-                                strategy.append((y,node,robotsNeeded))    
-                            counter = counter + 1       
-                else:   
-                    maximum = currentLablesRobotCost[0][0]
-                    for k in range(len(combinedLables)):
-                        (eff, robotsNeeded, y) = combinedLables[k]
-                        if robotsNeeded == maximum and counter != len(currentLablesRobotCost): #Check if we want to enter the biggest subtree early
-                            if eff > 2 * combinedLables[k+1][0] : #Score twice as good than we take the robot more
-                                # adding the robot more on every move before
-                                currNode = None
-                                for j in range(len(strategy)):
-                                    u, v, k = strategy[j]
-                                    if u == currNode:
-                                        strategy[j] = (u, v, k + 1)
-                                        currNode = v
-                                    if v == node:
+                    combinedLables.sort(key=lambda x: x[0]) #Sorting the lables ascending
+                    currentLablesRobotCost.sort(key=lambda x: x[0], reverse = True)
+                    twice = False # Check if the max amount of robots is needed twice. Than the order of exploring can't effect the robot cost
+                    if len(currentLablesRobotCost) > 1: #Is there more than one children
+                        if currentLablesRobotCost[0][0] == currentLablesRobotCost[1][0]:
+                            twice = True
+                    else:   #If there is only one children there is no order
+                            twice = True 
+
+
+                    multiples = multipleAtOnce[node]
+                    lastOptions = multiples #Multiple Move Strategys that are only performable as the last move, meaning robotcost = availableRobots
+                    for triplets in multiples: # Deleting all Multiple Strategys which are impossible to perform, meaning robotcost > availableRobots
+                        if triplets[1] > availableRobots[node]:
+                            multiples.remove(triplets)
+                            lastOptions.remove(triplets)
+                        elif triplets[1] == availableRobots[node]:
+                            multiples.remove(triplets)
+
+                    multiples.sort(key=lambda x: x[2])
+                    lastOptions.sort(key = lambda x: x[2])
+
+
+                    while len(unExplored) > 0: #as long as there exists unExplored children
+                        exists = False
+                        #--------------------------------------------------------
+                        # Check if there is multiple last move, if yes do this since it always improves efficiency               
+                        #--------------------------------------------------------
+                        for (candidateLast, robotsNeededLast, effLast)  in lastOptions:
+                            if candidateLast == unExplored:
+
+                                # Note that here a backtracking deciosion is opend. Furthermore the faster subtrees will be traceable robots while they wait
+                                exists = True
+
+                                # is a slide move acctually neicessary
+                                if robotsNeededLast == robotCountPerNode[enteringTime][node]: slideMove = True 
+                                else: slideMove = False
+
+                                if slideMove == True:
+                                    #determine the longest edge how the slider has to wait and the shortest edge where can go to make the slide move as fast as possible
+                                    largest = 0
+                                    cheapest = sys.maxsize
+                                    for y in candidateLast:
+                                        if largest < T.edges[(node,y)].time:
+                                            largest =  T.edges[(node,y)].time
+                                        if cheapest > T.edges[(node,y)].time:
+                                            cheapest =  T.edges[(node,y)].time
+                                            slideMoveGo = y
+
+                                welcomeBackTime = [0] * len(candidateLast)
+                                counter = 0
+                                for y in candidateLast:
+
+                                    for lable in combinedLables:
+                                        if lable[2] == y:
+                                            robotsNeeded = lable[1]
+
+                                    if slideMove == True and slideMoveGo == y:
+                                        strategy.append(node, y, robotsNeeded - 1, enteringTime, enteringTime + T.edges[(node,y)].time)
+                                        #Only send the slide move preventer when the longest edge was crossed so after enteringTime + largest
+                                        strategy.append(node, y, 1, enteringTime + largest, enteringTime + largest + T.edges[(node,y)].time)
+                                        arrvTime = enteringTime + largest + T.edges[(node,y)].time
+                                    else:
+                                        strategy.append(node, y, robotsNeeded, enteringTime, enteringTime + T.edges[(node,y)].time)
+                                        arrvTime = enteringTime + T.edges[(node,y)].time
+
+                                    
+
+                                    visited[y] = 1
+                                    if visited == [1] * len(visited):
+                                        finishTime = strategy[len(strategy)- 1][4]
+
+                                    robotCountPerNode[node] -= robotsNeeded
+                                    robotCountPerNode[y] += robotsNeeded 
+
+                                    subStrategy, feasible = explorePath(y, arrvTime)
+
+                                    #Check if during the run not enough robots are available hence this decision has to backtracked and removed
+                                    if feasible == False:
+                                        exists = False
+
+                                        for i in range(0, len(strategy)):
+                                            if (strategy[len(strategy)- 1][0] not in candidateLast) and (strategy[len(strategy)- 1][1] == node): 
+                                                break
+                                            strategy.pop()
                                         break
-                                # adding the strategy step
-                                strategy.append((node,y,robotsNeeded))
+
+                                    strategy.extend(subStrategy)
+                                    if visited != [1] * len(visited):
+                                        #Note that these backtrack moves might go over t_finish but they are cut of outside of this method
+                                        strategy.append(y,node, robotsNeeded, strategy[len(strategy)-1][4], strategy[len(strategy)-1][4] + T.edges[(node,y)].time)
+                                        robotCountPerNode[node] += robotsNeeded
+                                        robotCountPerNode[y] -= robotsNeeded 
+
+                                    # Save when the robots return from this inner path
+                                    welcomeBackTime[counter] = strategy[len(strategy)- 1][4]
+
+                                # Continue with the next move when all robots have returned from there inner paths
+                                enteringTime = max(welcomeBackTime)
+
+                        #If we did a last move we are have explored all children hence are finished
+                        if exists == True: 
+                            break
+
+                        counterSingle = 0
+                        counterMultiple = 0
+
+                        #find next best feasible single option
+                        (effSingle, robotsNeededSingle, candidateSingle) = combinedLables[counterSingle]
+                        while candidateSingle not in unExplored:
+                            counterSingle += 1
+                            (effSingle, robotsNeededSingle, candidateSingle) = combinedLables[counterSingle]
+
+                        #find next best feasible multiple option if it exists
+                        alreadyExplored = True
+                        counterMultiple -= 1
+                        while alreadyExplored == True and counterMultiple < len(multiples):
+                            counterMultiple += 1
+                            (candidateMultiple, robotsNeededMultiple, effMultiple) = multiples[counterMultiple]
+                            alreadyExplored = False
+                            for vertex in candidateMultiple:
+                                if vertex not in unExplored:
+                                    alreadyExplored = True
+
+                        if alreadyExplored == True or (effSingle > effMultiple and (candidateSingle not in candidateMultiple or effSingle * 1/2 > effMultiple )) : #This implies that the single move is the better choice or that no multiple move exists
+                            #--------------------------------------------------------
+                            # A Single Move is the best one, Note that we have to do a case distinction here if we need slide moves & and this opens a decision or not
+                            #--------------------------------------------------------
+                                counterSingle += 1
+
+                                if robotCountPerNode[node] > robotsNeededSingle: #No slide moves have to be considered
+                                    strategy.append(node, candidateSingle, robotsNeededSingle, enteringTime, enteringTime + T.edges[(node,candidateSingle)].time)
+                                    robotCountPerNode[node] -= robotsNeededSingle
+                                    robotCountPerNode[candidateSingle] += robotsNeededSingle
+
+                                    visited[candidateSingle] = 1
+                                    if visited == [1] * len(visited):
+                                        finishTime = strategy[len(strategy)- 1][4]
+                                    unExplored = list(set(unExplored) - set(candidateSingle))
+                                    subStrategy, feasible = explorePath(candidateSingle, strategy[len(strategy)- 1][4])
+                                    if feasible == False:
+                                        # Case Distinction if a decision was opend, meaning did we go early in the biggest path and this made a difference
+                                        if twice or currentLablesRobotCost[0][0] != robotsNeededSingle:
+                                            return strategy, False
+                                        else:
+                                             #Swap this with the last place and rearange accordingly, to ensure max subtree is taken at last
+                                            counterSingle -= 1
+                                            for i in range(counterSingle,len(combinedLables)-1):
+                                                save = combinedLables[i]
+                                                combinedLables[i] = combinedLables[i+1]
+                                                combinedLables[i + 1] = save
+                                            break  
+
+                                    strategy.extend(subStrategy)
+                                    if visited != [1] * len(visited):
+                                        strategy.append(candidateSingle, node, robotsNeededSingle,strategy[len(strategy)- 1][4], strategy[len(strategy)- 1][4] + T.edges[(node, candidateSingle)].time ) 
+                                        robotCountPerNode[node] += robotsNeededSingle
+                                        robotCountPerNode[candidateSingle] -=  robotsNeededSingle
+                                        enteringTime = strategy[len(strategy)- 1][4]
+                                elif robotCountPerNode[node] == robotsNeededSingle and len(list(set(unExplored) - candidateSingle)) == 0: #Check if "==" stands, this is only feasible if we are at the last move 
+                                    strategy.append(node, candidateSingle, robotsNeededSingle - 1, enteringTime, enteringTime + T.edges[(node,candidateSingle)].time)
+                                    strategy.append(node, candidateSingle, 1, enteringTime + T.edges[(node,candidateSingle)].time, enteringTime + 2 * T.edges[(node,candidateSingle)].time)
+                                    robotCountPerNode[node] -= robotsNeededSingle
+                                    robotCountPerNode[candidateSingle] += robotsNeededSingle
+
+                                    visited[candidateSingle] = 1
+                                    if visited == [1] * len(visited):
+                                        finishTime = strategy[len(strategy)- 1][4]
+                                    unExplored = list(set(unExplored) - set(candidateSingle))
+                                    subStrategy, feasible = explorePath(candidateSingle, strategy[len(strategy)- 1][4])
+                                    if feasible == False:
+                                        # Case Distinction if a decision was opend, meaning did we go early in the biggest path and this made a difference
+                                        if twice or currentLablesRobotCost[0][0] != robotsNeededSingle:
+                                            return strategy, False
+                                        else:
+                                            #Swap this with the last place and rearange accordingly, to ensure max subtree is taken at last
+                                            counterSingle -= 1
+                                            for i in range(counterSingle,len(combinedLables)-1):
+                                                save = combinedLables[i]
+                                                combinedLables[i] = combinedLables[i+1]
+                                                combinedLables[i + 1] = save
+                                            break
+                                            
+                                    strategy.extend(subStrategy)
+                                    if visited != [1] * len(visited):
+                                        strategy.append(candidateSingle, node, robotsNeededSingle,strategy[len(strategy)- 1][4], strategy[len(strategy)- 1][4] + T.edges[(node, candidateSingle)].time ) 
+                                        robotCountPerNode[node] += robotsNeededSingle
+                                        robotCountPerNode[candidateSingle] -=  robotsNeededSingle
+                                        enteringTime = strategy[len(strategy)- 1][4]
+
+                                else:
+                                    # --------------TODO-------------------is it possible to get more robots from elsewhere
+                                    return strategy, False
+
+                        else: #Take the multiple move
+                            #--------------------------------------------------------
+                            # A Multiple Move that does not finish all children is the best one            
+                            #--------------------------------------------------------
+                            #Note that no slide move prevention is neicessary since we need at max availablerobots -1
+                            counterMultiple += 1 
+                            unExplored = list(set(unExplored) - set(candidateMultiple))
+
+                            welcomeBackTime = [0] * len(candidateMultiple)
+                            counter = 0
+                            for y in candidateMultiple:
+                                for label in combinedLables:
+                                    if lable[2] == y:
+                                        robotsNeeded = lable[1]
+
+                                strategy.append(node, y, robotsNeeded, enteringTime, enteringTime + T.edges[(node,y)].time)
                                 visited[y] = 1
-                                strategy.extend(explorePath(y))
-                                # Check if there is need for backtracking or if everything is visited so we are finished
-                                if visited != [1] * len(visited):
-                                    strategy.append((y,node,robotsNeeded))    
-                                counter = counter + 1 
-                                continue  
-                            else:    
-                                save = combinedLables[k] 
-                                combinedLables[k] = combinedLables[k+1]
-                                combinedLables[k+1] = save
-                                (eff, robotsNeeded, y) = combinedLables[k]
-            
-                        if counter == len(currentLablesRobotCost) and robotsNeeded != 1: #Don't allow slide moves! Note that they can only be neicessary in the last move
-                            strategy.append((node,y,robotsNeeded-1))
-                            visited[y] = 1
-                            strategy.append((node,y,1))
-                            strategy.extend(explorePath(y))
-                            # Check if there is need for backtracking or if everything is visited so we are finished
-                            if visited != [1] * len(visited):
-                                strategy.append((y,node,robotsNeeded))
-                        else:
-                            strategy.append((node,y,robotsNeeded))
-                            visited[y] = 1
-                            strategy.extend(explorePath(y))
-                            # Check if there is need for backtracking or if everything is visited so we are finished
-                            if visited != [1] * len(visited):
-                                strategy.append((y,node,robotsNeeded))    
-                            counter = counter + 1        
-            return strategy
+                                if visited == [1] * len(visited):
+                                    finishTime = strategy[len(strategy)- 1][4]
 
-        strategy = explorePath(root)
-        robotCost = labelsRobotCost[(None, root)]
+                                robotCountPerNode[node] -= robotsNeeded
+                                robotCountPerNode[y] += robotsNeeded
 
-        strategy.insert(0, (None,root,robotCost))
+                                subStrategy, feasible = explorePath(y, strategy[len(strategy)- 1][4])
 
+                                #Check if during the run not enough robots are available if yes this decision has to be backtracked
+                                if feasible == False:
+                                    #Note that this strategy might be feasible in a later time, but this is not implemented here
+                                    unExplored = list(set(unExplored) + set(candidateMultiple))
+
+                                    for i in range(0,len(strategy)):
+                                        if (strategy[len(strategy)- 1][0] not in candidateMultiple) and (strategy[len(strategy)- 1][1] == node):
+                                            break
+                                        strategy.pop()
+                                    break
+
+
+                                strategy.extend(subStrategy)
+                                #Note that we always have to backtrack since this can't be the last move
+                                strategy.append(y,node,robotsNeeded,strategy[len(strategy)- 1][4],strategy[len(strategy)- 1][4] + T.edges[(node,y)].time)
+
+                                robotCountPerNode[node] += robotsNeeded
+                                robotCountPerNode[y] -= robotsNeeded
+                                # Save when the robots return from this inner path
+                                welcomeBackTime[counter] = strategy[len(strategy)- 1][4]
+
+                            # Continue with the next move when all robots have returned from there inner paths
+                            enteringTime = max(welcomeBackTime)
+
+            return strategy, clearance
+
+        strategy, clearance = explorePath(root, 0)
+
+        if clearance == False:
+            strategy = computeClosingExits()
+
+
+        strategy.insert(0, (None,root,availableRobots))
+        #Cut of strategy moves that go over t_finish, meaning unneicessary backtrack moves
+        for (source, target, amountofR, depTime, arrTime) in strategy:
+            if arrTime > finishTime:
+                strategy.remove((source, target, amountofR, depTime, arrTime))
         return strategy
         
     
