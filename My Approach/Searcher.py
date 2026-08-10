@@ -4,8 +4,10 @@ import random
 import sys
 from Graph import Graph, Node, Edge
 from itertools import combinations
+from TrajectoryPlanning import aStar
 
-def graphSearch(G : Graph, numOfTrees, availableRobots, startNodes):
+
+def graphSearch(G : Graph, numOfTrees, availableRobots, startNodes, obstacles, distanceMap, alpha):
     #INPUT:
     # G: a Graph object repesenting the merged navigationgraph
     # numOfTrees: an integer which represents the number of evaluated trees
@@ -116,18 +118,21 @@ def graphSearch(G : Graph, numOfTrees, availableRobots, startNodes):
     
     
     # ---------------------------------------------------
-    # CALCULATING A STRATEGY FOR TREES 
+    # CALCULATING A STRATEGY FOR TREES AND TRANSFORMING IT TO THE GRAPH
     # Note: A Strategy is safed in the format [(source node idx,target node idx, amount of Robots, time_Depature, time_Arrival),...]
     # ---------------------------------------------------
                     
-    def treeSearch(T : Graph, root, availableRobots):
+    def treeSearch(T : Graph, root, availableRobots, G : Graph):
 
         clearance = True #Can a true graph clear be performed or is the amount of available robots to small for this tree? If not try to change the decisions towards robotcosts instead of efficiency
 
         labelsRobotCost, lablesEfficiency, multipleAtOnce , _ , _ = computeLabels(T,root, None)
 
-        visited = [0] * len(T.nodes) #Saving which notes where already visited so we can stop backtracking if the graph is cleared and no unneicessary moves are done.
-        visited[root] = 1
+        visited = [(0,0)] * len(T.nodes) #Saving which notes where already visited so we can stop backtracking if the graph is cleared and no unneicessary moves are done.
+        visited[root] = (1,0)
+
+        guards = [] #Guards that protect recontamination from Graph edges, Format: (node idx, enemy idx, t_begin, slidemovePreventionDuration)
+        flags = [] #Flags that are robots with no current task that can be used to helpout if robots on current node is to low  Format: (node idx, amount, t_begin)
 
         finishTime = sys.maxsize
 
@@ -135,6 +140,13 @@ def graphSearch(G : Graph, numOfTrees, availableRobots, startNodes):
         robotCountPerNode[root] = availableRobots
 
         def explorePath(node, enteringTime):
+
+            #Safestades, so that if something goes wrong we can backtrack to the old states
+            safestadeVisited = visited
+            safestadeGuards = guards
+            safestadeFlags = flags
+            safestadeRobotCount = robotCountPerNode
+
             
             strategy = []
             currentLablesRobotCost = []
@@ -157,28 +169,152 @@ def graphSearch(G : Graph, numOfTrees, availableRobots, startNodes):
                     (eff, robotsNeeded, y) = combinedLables[0]
                     if robotCountPerNode[node] >= robotsNeeded: #Are there enough robots to clear
 
-                        
+                        if robotCountPerNode[node] == robotsNeeded: #This means that we leave the node completly
 
-                        if robotCountPerNode[node] == robotsNeeded:
-                            strategy.append(node, y, robotsNeeded - 1, enteringTime, enteringTime + T.edges[(node,y)].time)
-                            strategy.append(node, y, 1, enteringTime + T.edges[(node,y)].time, enteringTime +2 * T.edges[(node,y)].time)
-                            enteringTime += 2 * T.edges[(node,y)].time
+                            #Checking if an Graph Edge leads to recontamination
+                            contamination = False
+                            for neighbour in G.adj[G.nodes[node]]:
+                                if neighbour != y and visited[neighbour.idx][0] == 0:
+                                    #CASE: Not visited yet, hence we have to drop a guard
+                                    #-> Note the guard / flag does not increase the robot count since they are not usable directly
+                                    contamination = True
+                            
+                                    if len(flags)== 0:
+                                        return strategy, False
+                                    else:
+                                        shortest = sys.maxsize
+                                        vertex = 0
+                                        counter = 0
+                                        bestIdx = 0
+                                        found = False
+
+                                        for triplet in flags:
+                                            if triplet[2] <= enteringTime:
+                                                #Assumption the robot needs 1 second for each cell travelld
+                                                path = aStar(triplet[0], node,obstacles, distanceMap, alpha)
+                                                if path == None: #is there a vaild path or not?
+                                                    continue
+                                                dist = len(path) - 1
+                                                if dist < shortest:
+                                                    found == True
+                                                    shortest = dist
+                                                    vertex = triplet[0]
+                                                    bestIdx = counter
+                                                counter += 1
+
+                                        if found == False:
+                                            #Nothing was changed untill now so no need for going to the safestades
+                                            return strategy, False
+
+                                        #Walk the robot from the flag to the robot  
+                                        strategy.append( flags[bestIdx][0], node, 1,   flags[bestIdx][2],   flags[bestIdx][2] +shortest)
+
+                                        #Make sure that the robots wait until the guard arrives
+                                        if enteringTime < flags[bestIdx][2] + shortest:
+                                            enteringTime = flags[bestIdx][2] + shortest
+
+                                        flags[bestIdx][1] -= 1
+
+                                        if flags[bestIdx][1] == 0:
+                                            flags.pop(bestIdx)
+
+                                        guards.append(node, neighbour, flags[bestIdx][2] + shortest, enteringTime + T.edges[(node,y)].time)
+
+                                elif neighbour != y and visited[neighbour.idx][0] == 1 and visited[neighbour.idx][1] > enteringTime:
+                                    #CASE: Visited but later, hence we can already leave a flag instead of a guard
+
+                                    contamination = True
+
+                                    if len(flags)== 0:                                     
+                                        return strategy, False
+                                    else:
+                                        shortest = sys.maxsize
+                                        vertex = 0
+                                        counter = 0
+                                        bestIdx = 0
+                                        found = False
+
+                                        for triplet in flags:
+                                            if triplet[2] <= enteringTime:
+                                                path = aStar(triplet[0], node,obstacles, distanceMap, alpha)
+                                                if path == None: #is there a vaild path or not?
+                                                    continue
+                                                dist = len(path) - 1
+                                                if triplet[2] +  dist < shortest:
+                                                    found == True
+                                                    shortest = dist
+                                                    vertex = triplet[0]
+                                                    bestIdx = counter
+                                                counter += 1
+
+                                        if found == False:
+                                            #Nothing was changed untill now so no need to take the safestades
+                                            return strategy, False
+
+                                        #Walk the robot from the flag to the robot  
+                                        strategy.append( flags[bestIdx][0], node, 1,   flags[bestIdx][2],   flags[bestIdx][2] + shortest)
+
+                                        #Make sure that the robots wait until the guard arrives
+                                        if enteringTime < flags[bestIdx][2] + shortest:
+                                            enteringTime = flags[bestIdx][2] + shortest
+
+                                        flags[bestIdx][1] -= 1
+
+                                        if flags[bestIdx][1] == 0:
+                                            flags.pop(bestIdx)
+
+                                        flags.append(node, 1, visited[neighbour.idx][1])
+                                
+
+
+                            if not contamination:
+                                strategy.append(node, y, robotsNeeded - 1, enteringTime, enteringTime + T.edges[(node,y)].time)
+                                strategy.append(node, y, 1, enteringTime + T.edges[(node,y)].time, enteringTime +2 * T.edges[(node,y)].time)
+                                enteringTime += 2 * T.edges[(node,y)].time
+                            else:
+                                strategy.append(node, y, robotsNeeded, enteringTime + T.edges[(node,y)].time, enteringTime + T.edges[(node,y)].time)
+                                enteringTime += T.edges[(node,y)].time
+
                         else:
+                            #Case we have more than enough robots hence slide move prevention and contamination checks are unneicessary
                             strategy.append(node, y, robotsNeeded, enteringTime + T.edges[(node,y)].time, enteringTime + T.edges[(node,y)].time)
                             enteringTime += T.edges[(node,y)].time
 
                         robotCountPerNode[node] -= robotsNeeded
                         robotCountPerNode[y] += robotsNeeded
-                        visited[y] = 1
-                        if visited == [1] * len(visited):
+                            
+                        if visited[y][0] == 0:
+                            visited[y] = (1,enteringTime)
+
+                            #Convert guard into flag
+                            for waechter in guards:
+                                if waechter[1] == y:
+                                    #Guard turns into a flag as normal
+                                    # guards[3] saves how long a guard needs at least to stay for slide move prevention
+                                    flags.append((waechter[0], 1, max(enteringTime, waechter[3])))
+                                    guards.remove(waechter)
+
+
+
+                        finish = True
+                        for tuple in visited:
+                            if tuple[0] == 0:
+                                finish = False
+                                break
+
+                        if finish == True and finishTime == 0:
                             finishTime = enteringTime
 
                         subStrategy, feasible = explorePath(y, enteringTime)
-                        if feasible == False: #Check if there are enough robots to explore the subtree
+                        if feasible == False: #Check if there are enough robots to explore the subtree, if not go back to the safestade
+                            visited = safestadeVisited
+                            flags = safestadeFlags
+                            guards = safestadeGuards
+                            robotCountPerNode = safestadeRobotCount
                             return strategy, False
                         
                         strategy.extend(subStrategy) #extending the Strategy with the subtree strategy
-                        if visited != [1] * len(visited): #check if every node is cleared hence we are finished if not we have move our robots back to where they came from
+                        if not finish: #check if every node is cleared hence we are finished if not we have move our robots back to where they came from
                             strategy.append(y, node, robotsNeeded, strategy[len(strategy)-1][4],strategy[len(strategy)-1][4] + T.edges[(node,y)].time)
                             robotCountPerNode[y] -= robotsNeeded
                             robotCountPerNode[node] +=  robotsNeeded
@@ -186,8 +322,67 @@ def graphSearch(G : Graph, numOfTrees, availableRobots, startNodes):
                 
                         return strategy, True
                     else:
-                        # --------------TODO-------------------is it possible to get more robots from elsewhere
-                        return strategy, False
+                        #Can we retrace robots from flags to perform this move?
+
+                        retraceable = 0
+
+                        for triplet in flags:
+                            if triplet[2] <= enteringTime:
+                                retraceable += triplet[1]
+
+                        if not (retraceable >= robotsNeeded - robotCountPerNode[node]): #are there enough flags
+                            return strategy, False
+
+
+                        allreadyMoved = 0
+                        movedFlagsTimes = []
+                        while allreadyMoved != robotsNeeded - robotCountPerNode[node]:
+                            shortest = sys.maxsize
+                            vertex = 0
+                            counter = 0
+                            bestIdx = 0
+                            for triplet in flags:
+                                if triplet[2] <= enteringTime:
+                                    path = aStar(triplet[0], node,obstacles, distanceMap, alpha)
+                                    if path == None: #is there a vaild path or not?
+                                        continue
+                                    dist = len(path) - 1
+                                    if triplet[2] +  dist < shortest:
+                                        shortest = dist
+                                        vertex = triplet[0]
+                                        bestIdx = counter
+                                    counter += 1
+
+                            if allreadyMoved + flags[bestIdx][1] > robotsNeeded - robotCountPerNode[node]:
+                                allreadyMoved = robotsNeeded - robotCountPerNode[node]
+                                old = flags[bestIdx][1] 
+                                flags[bestIdx][1] = robotsNeeded - robotCountPerNode[node] - allreadyMoved
+                                strategy.append( flags[bestIdx][0], node, old - flags[bestIdx][1],   flags[bestIdx][2],   flags[bestIdx][2] + shortest)
+                                movedFlagsTimes.append(flags[bestIdx][2] + shortest)
+                            else: 
+                                allreadyMoved += flags[bestIdx][1]
+                                strategy.append( flags[bestIdx][0], node, flags[bestIdx][1],   flags[bestIdx][2],   flags[bestIdx][2] + shortest)
+                                movedFlagsTimes.append(flags[bestIdx][2] + shortest)
+                                flags.pop(bestIdx)
+
+                        neededTime = max(movedFlagsTimes)
+                        enteringTime = max(enteringTime, neededTime)
+
+                        robotCountPerNode[node] = robotsNeeded
+
+                        #Try again for the node with the fixed setup
+                        subStrategy, feasible = explorePath(node)
+                        if feasible == False:
+                            visited = safestadeVisited
+                            flags = safestadeFlags
+                            guards = safestadeGuards
+                            robotCountPerNode = safestadeRobotCount
+                            return strategy, False
+
+                        strategy.extend(subStrategy)
+                        #Note no backtrack steps are neicessary here
+                        return strategy,True
+                            
 
                 else: #There exits at least 2 children hence multiple strategys exist and an order for efficency has to be regared
 
@@ -217,6 +412,11 @@ def graphSearch(G : Graph, numOfTrees, availableRobots, startNodes):
 
 
                     while len(unExplored) > 0: #as long as there exists unExplored children
+                        safestadeVisited2 = visited
+                        safestadeGuards2 = guards
+                        safestadeFlags2 = flags
+                        safestadeRobotCount2 = robotCountPerNode
+                        safestadeStrategy = strategy
                         exists = False
                         #--------------------------------------------------------
                         # Check if there is multiple last move, if yes do this since it always improves efficiency               
@@ -228,10 +428,9 @@ def graphSearch(G : Graph, numOfTrees, availableRobots, startNodes):
                                 exists = True
 
                                 # is a slide move acctually neicessary
-                                if robotsNeededLast == robotCountPerNode[enteringTime][node]: slideMove = True 
-                                else: slideMove = False
+                                if robotsNeededLast == robotCountPerNode[node]: 
+                                    slideMove = True
 
-                                if slideMove == True:
                                     #determine the longest edge how the slider has to wait and the shortest edge where can go to make the slide move as fast as possible
                                     largest = 0
                                     cheapest = sys.maxsize
@@ -242,13 +441,103 @@ def graphSearch(G : Graph, numOfTrees, availableRobots, startNodes):
                                             cheapest =  T.edges[(node,y)].time
                                             slideMoveGo = y
 
+                                    #Checking if an Graph-Edge leads to recontamination
+                                    contamination = False
+                                    for neighbour in G.adj[G.nodes[node]]:
+                                        if neighbour not in candidateLast and visited[neighbour.idx][0] == 0:
+                                            contamination = True
+                                            slideMove = False
+
+                                            shortest = sys.maxsize
+                                            vertex = 0
+                                            counter = 0
+                                            bestIdx = 0
+                                            found = False
+    
+                                            for triplet in flags:
+                                                if triplet[2] <= enteringTime:
+                                                    path = aStar(triplet[0], node,obstacles, distanceMap, alpha)
+                                                    if path == None: #is there a vaild path or not?
+                                                        continue
+                                                    dist = len(path) - 1
+                                                    if triplet[2] +  dist < shortest:
+                                                        found == True
+                                                        shortest = dist
+                                                        vertex = triplet[0]
+                                                        bestIdx = counter
+                                                    counter += 1
+    
+                                            if found == False:
+                                                exists = False
+                                                break
+
+                                            #Walk the robot from the flag to the robot  
+                                            strategy.append( flags[bestIdx][0], node, 1,   flags[bestIdx][2],   flags[bestIdx][2] + shortest)
+    
+                                            #Make sure that the robots wait until the guard arrives
+                                            if enteringTime < flags[bestIdx][2] + shortest:
+                                                enteringTime = flags[bestIdx][2] + shortest
+    
+                                            flags[bestIdx][1] -= 1
+    
+                                            if flags[bestIdx][1] == 0:
+                                                flags.pop(bestIdx)
+
+                                            guards.append(node, neighbour, flags[bestIdx][2] + shortest, enteringTime + largest)
+                                        elif neighbour not in candidateLast and visited[neighbour.idx][0] == 1 and visited[neighbour.idx][1] > enteringTime:
+                                            contamination = True
+                                            slideMove = False
+
+                                            shortest = sys.maxsize
+                                            vertex = 0
+                                            counter = 0
+                                            bestIdx = 0
+                                            found = False
+    
+                                            for triplet in flags:
+                                                if triplet[2] <= enteringTime:
+                                                    path = aStar(triplet[0], node,obstacles, distanceMap, alpha)
+                                                    if path == None: #is there a vaild path or not?
+                                                        continue
+                                                    dist = len(path) - 1
+                                                    if triplet[2] +  dist < shortest:
+                                                        found == True
+                                                        shortest = dist
+                                                        vertex = triplet[0]
+                                                        bestIdx = counter
+                                                    counter += 1
+    
+                                            if found == False:
+                                                exists = False
+                                                break
+
+                                            #Walk the robot from the flag to the robot  
+                                            strategy.append( flags[bestIdx][0], node, 1,   flags[bestIdx][2],   flags[bestIdx][2] + shortest)
+    
+                                            #Make sure that the robots wait until the guard arrives
+                                            if enteringTime < flags[bestIdx][2] + shortest:
+                                                enteringTime = flags[bestIdx][2] + shortest
+    
+                                            flags[bestIdx][1] -= 1
+    
+                                            if flags[bestIdx][1] == 0:
+                                                flags.pop(bestIdx)
+
+                                            flags.append(node, 1, visited[neighbour.idx][1])
+                                                       
+                                     
+                                else: 
+                                    slideMove = False
+
+                                    
+
                                 welcomeBackTime = [0] * len(candidateLast)
                                 counter = 0
                                 for y in candidateLast:
 
-                                    for lable in combinedLables:
-                                        if lable[2] == y:
-                                            robotsNeeded = lable[1]
+                                    for label in combinedLables:
+                                        if label[2] == y:
+                                            robotsNeeded = label[1]
 
                                     if slideMove == True and slideMoveGo == y:
                                         strategy.append(node, y, robotsNeeded - 1, enteringTime, enteringTime + T.edges[(node,y)].time)
@@ -260,28 +549,44 @@ def graphSearch(G : Graph, numOfTrees, availableRobots, startNodes):
                                         arrvTime = enteringTime + T.edges[(node,y)].time
 
                                     
+                                    if visited[y][0] == 0:
+                                        visited[y] = (1,arrvTime)
+                                        #Convert possible guards into flag
+                                        for waechter in guards:
+                                            if waechter[1] == y:
+                                                #Guard turns into a flag as normal
+                                                # guards[3] saves how long a guard needs at least to stay for slide move prevention
+                                                flags.append((waechter[0], 1, max(enteringTime, waechter[3])))
+                                                guards.remove(waechter)
 
-                                    visited[y] = 1
-                                    if visited == [1] * len(visited):
-                                        finishTime = strategy[len(strategy)- 1][4]
+                                    finish = True
+                                    for tuple in visited:
+                                        if tuple[0] == 0:
+                                            finish = False
+                                            break
+            
+                                    if finish == True and finishTime == 0:
+                                        finishTime = arrvTime
+                            
 
                                     robotCountPerNode[node] -= robotsNeeded
                                     robotCountPerNode[y] += robotsNeeded 
 
                                     subStrategy, feasible = explorePath(y, arrvTime)
 
-                                    #Check if during the run not enough robots are available hence this decision has to backtracked and removed
+                                    #Check if during the run not enough robots are available hence this decision has to be backtracked and removed
                                     if feasible == False:
+                                        visited = safestadeVisited
+                                        flags = safestadeFlags
+                                        guards = safestadeGuards
+                                        robotCountPerNode = safestadeRobotCount
                                         exists = False
-
-                                        for i in range(0, len(strategy)):
-                                            if (strategy[len(strategy)- 1][0] not in candidateLast) and (strategy[len(strategy)- 1][1] == node): 
-                                                break
-                                            strategy.pop()
+                                        strategy = safestadeStrategy
                                         break
 
                                     strategy.extend(subStrategy)
-                                    if visited != [1] * len(visited):
+
+                                    if not finish:
                                         #Note that these backtrack moves might go over t_finish but they are cut of outside of this method
                                         strategy.append(y,node, robotsNeeded, strategy[len(strategy)-1][4], strategy[len(strategy)-1][4] + T.edges[(node,y)].time)
                                         robotCountPerNode[node] += robotsNeeded
@@ -292,6 +597,9 @@ def graphSearch(G : Graph, numOfTrees, availableRobots, startNodes):
 
                                 # Continue with the next move when all robots have returned from there inner paths
                                 enteringTime = max(welcomeBackTime)
+
+                        # End of last multiple case
+                        #------------------------------------------------------------------------
 
                         #If we did a last move we are have explored all children hence are finished
                         if exists == True: 
@@ -325,71 +633,282 @@ def graphSearch(G : Graph, numOfTrees, availableRobots, startNodes):
 
                                 if robotCountPerNode[node] > robotsNeededSingle: #No slide moves have to be considered
                                     strategy.append(node, candidateSingle, robotsNeededSingle, enteringTime, enteringTime + T.edges[(node,candidateSingle)].time)
+                                    enteringTime += T.edges[(node,candidateSingle)].time
                                     robotCountPerNode[node] -= robotsNeededSingle
                                     robotCountPerNode[candidateSingle] += robotsNeededSingle
 
-                                    visited[candidateSingle] = 1
-                                    if visited == [1] * len(visited):
-                                        finishTime = strategy[len(strategy)- 1][4]
+
+                                    if visited[candidateSingle][0] == 0:
+                                        visited[y] = (1,enteringTime)
+                                        #Convert possible guards into flag
+                                        for waechter in guards:
+                                            if waechter[1] == y:
+                                                #Guard turns into a flag as normal
+                                                # guards[3] saves how long a guard needs at least to stay for slide move prevention
+                                                flags.append((waechter[0], 1, max(enteringTime, waechter[3])))
+                                                guards.remove(waechter)
+
+                                    finish = True
+                                    for tuple in visited:
+                                        if tuple[0] == 0:
+                                            finish = False
+                                            break
+            
+                                    if finish == True and finishTime == 0:
+                                        finishTime = enteringTime
+
                                     unExplored = list(set(unExplored) - set(candidateSingle))
                                     subStrategy, feasible = explorePath(candidateSingle, strategy[len(strategy)- 1][4])
+
                                     if feasible == False:
                                         # Case Distinction if a decision was opend, meaning did we go early in the biggest path and this made a difference
                                         if twice or currentLablesRobotCost[0][0] != robotsNeededSingle:
+                                            visited = safestadeVisited
+                                            flags = safestadeFlags
+                                            guards = safestadeGuards
+                                            robotCountPerNode = safestadeRobotCount
                                             return strategy, False
                                         else:
                                              #Swap this with the last place and rearange accordingly, to ensure max subtree is taken at last
                                             counterSingle -= 1
+                                            visited = safestadeVisited
+                                            flags = safestadeFlags
+                                            guards = safestadeGuards
+                                            robotCountPerNode = safestadeRobotCount
+                                            strategy = safestadeStrategy
                                             for i in range(counterSingle,len(combinedLables)-1):
                                                 save = combinedLables[i]
                                                 combinedLables[i] = combinedLables[i+1]
                                                 combinedLables[i + 1] = save
-                                            break  
+                                            continue
 
                                     strategy.extend(subStrategy)
-                                    if visited != [1] * len(visited):
+                                    if not finish:
                                         strategy.append(candidateSingle, node, robotsNeededSingle,strategy[len(strategy)- 1][4], strategy[len(strategy)- 1][4] + T.edges[(node, candidateSingle)].time ) 
                                         robotCountPerNode[node] += robotsNeededSingle
                                         robotCountPerNode[candidateSingle] -=  robotsNeededSingle
                                         enteringTime = strategy[len(strategy)- 1][4]
+
                                 elif robotCountPerNode[node] == robotsNeededSingle and len(list(set(unExplored) - candidateSingle)) == 0: #Check if "==" stands, this is only feasible if we are at the last move 
-                                    strategy.append(node, candidateSingle, robotsNeededSingle - 1, enteringTime, enteringTime + T.edges[(node,candidateSingle)].time)
-                                    strategy.append(node, candidateSingle, 1, enteringTime + T.edges[(node,candidateSingle)].time, enteringTime + 2 * T.edges[(node,candidateSingle)].time)
+
+                                    #Checking if an Graph-Edge leads to recontamination
+                                    contamination = False
+                                    for neighbour in G.adj[G.nodes[node]]:
+                                        if neighbour != y and visited[neighbour.idx][0] == 0:
+                                            contamination = True
+                                            shortest = sys.maxsize
+                                            vertex = 0
+                                            counter = 0
+                                            bestIdx = 0
+                                            found = False
+    
+                                            for triplet in flags:
+                                                if triplet[2] <= enteringTime:
+                                                    path = aStar(triplet[0], node,obstacles, distanceMap, alpha)
+                                                    if path == None: #is there a vaild path or not?
+                                                        continue
+                                                    dist = len(path) - 1
+                                                    if triplet[2] +  dist < shortest:
+                                                        found == True
+                                                        shortest = dist
+                                                        vertex = triplet[0]
+                                                        bestIdx = counter
+                                                    counter += 1
+    
+                                            if found == False:
+                                                visited = safestadeVisited
+                                                guards = safestadeGuards
+                                                flags = safestadeFlags
+                                                robotCountPerNode = safestadeRobotCount
+                                                return strategy, False
+
+                                            #Walk the robot from the flag to the robot  
+                                            strategy.append((flags[bestIdx][0], node, 1,   flags[bestIdx][2],   flags[bestIdx][2] + shortest))
+    
+                                            #Make sure that the robots wait until the guard arrives
+                                            if enteringTime < flags[bestIdx][2] + shortest:
+                                                enteringTime = flags[bestIdx][2] + shortest
+    
+                                            flags[bestIdx][1] -= 1
+    
+                                            if flags[bestIdx][1] == 0:
+                                                flags.pop(bestIdx)
+
+                                            guards.append((node, neighbour.idx, flags[bestIdx][2] + shortest, enteringTime +  T.edges[(node,candidateSingle)].time))
+
+                                        elif neighbour != y and visited[neighbour.idx][0] == 1 and visited[neighbour.idx][1] > enteringTime:
+                                            contamination = True
+                                            shortest = sys.maxsize
+                                            vertex = 0
+                                            counter = 0
+                                            bestIdx = 0
+                                            found = False
+    
+                                            for triplet in flags:
+                                                if triplet[2] <= enteringTime:
+                                                    path = aStar(triplet[0], node,obstacles, distanceMap, alpha)
+                                                    if path == None: #is there a vaild path or not?
+                                                        continue
+                                                    dist = len(path) - 1
+                                                    if triplet[2] +  dist < shortest:
+                                                        found == True
+                                                        shortest = dist
+                                                        vertex = triplet[0]
+                                                        bestIdx = counter
+                                                    counter += 1
+    
+                                            if found == False:
+                                                visited = safestadeVisited
+                                                guards = safestadeGuards
+                                                flags = safestadeFlags
+                                                robotCountPerNode = safestadeRobotCount
+                                                return strategy, False
+
+                                            #Walk the robot from the flag to the robot  
+                                            strategy.append((flags[bestIdx][0], node, 1,   flags[bestIdx][2],   flags[bestIdx][2] + shortest))
+    
+                                            #Make sure that the robots wait until the guard arrives
+                                            if enteringTime < flags[bestIdx][2] + shortest:
+                                                enteringTime = flags[bestIdx][2] + shortest
+    
+                                            flags[bestIdx][1] -= 1
+    
+                                            if flags[bestIdx][1] == 0:
+                                                flags.pop(bestIdx)
+
+                                            flags.append((node, 1, visited[neighbour.idx][1]))
+
+                                    if not contamination:
+                                        strategy.append(node, candidateSingle, robotsNeededSingle - 1, enteringTime, enteringTime + T.edges[(node,candidateSingle)].time)
+                                        strategy.append(node, candidateSingle, 1, enteringTime + T.edges[(node,candidateSingle)].time, enteringTime + 2 * T.edges[(node,candidateSingle)].time)
+                                        enteringTime += 2 * T.edges[(node,candidateSingle)].time 
+                                    else: #No slide move is neicessary since a robot will be at the left node anyway
+                                        strategy.append(node, candidateSingle, robotsNeededSingle, enteringTime, enteringTime + T.edges[(node,candidateSingle)].time)
+                                        enteringTime += T.edges[(node,candidateSingle)].time 
+
+
                                     robotCountPerNode[node] -= robotsNeededSingle
                                     robotCountPerNode[candidateSingle] += robotsNeededSingle
 
-                                    visited[candidateSingle] = 1
-                                    if visited == [1] * len(visited):
-                                        finishTime = strategy[len(strategy)- 1][4]
+                                    if visited[candidateSingle][0] == 0:
+                                        visited[candidateSingle] = (1,enteringTime)
+                                        for waechter in guards:
+                                            if waechter[1] == candidateSingle:
+                                                #Guard turns into a flag as normal
+                                                # guards[3] saves how long a guard needs at least to stay for slide move prevention
+                                                flags.append((waechter[0], 1, max(enteringTime, waechter[3])))
+                                                guards.remove(waechter)
+
+                                    finish = True
+                                    for tuple in visited:
+                                        if tuple[0] == 0:
+                                            finish = False
+                                            break
+            
+                                    if finish == True and finishTime == 0:
+                                        finishTime = enteringTime
+
                                     unExplored = list(set(unExplored) - set(candidateSingle))
                                     subStrategy, feasible = explorePath(candidateSingle, strategy[len(strategy)- 1][4])
                                     if feasible == False:
                                         # Case Distinction if a decision was opend, meaning did we go early in the biggest path and this made a difference
                                         if twice or currentLablesRobotCost[0][0] != robotsNeededSingle:
+                                            visited = safestadeVisited
+                                            flags = safestadeFlags
+                                            guards = safestadeGuards
+                                            robotCountPerNode = safestadeRobotCount
+                                           
+                                            exists = False
                                             return strategy, False
                                         else:
                                             #Swap this with the last place and rearange accordingly, to ensure max subtree is taken at last
+                                            visited = safestadeVisited2
+                                            flags = safestadeFlags2
+                                            guards = safestadeGuards2
+                                            robotCountPerNode = safestadeRobotCount2
+                                            strategy = safestadeStrategy
+                                            exists = False
+                                            unExplored = list(set(unExplored) + set(candidateSingle))
                                             counterSingle -= 1
                                             for i in range(counterSingle,len(combinedLables)-1):
                                                 save = combinedLables[i]
                                                 combinedLables[i] = combinedLables[i+1]
                                                 combinedLables[i + 1] = save
-                                            break
+                                            continue
                                             
                                     strategy.extend(subStrategy)
-                                    if visited != [1] * len(visited):
+                                    if not finish:
                                         strategy.append(candidateSingle, node, robotsNeededSingle,strategy[len(strategy)- 1][4], strategy[len(strategy)- 1][4] + T.edges[(node, candidateSingle)].time ) 
                                         robotCountPerNode[node] += robotsNeededSingle
                                         robotCountPerNode[candidateSingle] -=  robotsNeededSingle
                                         enteringTime = strategy[len(strategy)- 1][4]
 
                                 else:
-                                    # --------------TODO-------------------is it possible to get more robots from elsewhere
-                                    return strategy, False
+
+                                    #Can we retrace robots from flags to perform this move?
+                                    if len(list(set(unExplored) - candidateSingle)) == 0: 
+                                        robotsNeededSingle += 1
+
+                                    retraceable = 0
+
+                                    for triplet in flags:
+                                        if triplet[2] <= enteringTime and aStar(triplet[0], node,obstacles, distanceMap, alpha) != None:
+                                            retraceable += triplet[1]
+
+                                    if not (retraceable >= robotsNeededSingle - robotCountPerNode[node]): #are there enough flags
+                                        visited = safestadeVisited
+                                        guards = safestadeGuards
+                                        flags = safestadeFlags
+                                        robotCountPerNode = safestadeRobotCount
+                                        return strategy, False
+
+
+                                    allreadyMoved = 0
+                                    movedFlagsTimes = []
+                                    while allreadyMoved != robotsNeededSingle - robotCountPerNode[node]:
+                                        shortest = sys.maxsize
+                                        vertex = 0
+                                        counter = 0
+                                        bestIdx = 0
+                                        for triplet in flags:
+                                            if triplet[2] <= enteringTime:
+                                                path = aStar(triplet[0], node,obstacles, distanceMap, alpha)
+                                                if path == None: #is there a vaild path or not?
+                                                    continue
+                                                dist = len(path) - 1
+                                                if triplet[2] +  dist < shortest:
+                                                    shortest = dist
+                                                    vertex = triplet[0]
+                                                    bestIdx = counter
+                                                counter += 1
+
+                                        if allreadyMoved + flags[bestIdx][1] > robotsNeededSingle - robotCountPerNode[node]:
+                                            allreadyMoved = robotsNeededSingle - robotCountPerNode[node]
+                                            old = flags[bestIdx][1] 
+                                            flags[bestIdx][1] = robotsNeededSingle - robotCountPerNode[node] - allreadyMoved
+                                            strategy.append( flags[bestIdx][0], node, old - flags[bestIdx][1],   flags[bestIdx][2],   flags[bestIdx][2] + shortest)
+                                            movedFlagsTimes.append(flags[bestIdx][2] + shortest)
+                                        else: 
+                                            allreadyMoved += flags[bestIdx][1]
+                                            strategy.append( flags[bestIdx][0], node, flags[bestIdx][1],   flags[bestIdx][2],   flags[bestIdx][2] + shortest)
+                                            movedFlagsTimes.append(flags[bestIdx][2] + shortest)
+                                            flags.pop(bestIdx)
+
+                                    neededTime = max(movedFlagsTimes)
+                                    enteringTime = max(enteringTime, neededTime)
+
+                                    robotCountPerNode[node] = robotsNeeded
+
+                                    #Try again for the node with the fixed setup, no going back to safestades is allowed since we moved flags
+                                    counterSingle -= 1
+                                    unExplored = list(set(unExplored) + set(candidateSingle))
+                                    continue
+
 
                         else: #Take the multiple move
                             #--------------------------------------------------------
-                            # A Multiple Move that does not finish all children is the best one            
+                            # A Multiple Move that does not finish all children is the best one        
+                            # -> No checking for recontamination through graph edge / Slidemoves are neicessary since we can not leave the node here    
                             #--------------------------------------------------------
                             #Note that no slide move prevention is neicessary since we need at max availablerobots -1
                             counterMultiple += 1 
@@ -399,13 +918,31 @@ def graphSearch(G : Graph, numOfTrees, availableRobots, startNodes):
                             counter = 0
                             for y in candidateMultiple:
                                 for label in combinedLables:
-                                    if lable[2] == y:
-                                        robotsNeeded = lable[1]
+                                    if label[2] == y:
+                                        robotsNeeded = label[1]
 
                                 strategy.append(node, y, robotsNeeded, enteringTime, enteringTime + T.edges[(node,y)].time)
-                                visited[y] = 1
-                                if visited == [1] * len(visited):
-                                    finishTime = strategy[len(strategy)- 1][4]
+
+                                if visited[y][0] == 0:
+                                    visited[y] = (1,enteringTime + T.edges[(node,y)].time)
+                                    for waechter in guards:
+                                        if waechter[1] == y:
+                                            #Guard turns into a flag as normal
+                                            # guards[3] saves how long a guard needs at least to stay for slide move prevention
+                                            flags.append((waechter[0], 1, max(enteringTime, waechter[3])))
+                                            guards.remove(waechter)
+
+
+
+                                finish = True
+                                for tuple in visited:
+                                    if tuple[0] == 0:
+                                        finish = False
+                                        break
+        
+                                if finish == True and finishTime == 0:
+                                    finishTime = enteringTime + T.edges[(node,y)].time
+                                
 
                                 robotCountPerNode[node] -= robotsNeeded
                                 robotCountPerNode[y] += robotsNeeded
@@ -417,11 +954,12 @@ def graphSearch(G : Graph, numOfTrees, availableRobots, startNodes):
                                     #Note that this strategy might be feasible in a later time, but this is not implemented here
                                     unExplored = list(set(unExplored) + set(candidateMultiple))
 
-                                    for i in range(0,len(strategy)):
-                                        if (strategy[len(strategy)- 1][0] not in candidateMultiple) and (strategy[len(strategy)- 1][1] == node):
-                                            break
-                                        strategy.pop()
-                                    break
+                                    visited = safestadeVisited2
+                                    flags = safestadeFlags2
+                                    guards = safestadeGuards2
+                                    robotCountPerNode = safestadeRobotCount2
+                                
+                                    continue
 
 
                                 strategy.extend(subStrategy)
@@ -610,7 +1148,6 @@ def graphSearch(G : Graph, numOfTrees, availableRobots, startNodes):
 
     # ------------------------------------------------------------
     # THE REAL GRAPH SEARCH ALGORITHIM USING EVERYTHING FROM ABOVE
-    # TO-DO: Using a formular that evaluates the strategys. If there are not enough robots either use the old one if for this there are enough robots or calculate closing exists for the new one and save it
     # ------------------------------------------------------------
 
     minExpTime = np.inf
