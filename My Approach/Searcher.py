@@ -137,7 +137,6 @@ def graphSearch(G : Graph, numOfTrees, availableRobots, startNodes, obstacles, d
         guards = [] #Guards that protect recontamination from Graph edges, Format: (node idx, list of enemy idx's, t_begin, minimum guard Duration)
         flags = [] #Flags that are robots with no current task that can be used to helpout if robots on current node is to low  Format: (node idx, amount, t_begin)
 
-        finishTime = sys.maxsize
 
         robotCountPerNode = [0] * len(labelsRobotCost) #Saving how many robots are on each node at every time
         robotCountPerNode[root] = availableRobots
@@ -145,7 +144,6 @@ def graphSearch(G : Graph, numOfTrees, availableRobots, startNodes, obstacles, d
         def explorePath(node, enteringTime):
 
             #Safestades, so that if something goes wrong we can backtrack to the old states
-            nonlocal finishTime
             nonlocal guards
             nonlocal flags
             nonlocal visited
@@ -345,9 +343,6 @@ def graphSearch(G : Graph, numOfTrees, availableRobots, startNodes, obstacles, d
                                 finish = False
                                 break
 
-                        #Note that Slide moves can not change the finish time since the finishing move will only need one robot hence no slide move prevention is needed
-                        if finish == True and finishTime == sys.maxsize:
-                            finishTime = enteringTime
 
                         subStrategy, feasible = explorePath(y, enteringTime)
                         if feasible == False: #Check if there are enough robots to explore the subtree, if not go back to the safestade
@@ -395,7 +390,7 @@ def graphSearch(G : Graph, numOfTrees, availableRobots, startNodes, obstacles, d
                             bestIdx = 0
                             for triplet in flags:
                                 if triplet[2] <= enteringTime:
-                                    path = aStar(triplet[0], node,obstacles, distanceMap, alpha)
+                                    path = aStar(T.nodes[triplet[0]].pos, T.nodes[node].pos,obstacles, distanceMap, alpha)
                                     if path == None: #is there a vaild path or not?
                                         continue
                                     dist = len(path) - 1
@@ -652,8 +647,6 @@ def graphSearch(G : Graph, numOfTrees, availableRobots, startNodes, obstacles, d
                                             finish = False
                                             break
             
-                                    if finish == True and finishTime == sys.maxsize:
-                                        finishTime = arrvTime
                             
 
                                     robotCountPerNode[node] = 0
@@ -663,10 +656,10 @@ def graphSearch(G : Graph, numOfTrees, availableRobots, startNodes, obstacles, d
 
                                     #Check if during the run not enough robots are available hence this decision has to be backtracked and removed
                                     if feasible == False:
-                                        visited = safestadeVisited
-                                        flags = safestadeFlags
-                                        guards = safestadeGuards
-                                        robotCountPerNode = safestadeRobotCount
+                                        visited = safestadeVisited2
+                                        flags = safestadeFlags2
+                                        guards = safestadeGuards2
+                                        robotCountPerNode = safestadeRobotCount2
                                         exists = False
                                         strategy = safestadeStrategy
                                         break
@@ -702,7 +695,7 @@ def graphSearch(G : Graph, numOfTrees, availableRobots, startNodes, obstacles, d
                             break
 
                         counterSingle = 0
-                        counterMultiple = 0
+                        counterMultiple = -1
 
                         #find next best feasible single option
                         (effSingle, robotsNeededSingle, candidateSingle) = combinedLables[counterSingle]
@@ -712,8 +705,7 @@ def graphSearch(G : Graph, numOfTrees, availableRobots, startNodes, obstacles, d
 
                         #find next best feasible multiple option if it exists
                         alreadyExplored = True
-                        counterMultiple -= 1
-                        while alreadyExplored == True and counterMultiple < len(multiples):
+                        while alreadyExplored == True and counterMultiple + 1 < len(multiples):
                             counterMultiple += 1
                             (candidateMultiple, robotsNeededMultiple, effMultiple) = multiples[counterMultiple]
                             alreadyExplored = False
@@ -787,10 +779,9 @@ def graphSearch(G : Graph, numOfTrees, availableRobots, startNodes, obstacles, d
                                             finish = False
                                             break
             
-                                    if finish == True and finishTime == sys.maxsize:
-                                        finishTime = enteringTime
 
-                                    unExplored = list(set(unExplored) - set(candidateSingle))
+
+                                    unExplored = list(set(unExplored) - {candidateSingle})
                                     subStrategy, feasible = explorePath(candidateSingle, strategy[len(strategy)- 1][4])
 
                                     if feasible == False:
@@ -830,7 +821,7 @@ def graphSearch(G : Graph, numOfTrees, availableRobots, startNodes, obstacles, d
 
                                         flags = remainingFlags
 
-                                elif robotCountPerNode[node] == robotsNeededSingle and len(list(set(unExplored) - candidateSingle)) == 0: #Check if "==" stands, this is only feasible if we are at the last move 
+                                elif robotCountPerNode[node] == robotsNeededSingle and len(list(set(unExplored) - {candidateSingle})) == 0: #Check if "==" stands, this is only feasible if we are at the last move 
 
                                     #Checking if an Graph-Edge leads to recontamination
                                     contamination = False
@@ -939,10 +930,9 @@ def graphSearch(G : Graph, numOfTrees, availableRobots, startNodes, obstacles, d
                                             finish = False
                                             break
             
-                                    if finish == True and finishTime == sys.maxsize:
-                                        finishTime = enteringTime
 
-                                    unExplored = list(set(unExplored) - set(candidateSingle))
+
+                                    unExplored = list(set(unExplored) - {candidateSingle})
                                     subStrategy, feasible = explorePath(candidateSingle, strategy[len(strategy)- 1][4])
                                     if feasible == False:
                                         # Case Distinction if a decision was opend, meaning did we go early in the biggest path and this made a difference
@@ -962,7 +952,7 @@ def graphSearch(G : Graph, numOfTrees, availableRobots, startNodes, obstacles, d
                                             robotCountPerNode = safestadeRobotCount2
                                             strategy = safestadeStrategy
                                             exists = False
-                                            unExplored = list(set(unExplored) + set(candidateSingle))
+                                            unExplored = list(set(unExplored) | {candidateSingle})
                                             counterSingle -= 1
                                             for i in range(counterSingle,len(combinedLables)-1):
                                                 save = combinedLables[i]
@@ -980,7 +970,7 @@ def graphSearch(G : Graph, numOfTrees, availableRobots, startNodes, obstacles, d
                                 else:
 
                                     #Can we retrace robots from flags to perform this move?
-                                    if len(list(set(unExplored) - candidateSingle)) == 0: 
+                                    if len(list(set(unExplored) - {candidateSingle})) == 0: 
                                         robotsNeededSingle += 1
 
                                     retraceable = 0
@@ -1035,7 +1025,7 @@ def graphSearch(G : Graph, numOfTrees, availableRobots, startNodes, obstacles, d
 
                                     #Try again for the node with the fixed setup, no going back to safestades is allowed since we moved flags
                                     counterSingle -= 1
-                                    unExplored = list(set(unExplored) + set(candidateSingle))
+                                    unExplored = list(set(unExplored) | {candidateSingle})
                                     continue
 
 
@@ -1077,8 +1067,6 @@ def graphSearch(G : Graph, numOfTrees, availableRobots, startNodes, obstacles, d
                                         finish = False
                                         break
         
-                                if finish == True and finishTime == sys.maxsize:
-                                    finishTime = enteringTime + T.edges[(node,y)].time
                                 
 
                                 #TODO Implement so that the spare robots can be used as flags and 1 robot has to be a guard / flag and stay for some time     
@@ -1130,7 +1118,7 @@ def graphSearch(G : Graph, numOfTrees, availableRobots, startNodes, obstacles, d
                                 #Check if during the run not enough robots are available if yes this decision has to be backtracked
                                 if feasible == False:
                                     #Note that this strategy might be feasible in a later time, but this is not implemented here
-                                    unExplored = list(set(unExplored) + set(candidateMultiple))
+                                    unExplored = list(set(unExplored) | set(candidateMultiple))
 
                                     visited = safestadeVisited2
                                     flags = safestadeFlags2
@@ -1167,9 +1155,18 @@ def graphSearch(G : Graph, numOfTrees, availableRobots, startNodes, obstacles, d
             strategy = computeClosingExits()
 
 
+        
+        #Determine the finishtime
+        finishTime = -1
+        for tuple in visited:
+            if finishTime < tuple[1]:
+                finishTime = tuple[1]
+
         #Cut of strategy moves that go over t_finish, meaning unneicessary backtrack moves
         strategy = [move for move in strategy if move[4] <= finishTime]
+
         strategy.insert(0, (None,root,availableRobots))
+
 
         return strategy, clearance, visited
                 
