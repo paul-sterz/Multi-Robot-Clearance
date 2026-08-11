@@ -148,6 +148,8 @@ def graphSearch(G : Graph, numOfTrees, availableRobots, startNodes, obstacles, d
             nonlocal finishTime
             nonlocal guards
             nonlocal flags
+            nonlocal visited
+            nonlocal robotCountPerNode
 
             safestadeVisited = visited.copy()
             safestadeGuards = copy.deepcopy(guards)
@@ -175,8 +177,9 @@ def graphSearch(G : Graph, numOfTrees, availableRobots, startNodes, obstacles, d
                     #---------------------------------------------------------------
                     (eff, robotsNeeded, y) = combinedLables[0]
                     flagsCreated = False
-                    if robotCountPerNode[node] > robotsNeeded : #Are there enough robots to clear
+                    if robotCountPerNode[node] >= robotsNeeded : #Are there enough robots to clear
                         # Note that (robotsNeeded == robotCountPerNode[node] and robotsNeeded == 1) could only happen if we are in the root
+                        # TODO implent this case
                         
                         slideMove = False
 
@@ -211,7 +214,7 @@ def graphSearch(G : Graph, numOfTrees, availableRobots, startNodes, obstacles, d
                                         if triplet[2] <= enteringTime:
                                             #Case: Flag_Begin before Entering Time
                                             #Assumption the robot needs 1 second for each cell travelld
-                                            path = aStar(triplet[0], node,obstacles, distanceMap, alpha)
+                                            path = aStar(T.nodes[triplet[0]].pos, T.nodes[node].pos,obstacles, distanceMap, alpha)
                                             if path == None: #is there a vaild path or not?
                                                 continue
                                             dist = len(path) - 1
@@ -241,14 +244,14 @@ def graphSearch(G : Graph, numOfTrees, availableRobots, startNodes, obstacles, d
                                                 maximum = visited[index][1]
 
                                         #Guard has to stay at least untill slide move is prevented and all visited contaminations are actually visited
-                                        guards.append((node, enemys, flags[bestIdx][2] + shortest, max(enteringTime + T.edges[(node,y)].time, maximum)))
+                                        guards.append([node, enemys, flags[bestIdx][2] + shortest, max(enteringTime + T.edges[(node,y)].time, maximum)])
                                     elif visitedContamination:
                                         maximum = -1
                                         for index in visitedContaminationIdx:
                                             if maximum < visited[index][1]:
                                                 maximum = visited[index][1]
 
-                                        flags.append((node, 1, max(maximum, enteringTime + T.edges[(node,y)].time )))
+                                        flags.append([node, 1, max(maximum, enteringTime + T.edges[(node,y)].time )])
 
                                     strategy.append((node, y, robotsNeeded, enteringTime, enteringTime + T.edges[(node,y)].time))
 
@@ -293,19 +296,19 @@ def graphSearch(G : Graph, numOfTrees, availableRobots, startNodes, obstacles, d
                                         maximum = visited[index][1]
 
                                 #Guard has to stay at least untill slide move is prevented and all visited contaminations are actually visited
-                                guards.append((node, enemys, flags[bestIdx][2] + shortest, max(enteringTime + T.edges[(node,y)].time, maximum)))
+                                guards.append([node, enemys,enteringTime, max(enteringTime + T.edges[(node,y)].time, maximum)])
                             elif visitedContamination:
                                 maximum = -1
                                 for index in visitedContaminationIdx:
                                     if maximum < visited[index][1]:
                                         maximum = visited[index][1]
-                                flags.append((node,1,max(enteringTime + T.edges[(node,y)].time, maximum)))
+                                flags.append([node,1,max(enteringTime + T.edges[(node,y)].time, maximum)])
                             else:
-                                flags.append((node,1,enteringTime + T.edges[(node,y)].time))
+                                flags.append([node,1,enteringTime + T.edges[(node,y)].time])
 
                             #We have more than one spare robot, these can all be used
                             if robotCountPerNode[node] - robotsNeeded > 1:
-                                flags.append((node, robotCountPerNode[node] - robotsNeeded - 1, enteringTime))
+                                flags.append([node, robotCountPerNode[node] - robotsNeeded - 1, enteringTime])
 
                             strategy.append((node, y, robotsNeeded, enteringTime, enteringTime + T.edges[(node,y)].time))
                             enteringTime += T.edges[(node,y)].time
@@ -328,7 +331,7 @@ def graphSearch(G : Graph, numOfTrees, availableRobots, startNodes, obstacles, d
                                     if len(waechter[1]) == 0:
                                         #Guard turns into a flag as normal
                                         # guards[3] saves how long a guard needs at least to stay for slide move prevention
-                                        flags.append((waechter[0], 1, max(enteringTime, waechter[3])))
+                                        flags.append([waechter[0], 1, max(enteringTime, waechter[3])])
                                         guards.remove(waechter)
 
                             if slideMove == True:
@@ -364,8 +367,8 @@ def graphSearch(G : Graph, numOfTrees, availableRobots, startNodes, obstacles, d
                                 remainingFlags = []
                                 for flag in flags:
                                     if flag[0] == node:
-                                        robotCountPerNode[node] += flags[index][1]
-                                    else: remainingFlags.append(flags)
+                                        robotCountPerNode[node] += flag[1]
+                                    else: remainingFlags.append(flag)
 
                                 flags = remainingFlags
                 
@@ -376,7 +379,7 @@ def graphSearch(G : Graph, numOfTrees, availableRobots, startNodes, obstacles, d
                         retraceable = 0
 
                         for triplet in flags:
-                            if triplet[2] <= enteringTime:
+                            if triplet[2] <= enteringTime and None != aStar(T.nodes[triplet[0]].pos, T.nodes[node].pos,obstacles, distanceMap, alpha):
                                 retraceable += triplet[1]
 
                         if not (retraceable >= robotsNeeded - robotCountPerNode[node]): #are there enough flags
@@ -512,7 +515,7 @@ def graphSearch(G : Graph, numOfTrees, availableRobots, startNodes, obstacles, d
 
                                         for triplet in flags:
                                             if triplet[2] <= enteringTime:
-                                                path = aStar(triplet[0], node,obstacles, distanceMap, alpha)
+                                                path = aStar(T.nodes[triplet[0]].pos, T.nodes[node].pos,obstacles, distanceMap, alpha)
                                                 if path == None: #is there a vaild path or not?
                                                     continue
                                                 dist = len(path) - 1
@@ -540,16 +543,16 @@ def graphSearch(G : Graph, numOfTrees, availableRobots, startNodes, obstacles, d
                                         if contamination:
                                             maximum = -1
                                             for index in visitedContaminationIdx:
-                                                if maximum < visitedContamination[index][1]:
-                                                    maximum = visitedContamination[index][1]
+                                                if maximum < visited[index][1]:
+                                                    maximum = visited[index][1]
 
-                                            guards.append((node, enemys,flags[bestIdx][2] + shortest, max(enteringTime + largest, maximum) ))
+                                            guards.append([node, enemys,flags[bestIdx][2] + shortest, max(enteringTime + largest, maximum) ])
                                         elif visitedContamination:
                                             maximum = -1
                                             for index in visitedContaminationIdx:
-                                                if maximum < visitedContamination[index][1]:
-                                                    maximum = visitedContamination[index][1]
-                                            flags.append((node, 1,max(enteringTime + largest, maximum) ))
+                                                if maximum < visited[index][1]:
+                                                    maximum = visited[index][1]
+                                            flags.append([node, 1,max(enteringTime + largest, maximum) ])
 
                                         if flags[bestIdx][1] == 0:
                                             flags.pop(bestIdx)                                           
@@ -583,24 +586,24 @@ def graphSearch(G : Graph, numOfTrees, availableRobots, startNodes, obstacles, d
                                         #Case there is real contamination hence a robot has to stay
                                         maximum = -1
                                         for index in visitedContaminationIdx:
-                                            if maximum < visitedContamination[index][1]:
-                                                maximum = visitedContamination[index][1]
-                                        guards.append((node, enemys, enteringTime, max(maximum, enteringTime + largest)))
+                                            if maximum < visited[index][1]:
+                                                maximum = visited[index][1]
+                                        guards.append([node, enemys, enteringTime, max(maximum, enteringTime + largest)])
                                     elif visitedContamination:
                                         #Case there is visited contamination one robot has to stay till a known time, thus drop a flag
                                         maximum = -1
                                         for index in visitedContaminationIdx:
-                                            if maximum < visitedContamination[index][1]:
-                                                maximum = visitedContamination[index][1]
-                                        flags.append((node, 1, max(maximum, enteringTime + largest)))
+                                            if maximum < visited[index][1]:
+                                                maximum = visited[index][1]
+                                        flags.append([node, 1, max(maximum, enteringTime + largest)])
                                         flagsCreated = True
                                     else:
                                         #Case there is no contamination, meaning the robot has to only prevent the slide move
-                                        flags.append((node, 1, enteringTime + largest))
+                                        flags.append([node, 1, enteringTime + largest])
                                         flagsCreated = True
 
                                     if robotCountPerNode[node] - robotsNeededLast > 1:
-                                        flags.append((node,robotCountPerNode[node] - robotsNeededLast - 1 , enteringTime))
+                                        flags.append([node,robotCountPerNode[node] - robotsNeededLast - 1 , enteringTime])
                                         flagsCreated = True
 
                                     slideMove = False
@@ -637,7 +640,7 @@ def graphSearch(G : Graph, numOfTrees, availableRobots, startNodes, obstacles, d
                                                 if len(waechter[1]) == 0:
                                                     #Guard turns into a flag as normal
                                                     # guards[3] saves how long a guard needs at least to stay for slide move prevention
-                                                    flags.append((waechter[0], 1, max(enteringTime, waechter[3])))
+                                                    flags.append([waechter[0], 1, max(enteringTime, waechter[3])])
                                                     guards.remove(waechter)
 
                                         if slideMove == True and slideMoveGo == y:
@@ -679,8 +682,8 @@ def graphSearch(G : Graph, numOfTrees, availableRobots, startNodes, obstacles, d
                                             remainingFlags = []
                                             for flag in flags:
                                                 if flag[0] == node:
-                                                    robotCountPerNode[node] += flags[index][1]
-                                                else: remainingFlags.append(flags)
+                                                    robotCountPerNode[node] += flag[1]
+                                                else: remainingFlags.append(flag)
 
                                             flags = remainingFlags
 
@@ -748,20 +751,20 @@ def graphSearch(G : Graph, numOfTrees, availableRobots, startNodes, obstacles, d
                                             if maximum < visited[index][1]:
                                                 maximum = visited[index][1]
 
-                                        guards.append((node, enemys, enteringTime, max(maximum, enteringTime + T.edges[(node,candidateSingle)].time)))
+                                        guards.append([node, enemys, enteringTime, max(maximum, enteringTime + T.edges[(node,candidateSingle)].time)])
                                     elif visitedContamination:
                                         maximum = -1
                                         for index in enemys:
                                             if maximum < visited[index][1]:
                                                 maximum = visited[index][1]
 
-                                        flags.append((node, 1,  max(maximum, enteringTime + T.edges[(node,candidateSingle)].time)))
+                                        flags.append([node, 1,  max(maximum, enteringTime + T.edges[(node,candidateSingle)].time)])
                                     else:
-                                        flags.append((node, 1,  maximum, enteringTime + T.edges[(node,candidateSingle)].time))
+                                        flags.append([node, 1,  maximum, enteringTime + T.edges[(node,candidateSingle)].time])
 
                                     #the rest of the nodes can be used how they want
                                     if robotCountPerNode[node] - robotsNeededSingle > 1:
-                                        flags.append((node, robotCountPerNode[node] - robotsNeededSingle - 1, enteringTime))
+                                        flags.append([node, robotCountPerNode[node] - robotsNeededSingle - 1, enteringTime])
                                     robotCountPerNode[node] = 0
                                     robotCountPerNode[candidateSingle] += robotsNeededSingle
 
@@ -775,7 +778,7 @@ def graphSearch(G : Graph, numOfTrees, availableRobots, startNodes, obstacles, d
                                                 if len(waechter[1]) == 0:
                                                     #Guard turns into a flag as normal
                                                     # guards[3] saves how long a guard needs at least to stay for slide move prevention
-                                                    flags.append((waechter[0], 1, max(enteringTime, waechter[3])))
+                                                    flags.append([waechter[0], 1, max(enteringTime, waechter[3])])
                                                     guards.remove(waechter)
 
                                     finish = True
@@ -822,8 +825,8 @@ def graphSearch(G : Graph, numOfTrees, availableRobots, startNodes, obstacles, d
                                         remainingFlags = []
                                         for flag in flags:
                                             if flag[0] == node:
-                                                robotCountPerNode[node] += flags[index][1]
-                                            else: remainingFlags.append(flags)
+                                                robotCountPerNode[node] += flag[1]
+                                            else: remainingFlags.append(flag)
 
                                         flags = remainingFlags
 
@@ -855,7 +858,7 @@ def graphSearch(G : Graph, numOfTrees, availableRobots, startNodes, obstacles, d
 
                                         for triplet in flags:
                                             if triplet[2] <= enteringTime:
-                                                path = aStar(triplet[0], node,obstacles, distanceMap, alpha)
+                                                path = aStar(T.nodes[triplet[0]].pos, T.nodes[node].pos,obstacles, distanceMap, alpha)
                                                 if path == None: #is there a vaild path or not?
                                                     continue
                                                 dist = len(path) - 1
@@ -888,7 +891,7 @@ def graphSearch(G : Graph, numOfTrees, availableRobots, startNodes, obstacles, d
                                                 if maximum < visited[index][1]:
                                                     maximum = visited[index][1]
 
-                                            guards.append((node, enemys, flags[bestIdx][2] + shortest, max(maximum, enteringTime + T.edges[(node,candidateSingle)].time)))
+                                            guards.append([node, enemys, flags[bestIdx][2] + shortest, max(maximum, enteringTime + T.edges[(node,candidateSingle)].time)])
 
                                             if flags[bestIdx][1] == 0:
                                                 flags.pop(bestIdx)
@@ -899,7 +902,7 @@ def graphSearch(G : Graph, numOfTrees, availableRobots, startNodes, obstacles, d
                                                 if maximum < visited[index][1]:
                                                     maximum = visited[index][1]
 
-                                            flags.append((node, 1, max(maximum, enteringTime + T.edges[(node,candidateSingle)].time)))
+                                            flags.append([node, 1, max(maximum, enteringTime + T.edges[(node,candidateSingle)].time)])
                                         
                                     if not contamination and not visitedContamination:
                                         strategy.append((node, candidateSingle, robotsNeededSingle - 1, enteringTime, enteringTime + T.edges[(node,candidateSingle)].time))
@@ -924,7 +927,7 @@ def graphSearch(G : Graph, numOfTrees, availableRobots, startNodes, obstacles, d
                                                 if len(waechter[1]) == 0:
                                                     #Guard turns into a flag as normal
                                                     # guards[3] saves how long a guard needs at least to stay for slide move prevention
-                                                    flags.append((waechter[0], 1, max(enteringTime, waechter[3])))
+                                                    flags.append([waechter[0], 1, max(enteringTime, waechter[3])])
                                                     guards.remove(waechter)
 
                                         if not contamination and not visitedContamination:
@@ -983,7 +986,7 @@ def graphSearch(G : Graph, numOfTrees, availableRobots, startNodes, obstacles, d
                                     retraceable = 0
 
                                     for triplet in flags:
-                                        if triplet[2] <= enteringTime and aStar(triplet[0], node,obstacles, distanceMap, alpha) != None:
+                                        if triplet[2] <= enteringTime and aStar(T.nodes[triplet[0]].pos, T.nodes[node].pos,obstacles, distanceMap, alpha) != None:
                                             retraceable += triplet[1]
 
                                     if not (retraceable >= robotsNeededSingle - robotCountPerNode[node]): #are there enough flags
@@ -1003,7 +1006,7 @@ def graphSearch(G : Graph, numOfTrees, availableRobots, startNodes, obstacles, d
                                         bestIdx = 0
                                         for triplet in flags:
                                             if triplet[2] <= enteringTime:
-                                                path = aStar(triplet[0], node,obstacles, distanceMap, alpha)
+                                                path = aStar(T.nodes[triplet[0]].pos, T.nodes[node].pos,obstacles, distanceMap, alpha)
                                                 if path == None: #is there a vaild path or not?
                                                     continue
                                                 dist = len(path) - 1
@@ -1063,7 +1066,7 @@ def graphSearch(G : Graph, numOfTrees, availableRobots, startNodes, obstacles, d
                                             if len(waechter[1]) == 0: 
                                                 #Guard turns into a flag as normal
                                                 # guards[3] saves how long a guard needs at least to stay for slide move prevention
-                                                flags.append((waechter[0], 1, max(enteringTime, waechter[3])))
+                                                flags.append([waechter[0], 1, max(enteringTime, waechter[3])])
                                                 guards.remove(waechter)
 
 
@@ -1106,18 +1109,18 @@ def graphSearch(G : Graph, numOfTrees, availableRobots, startNodes, obstacles, d
                                     for index in visitedContaminationIdx:
                                         if maximum < visited[index][1]:
                                             maximum = visited[index][1]
-                                    guards.append((node, enemys, enteringTime, max(maximum, enteringTime + largest)))
+                                    guards.append([node, enemys, enteringTime, max(maximum, enteringTime + largest)])
                                 elif visitedContamination:
                                     maximum = -1
                                     for index in visitedContaminationIdx:
                                         if maximum < visited[index][1]:
                                             maximum = visited[index][1]
-                                    flags.append((node, 1, max(maximum, enteringTime + largest)))
+                                    flags.append([node, 1, max(maximum, enteringTime + largest)])
                                 else:
-                                    flags.append((node, 1,  enteringTime + largest))
+                                    flags.append([node, 1,  enteringTime + largest])
 
                                 if robotCountPerNode[node] - robotsNeeded > 1:
-                                    flags.append((node,robotCountPerNode[node] - robotsNeeded - 1, enteringTime))
+                                    flags.append([node,robotCountPerNode[node] - robotsNeeded - 1, enteringTime])
 
                                 robotCountPerNode[node] = 0
                                 robotCountPerNode[y] += robotsNeeded
@@ -1140,8 +1143,8 @@ def graphSearch(G : Graph, numOfTrees, availableRobots, startNodes, obstacles, d
                                 remainingFlags = []
                                 for flag in flags:
                                     if flag[0] == node:
-                                        robotCountPerNode[node] += flags[index][1]
-                                    else: remainingFlags.append(flags)
+                                        robotCountPerNode[node] += flag[1]
+                                    else: remainingFlags.append(flag)
 
                                 flags = remainingFlags
                                 strategy.extend(subStrategy)
@@ -1164,9 +1167,9 @@ def graphSearch(G : Graph, numOfTrees, availableRobots, startNodes, obstacles, d
             strategy = computeClosingExits()
 
 
-        strategy.insert(0, (None,root,availableRobots))
         #Cut of strategy moves that go over t_finish, meaning unneicessary backtrack moves
         strategy = [move for move in strategy if move[4] <= finishTime]
+        strategy.insert(0, (None,root,availableRobots))
 
         return strategy, clearance, visited
                 
@@ -1279,7 +1282,7 @@ def graphSearch(G : Graph, numOfTrees, availableRobots, startNodes, obstacles, d
         else:
             T = computeRandomSpanningTree(G,root)
 
-        treeStrategy, clear, visited = treeSearch(T,root, availableRobots)
+        treeStrategy, clear, visited = treeSearch(T,root, availableRobots, G)
         #Check if strategy is perfomable. If not use closing exists strategy
 
         if clear == False and clearStrat == False:

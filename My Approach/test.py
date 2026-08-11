@@ -4,7 +4,7 @@ import plotly.graph_objects as go
 
 from GraphBuilder import graphBuilder
 from Searcher import graphSearch
-from TrajectoryPlanning import computeTrajectory
+from TrajectoryPlanning import computeTrajectory, computeObstacleDistance, positionAtTime, computeRobotCounts
 from Graph import Graph, Node, Edge
 
 
@@ -23,12 +23,12 @@ def detectionFnc(p, obstacles, radius=3):
         dx = x1 - x0
         dy = y1 - y0
         steps = max(abs(dx), abs(dy))
-        
+
         if steps == 0:
             return True
-        
+
         for i in range(1, steps + 1):
-            #Calculating the new position
+            # Calculating the new position
             x = round(x0 + dx * i / steps)
             y = round(y0 + dy * i / steps)
 
@@ -36,8 +36,8 @@ def detectionFnc(p, obstacles, radius=3):
             if x != xold and y != yold:
                 if abs(dy) == abs(dx):
                     if obstacles[x, yold] == 1 or obstacles[xold, y] == 1:
-                        return False    
-                elif steps == abs(dx): 
+                        return False
+                elif steps == abs(dx):
                     if obstacles[x, yold] == 1:
                         return False
                 else:
@@ -47,12 +47,11 @@ def detectionFnc(p, obstacles, radius=3):
             # Check the new position
             if obstacles[x, y] == 1:
                 return False
-            
+
             xold = x
             yold = y
-        
-        return True
 
+        return True
 
     visible = set()
     for x in range(H):
@@ -75,7 +74,7 @@ st.title("Multi-Robot Clearance")
 
 # --------------------------------------------------
 # SIDEBAR WITH SLIDERS
-# Note: Sliderformat is (min, max, default)
+# Note: Slider format is (min, max, default)
 # --------------------------------------------------
 
 with st.sidebar:
@@ -84,6 +83,7 @@ with st.sidebar:
     W = st.slider("Width", 5, 20, 10)
     detection_radius = st.slider("Detection radius", 1, 8, 3)
     num_trees = st.slider("Trees (graphSearch)", 10, 200, 50, step=10)
+    available_robots = st.slider("Available Robots", 1, 50, 10)
     alpha = st.slider("Alpha", 0.1, 5.0, 1.0, step=0.1)
 
     st.markdown("---")
@@ -105,7 +105,7 @@ with st.sidebar:
 
 # --------------------------------------------------
 # SESSION STATE
-# -> Streamlit deletes all variables after each run. 
+# -> Streamlit deletes all variables after each run.
 #    st.session_state is retained through all runs
 # --------------------------------------------------
 
@@ -121,7 +121,8 @@ _init_grid(H, W)
 
 for key, default in [
     ("trajectories", None),
-    ("step", 0),
+    ("current_time", 0),
+    ("total_time", 0),
     ("graph_data", None),
     ("strategy", None),
     ("show_spanning_tree", False),
@@ -150,12 +151,12 @@ div[data-testid="column"] > div > div > div > button {
 """, unsafe_allow_html=True)
 
 obstacles_arr = st.session_state.obstacles
-priors_arr    = st.session_state.priors
-start_region  = st.session_state.start_region
+priors_arr = st.session_state.priors
+start_region = st.session_state.start_region
 
 clicked_r, clicked_c = None, None
 
-for r in range(H - 1, -1, -1):  # highest row first → (0,0) ends up bottom-left
+for r in range(H - 1, -1, -1):  # highest row first -> (0,0) ends up bottom-left
     cols = st.columns(W)
     for c in range(W):
         with cols[c]:
@@ -207,32 +208,45 @@ if clicked_r is not None:
 
 if run:
     obstacles = st.session_state.obstacles.copy()
-    priors    = st.session_state.priors.copy()
-    root      = st.session_state.start_region if st.session_state.start_region else {(0, 0)}
+    priors = st.session_state.priors.copy()
+    root = st.session_state.start_region if st.session_state.start_region else {(0, 0)}
 
     with st.spinner("Building graph..."):
         G, shadyEdges, D, startNodes = graphBuilder(
             obstacles, priors,
             lambda p, obs: detectionFnc(p, obs, detection_radius),
-            root
+            root,
+            alpha,
         )
 
+    with st.spinner("Computing distance map..."):
+        distanceMap = computeObstacleDistance(obstacles)
+
     with st.spinner("Computing strategy..."):
-        strategy, T = graphSearch(G, shadyEdges, num_trees, 99, startNodes)
+        strategy, T = graphSearch(
+            G, num_trees, available_robots, startNodes, obstacles, distanceMap, alpha
+        )
+
+    if strategy is None:
+        st.error("Keine gültige Strategie gefunden (evtl. zu wenig Roboter für diesen Graphen).")
+        st.stop()
 
     with st.spinner("Planning trajectories..."):
-        trajectories = computeTrajectory(obstacles, G, strategy, alpha)
+        trajectories = computeTrajectory(obstacles, G, strategy, alpha, distanceMap)
+
+    total_time = max((m["t_arrival"] for m in trajectories), default=0)
 
     V = list(range(len(G.nodes)))
     P = [G.nodes[i].pos for i in range(len(G.nodes))]
 
     regularEdges = list(G.edges.keys())
-    treeEdges    = list(T.edges.keys())
+    treeEdges = list(T.edges.keys())
 
-    st.session_state.trajectories  = trajectories
-    st.session_state.graph_data    = (obstacles, V, P, shadyEdges, regularEdges, H, W)
-    st.session_state.strategy      = (strategy, treeEdges)
-    st.session_state.step          = 0
+    st.session_state.trajectories = trajectories
+    st.session_state.graph_data = (obstacles, V, P, shadyEdges, regularEdges, H, W)
+    st.session_state.strategy = (strategy, treeEdges)
+    st.session_state.current_time = 0
+    st.session_state.total_time = total_time
     st.session_state.show_spanning_tree = False
     st.rerun()
 
@@ -252,71 +266,71 @@ if st.session_state.graph_data is None:
 
 obstacles, V, P, shadyEdges, regularEdges, H, W = st.session_state.graph_data
 trajectories = st.session_state.trajectories
-current_step = st.session_state.step
+current_time = st.session_state.current_time
+total_time = st.session_state.total_time
 strategy, treeEdges = st.session_state.strategy
-show_spanning_tree  = st.session_state.show_spanning_tree
+show_spanning_tree = st.session_state.show_spanning_tree
 
-# Robot counter: how many robots are currently on each node
-# Replay strategy up to current_step to compute positions
-robot_counts = [0] * len(V)
-if strategy:
-    robot_counts[strategy[0][1]] = strategy[0][2]   # initial placement
-for i in range(1, current_step + 1):
-    if i >= len(strategy):
-        break
-    src, dst, n = strategy[i]
-    if src is not None:
-        robot_counts[src] = max(0, robot_counts[src] - n)
-    robot_counts[dst] = robot_counts[dst] + n
+# Robot counter per node at the currently selected simulation time
+robot_counts = computeRobotCounts(strategy, len(V), current_time)
 
 
 # --------------------------------------------------
 # METRICS ROW
 # --------------------------------------------------
 
-robot_cost = strategy[0][2] if strategy else "–"
-
-m1, m2, m3, m4 = st.columns(4)
+m1, m2, m3, m4, m5 = st.columns(5)
 with m1:
     st.metric("Nodes", len(V))
 with m2:
     st.metric("Regular edges", len(regularEdges))
 with m3:
-    st.metric("Strategy steps", len(strategy))
+    st.metric("Total mission time", total_time)
 with m4:
-    st.metric("Robots needed", robot_cost)
+    st.metric("Current time", current_time)
+with m5:
+    st.metric("Available robots", available_robots if "available_robots" in dir() else "-")
 
 
 # --------------------------------------------------
 # BUTTONS
+# One click = one time unit (once the spanning tree is displayed)
 # --------------------------------------------------
 
 col1, col2, col3, col4 = st.columns([1, 1, 1, 4])
 
 with col1:
-    if st.button("Next Step", disabled=(current_step >= len(trajectories))):
+    at_end = show_spanning_tree and current_time >= total_time
+    if st.button("Next Step (+1)", disabled=at_end):
         if not show_spanning_tree:
             st.session_state.show_spanning_tree = True
         else:
-            st.session_state.step += 1
+            st.session_state.current_time = min(current_time + 1, total_time)
         st.rerun()
 
 with col2:
     if st.button("Reset"):
-        st.session_state.step = 0
+        st.session_state.current_time = 0
         st.session_state.show_spanning_tree = False
         st.rerun()
 
 with col3:
-    phase = "Navigation graph" if not show_spanning_tree else f"Step {current_step} / {len(trajectories)}"
+    phase = "Navigation graph" if not show_spanning_tree else f"t = {current_time} / {total_time}"
     st.caption(f"Phase: **{phase}**")
+
+if show_spanning_tree and total_time > 0:
+    new_time = st.slider("Jump to time", 0, int(total_time), int(current_time))
+    if new_time != current_time:
+        st.session_state.current_time = new_time
+        st.rerun()
 
 
 # --------------------------------------------------
 # PLOTLY FIGURE
 # --------------------------------------------------
 
-COLORS = ["#e76f51", "#2a9d8f", "#e9c46a", "#264653", "#a8dadc", "#f4a261"]
+COLORS = ["#e76f51", "#2a9d8f", "#e9c46a", "#264653", "#a8dadc", "#f4a261",
+          "#9b5de5", "#00bbf9", "#00f5d4", "#f15bb5"]
 
 fig = go.Figure()
 
@@ -432,7 +446,7 @@ fig.add_trace(go.Scatter(
     hovertemplate="Node %{text}<br>pos (%{y}, %{x})<extra></extra>",
 ))
 
-# Robot count badges (shown above each node that has robots)
+# Robot count badges (shown above each node that currently has robots)
 for i in V:
     if robot_counts[i] > 0:
         fig.add_annotation(
@@ -463,50 +477,42 @@ if start_xs:
     ))
 
 
-# -- Current trajectory only (not all previous ones) -------------------------
+# -- All movements active AT THE CURRENT TIME t (parallel moves shown together) --
+# Every trajectory whose [t_departure, t_arrival] window covers `current_time`
+# gets its own path line + an interpolated robot marker. This replaces the old
+# "one step = one trajectory" logic, since several robot groups can now be
+# in flight simultaneously.
 
-if show_spanning_tree and current_step > 0 and current_step <= len(trajectories):
-    idx = current_step - 1
-    start, goal, robots, path = trajectories[idx]
-    if path is not None:
+if show_spanning_tree:
+    active = [
+        m for m in trajectories
+        if m["t_departure"] <= current_time <= m["t_arrival"] and m["path"] is not None
+    ]
+
+    for idx, m in enumerate(active):
+        color = COLORS[idx % len(COLORS)]
+        path = m["path"]
         xs = [p[1] for p in path]
         ys = [p[0] for p in path]
-        color = COLORS[idx % len(COLORS)]
 
         fig.add_trace(go.Scatter(
             x=xs, y=ys,
             mode="lines",
-            line=dict(color=color, width=4),
-            name=f"Step {idx+1} ({robots} robots)",
-            hovertemplate=f"Step {idx+1}: {start}→{goal}, {robots} robots<extra></extra>",
+            line=dict(color=color, width=3),
+            opacity=0.7,
+            name=f"{m['source']}→{m['target']} ({m['robots']} robots)",
+            hovertemplate=f"{m['source']}→{m['target']}: {m['robots']} robots<extra></extra>",
         ))
 
-        # Direction arrows every few steps along the path
-        step_size = max(1, len(path) // 4)
-        for seg in range(step_size, len(path), step_size):
-            fig.add_annotation(
-                ax=path[seg - 1][1], ay=path[seg - 1][0],
-                x=path[seg][1],     y=path[seg][0],
-                xref="x", yref="y", axref="x", ayref="y",
-                showarrow=True,
-                arrowhead=4,
-                arrowsize=1.8,
-                arrowwidth=2.5,
-                arrowcolor=color,
-            )
-
-        # Extra arrow at the very end to make destination clear
-        if len(path) >= 2:
-            fig.add_annotation(
-                ax=path[-2][1], ay=path[-2][0],
-                x=path[-1][1],  y=path[-1][0],
-                xref="x", yref="y", axref="x", ayref="y",
-                showarrow=True,
-                arrowhead=4,
-                arrowsize=2.0,
-                arrowwidth=3.0,
-                arrowcolor=color,
-            )
+        pos = positionAtTime(path, m["t_departure"], m["t_arrival"], current_time)
+        if pos is not None:
+            fig.add_trace(go.Scatter(
+                x=[pos[1]], y=[pos[0]],
+                mode="markers",
+                marker=dict(size=16, color=color, symbol="diamond", line=dict(color="black", width=1)),
+                showlegend=False,
+                hovertemplate=f"{m['robots']} robots en route to node {m['target']}<extra></extra>",
+            ))
 
 
 st.plotly_chart(fig, use_container_width=True)

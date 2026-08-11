@@ -1,11 +1,12 @@
 import random
 import numpy as np
 from Graph import Graph, Node, Edge
+from TrajectoryPlanning import aStar, computeObstacleDistance
 
 
 
 
-def graphBuilder(obstacles, priors, detectionFnc, startRegion):
+def graphBuilder(obstacles, priors, detectionFnc, startRegion, alpha):
     # INPUT:
     # obstacles: (H,W) dimensional numpy array that represents the enviroment, 1=obstacle, 0=free
     # priors: (H,W) dimensional numpy array that represents the enviroment and has the prior values for each cell
@@ -142,6 +143,7 @@ def graphBuilder(obstacles, priors, detectionFnc, startRegion):
             if is_shady:
                 edges_shady.append((i, j))
             else:
-                G.add_edge(G.nodes[i], G.nodes[j],1,2)
+                trajectory = aStar(G.nodes[i].pos,G.nodes[j].pos, obstacles, computeObstacleDistance(obstacles), alpha)
+                G.add_edge(G.nodes[i], G.nodes[j],len(trajectory) - 1,2)
 
     return G, edges_shady, D, startNodes
