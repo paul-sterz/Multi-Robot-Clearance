@@ -138,7 +138,7 @@ def graphSearch(G : Graph, numOfTrees, availableRobots, startNodes, obstacles, d
         flags = [] #Flags that are robots with no current task that can be used to helpout if robots on current node is to low  Format: (node idx, amount, t_begin)
 
 
-        robotCountPerNode = [0] * len(labelsRobotCost) #Saving how many robots are on each node at every time
+        robotCountPerNode = [0] * len(T.nodes) #Saving how many robots are on each node at every time
         robotCountPerNode[root] = availableRobots
 
         def explorePath(node, enteringTime):
@@ -197,7 +197,7 @@ def graphSearch(G : Graph, numOfTrees, availableRobots, startNodes, obstacles, d
                                     visitedContamination = True
                                     visitedContaminationIdx.append(neighbour.idx)
 
-                            if contamination or visitedContamination:
+                            if contamination or visitedContamination or robotsNeeded == 1:
                                                             
                                 if len(flags)== 0:
                                     return strategy, False
@@ -250,6 +250,8 @@ def graphSearch(G : Graph, numOfTrees, availableRobots, startNodes, obstacles, d
                                                 maximum = visited[index][1]
 
                                         flags.append([node, 1, max(maximum, enteringTime + T.edges[(node,y)].time )])
+                                    else:
+                                        flags.append([node, 1, enteringTime + T.edges[(node,y)].time ])
 
                                     strategy.append((node, y, robotsNeeded, enteringTime, enteringTime + T.edges[(node,y)].time))
 
@@ -400,12 +402,12 @@ def graphSearch(G : Graph, numOfTrees, availableRobots, startNodes, obstacles, d
                                         bestIdx = counter
                                     counter += 1
 
-                            if allreadyMoved + flags[bestIdx][1] > robotsNeeded - robotCountPerNode[node]:
-                                allreadyMoved = robotsNeeded - robotCountPerNode[node]
+                            if allreadyMoved + flags[bestIdx][1] > robotsNeeded - robotCountPerNode[node]:    
                                 old = flags[bestIdx][1] 
-                                flags[bestIdx][1] = robotsNeeded - robotCountPerNode[node] - allreadyMoved
+                                flags[bestIdx][1] = old - (robotsNeeded - robotCountPerNode[node] - allreadyMoved)
                                 strategy.append((flags[bestIdx][0], node, old - flags[bestIdx][1],   flags[bestIdx][2],   flags[bestIdx][2] + shortest))
                                 movedFlagsTimes.append(flags[bestIdx][2] + shortest)
+                                allreadyMoved = robotsNeeded - robotCountPerNode[node]
                             else: 
                                 allreadyMoved += flags[bestIdx][1]
                                 strategy.append((flags[bestIdx][0], node, flags[bestIdx][1],   flags[bestIdx][2],   flags[bestIdx][2] + shortest))
@@ -445,8 +447,8 @@ def graphSearch(G : Graph, numOfTrees, availableRobots, startNodes, obstacles, d
                             twice = True 
 
 
-                    multiples = [option for option in multipleAtOnce[node] if option[1] < availableRobots] # Deleting all Multiple Strategys which are impossible to perform, meaning robotcost > availableRobots
-                    lastOptions = [option for option in multipleAtOnce[node] if option[1] <= availableRobots] #Multiple Move Strategys that are only performable as the last move, meaning robotcost = availableRobots
+                    multiples = [option for option in multipleAtOnce[node] if option[1] < robotCountPerNode[node]] # Deleting all Multiple Strategys which are impossible to perform, meaning robotcost > availableRobots
+                    lastOptions = [option for option in multipleAtOnce[node] if option[1] <= robotCountPerNode[node]] #Multiple Move Strategys that are only performable as the last move, meaning robotcost = availableRobots
 
                     multiples.sort(key=lambda x: x[2], reverse=True)
                     lastOptions.sort(key = lambda x: x[2], reverse=True)
@@ -480,9 +482,14 @@ def graphSearch(G : Graph, numOfTrees, availableRobots, startNodes, obstacles, d
                                     for y in candidateLast:
                                         if largest < T.edges[(node,y)].time:
                                             largest =  T.edges[(node,y)].time
-                                        if cheapest > T.edges[(node,y)].time:
+                                        if cheapest > T.edges[(node,y)].time and labelsRobotCost[(node,y)] != 1:
                                             cheapest =  T.edges[(node,y)].time
                                             slideMoveGo = y
+
+                                    #All moves take only one robot hence this multiple move can avoid a slide move and thus can not be performed
+                                    if cheapest == sys.maxsize:
+                                        exists = False
+                                        break
 
                                     #Checking if an Graph-Edge leads to recontamination
 
@@ -752,7 +759,7 @@ def graphSearch(G : Graph, numOfTrees, availableRobots, startNodes, obstacles, d
 
                                         flags.append([node, 1,  max(maximum, enteringTime + T.edges[(node,candidateSingle)].time)])
                                     else:
-                                        flags.append([node, 1,  maximum, enteringTime + T.edges[(node,candidateSingle)].time])
+                                        flags.append([node, 1, enteringTime + T.edges[(node,candidateSingle)].time])
 
                                     #the rest of the nodes can be used how they want
                                     if robotCountPerNode[node] - robotsNeededSingle > 1:
@@ -765,8 +772,8 @@ def graphSearch(G : Graph, numOfTrees, availableRobots, startNodes, obstacles, d
                                         visited[candidateSingle] = (1,enteringTime)
                                         #Convert possible guards into flag
                                         for waechter in guards:
-                                            if y in waechter[1]:
-                                                waechter[1].remove(y)
+                                            if candidateSingle in waechter[1]:
+                                                waechter[1].remove(candidateSingle)
                                                 if len(waechter[1]) == 0:
                                                     #Guard turns into a flag as normal
                                                     # guards[3] saves how long a guard needs at least to stay for slide move prevention
@@ -838,7 +845,7 @@ def graphSearch(G : Graph, numOfTrees, availableRobots, startNodes, obstacles, d
                                             visitedContamination = True
                                             visitedContaminationIdx.append(neighbour.idx)
 
-                                    if contamination or visitedContamination:
+                                    if contamination or visitedContamination or robotsNeededSingle == 1:
                                     
                                         contamination = True
                                         shortest = sys.maxsize
@@ -894,8 +901,10 @@ def graphSearch(G : Graph, numOfTrees, availableRobots, startNodes, obstacles, d
                                                     maximum = visited[index][1]
 
                                             flags.append([node, 1, max(maximum, enteringTime + T.edges[(node,candidateSingle)].time)])
+                                        else:
+                                            flags.append([node, 1, enteringTime + T.edges[(node,candidateSingle)].time])
                                         
-                                    if not contamination and not visitedContamination:
+                                    if not contamination and not visitedContamination and robotsNeededSingle != 1:
                                         strategy.append((node, candidateSingle, robotsNeededSingle - 1, enteringTime, enteringTime + T.edges[(node,candidateSingle)].time))
                                         strategy.append((node, candidateSingle, 1, enteringTime + T.edges[(node,candidateSingle)].time, enteringTime + 2 * T.edges[(node,candidateSingle)].time))
                                         enteringTime += 2 * T.edges[(node,candidateSingle)].time 
@@ -968,7 +977,9 @@ def graphSearch(G : Graph, numOfTrees, availableRobots, startNodes, obstacles, d
                                         enteringTime = strategy[len(strategy)- 1][4]
 
                                 else:
-
+                                    if robotCountPerNode[node] == robotsNeededSingle:
+                                        robotsNeededSingle += 1
+                                        
                                     #Can we retrace robots from flags to perform this move?
                                     if len(list(set(unExplored) - {candidateSingle})) == 0: 
                                         robotsNeededSingle += 1
@@ -1007,11 +1018,11 @@ def graphSearch(G : Graph, numOfTrees, availableRobots, startNodes, obstacles, d
                                                 counter += 1
 
                                         if allreadyMoved + flags[bestIdx][1] > robotsNeededSingle - robotCountPerNode[node]:
-                                            allreadyMoved = robotsNeededSingle - robotCountPerNode[node]
                                             old = flags[bestIdx][1] 
-                                            flags[bestIdx][1] = robotsNeededSingle - robotCountPerNode[node] - allreadyMoved
+                                            flags[bestIdx][1] = old - (robotsNeededSingle - robotCountPerNode[node] - allreadyMoved)
                                             strategy.append((flags[bestIdx][0], node, old - flags[bestIdx][1],   flags[bestIdx][2],   flags[bestIdx][2] + shortest))
                                             movedFlagsTimes.append((flags[bestIdx][2] + shortest))
+                                            allreadyMoved = robotsNeededSingle - robotCountPerNode[node]
                                         else: 
                                             allreadyMoved += flags[bestIdx][1]
                                             strategy.append((flags[bestIdx][0], node, flags[bestIdx][1],   flags[bestIdx][2],   flags[bestIdx][2] + shortest))
@@ -1021,7 +1032,7 @@ def graphSearch(G : Graph, numOfTrees, availableRobots, startNodes, obstacles, d
                                     neededTime = max(movedFlagsTimes)
                                     enteringTime = max(enteringTime, neededTime)
 
-                                    robotCountPerNode[node] = robotsNeeded
+                                    robotCountPerNode[node] = robotsNeededSingle
 
                                     #Try again for the node with the fixed setup, no going back to safestades is allowed since we moved flags
                                     counterSingle -= 1
@@ -1124,6 +1135,7 @@ def graphSearch(G : Graph, numOfTrees, availableRobots, startNodes, obstacles, d
                                     flags = safestadeFlags2
                                     guards = safestadeGuards2
                                     robotCountPerNode = safestadeRobotCount2
+                                    strategy = safestadeStrategy
                                 
                                     continue
 
@@ -1152,7 +1164,7 @@ def graphSearch(G : Graph, numOfTrees, availableRobots, startNodes, obstacles, d
         strategy, clearance = explorePath(root, 0)
 
         if clearance == False:
-            strategy = computeClosingExits()
+            strategy = computeClosingExits(strategy, G)
 
 
         
@@ -1165,10 +1177,17 @@ def graphSearch(G : Graph, numOfTrees, availableRobots, startNodes, obstacles, d
         #Cut of strategy moves that go over t_finish, meaning unneicessary backtrack moves
         strategy = [move for move in strategy if move[4] <= finishTime]
 
+        #Since through flag movements some nodes can be visited earlier than i implemented i determine the correct visited times here
+
+        realVisitedTime = [sys.maxsize] * len(T.nodes)
+        realVisitedTime[root] = 0
+        for move in strategy:
+            if realVisitedTime[move[1]] > move[4]:
+                realVisitedTime[move[1]] = move[4]
+
         strategy.insert(0, (None,root,availableRobots))
 
-
-        return strategy, clearance, visited
+        return strategy, clearance, realVisitedTime
                 
 
     # ---------------------------------------------------
@@ -1246,16 +1265,17 @@ def graphSearch(G : Graph, numOfTrees, availableRobots, startNodes, obstacles, d
 
     def computeClosingExits(graphStrategy, G):
         print("Hello World!")
+        return []
 
 
     # ---------------------------------------------------
     # COMPUTING EFFICENCY WITH WHICH TWO STRATEGYS ARE COMPARED
     # ---------------------------------------------------
-    def computeExpTime(visited, G: Graph):
+    def computeExpTime(visitedTimes, G: Graph):
         #Computing the expected search time
         eff = 0
         for node in G.nodes:
-            eff += node.prior * visited[node.idx][1]
+            eff += node.prior * visitedTimes[node.idx]
 
         return eff
 
@@ -1279,7 +1299,7 @@ def graphSearch(G : Graph, numOfTrees, availableRobots, startNodes, obstacles, d
         else:
             T = computeRandomSpanningTree(G,root)
 
-        treeStrategy, clear, visited = treeSearch(T,root, availableRobots, G)
+        treeStrategy, clear, visitedTimes = treeSearch(T,root, availableRobots, G)
         #Check if strategy is perfomable. If not use closing exists strategy
 
         if clear == False and clearStrat == False:
@@ -1287,14 +1307,15 @@ def graphSearch(G : Graph, numOfTrees, availableRobots, startNodes, obstacles, d
             print("Hello World")
         elif clear == True and clearStrat == False:
             #Always take the clearance strategy
-            expTime = computeExpTime(visited, G)
+            expTime = computeExpTime(visitedTimes, G)
             minExpTime = expTime
             bestStrategy = treeStrategy
             bestTree = T
+            clearStrat = True
             
         elif clear == True and clearStrat == True:
             # Take the strategy with best expected search time
-            expTime = computeExpTime(visited, G)
+            expTime = computeExpTime(visitedTimes, G)
             if expTime < minExpTime:
                 minExpTime = expTime
                 bestStrategy = treeStrategy

@@ -201,10 +201,6 @@ def computeRobotCounts(strategy, numNodes, t):
 
         source, target, robots, t_departure, t_arrival = move
 
-        if source is None:
-            counts[target] += robots
-            continue
-
         if t_departure <= t:
             counts[source] -= robots
 

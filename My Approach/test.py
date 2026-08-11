@@ -1,7 +1,7 @@
-
 import numpy as np
 import streamlit as st
 import plotly.graph_objects as go
+
 
 from GraphBuilder import graphBuilder
 from Searcher import graphSearch
@@ -14,39 +14,57 @@ from TrajectoryPlanning import (
 from Graph import Graph, Node, Edge
 
 
-# --------------------------------------------------
+# ==================================================
 # SIMPLE DETECTION FUNCTION
-# --------------------------------------------------
+# ==================================================
 
 
 def detectionFnc(p, obstacles, radius=3):
+
     H, W = obstacles.shape
     px, py = p
 
-    # Simplified version of the Bresenham Algorithm
+    # --------------------------------------------------
+    # Simplified Bresenham line-of-sight test
+    # --------------------------------------------------
+
     def has_clear_line_of_sight(x0, y0, x1, y1):
+
         xold = x0
         yold = y0
+
         dx = x1 - x0
         dy = y1 - y0
+
         steps = max(abs(dx), abs(dy))
 
         if steps == 0:
             return True
 
         for i in range(1, steps + 1):
+
             x = round(x0 + dx * i / steps)
             y = round(y0 + dy * i / steps)
 
-            # If it's a cross move also check the cells to get there
+            # If it is a diagonal/cross move,
+            # also check the cells crossed on the way.
             if x != xold and y != yold:
+
                 if abs(dy) == abs(dx):
-                    if obstacles[x, yold] == 1 or obstacles[xold, y] == 1:
+
+                    if (
+                        obstacles[x, yold] == 1
+                        or obstacles[xold, y] == 1
+                    ):
                         return False
+
                 elif steps == abs(dx):
+
                     if obstacles[x, yold] == 1:
                         return False
+
                 else:
+
                     if obstacles[xold, y] == 1:
                         return False
 
@@ -62,20 +80,35 @@ def detectionFnc(p, obstacles, radius=3):
     visible = set()
 
     for x in range(H):
+
         for y in range(W):
+
             if obstacles[x, y] == 1:
                 continue
 
-            if np.sqrt((x - px) ** 2 + (y - py) ** 2) <= radius:
-                if has_clear_line_of_sight(px, py, x, y):
+            if (
+                np.sqrt(
+                    (x - px) ** 2
+                    + (y - py) ** 2
+                )
+                <= radius
+            ):
+
+                if has_clear_line_of_sight(
+                    px,
+                    py,
+                    x,
+                    y,
+                ):
+
                     visible.add((x, y))
 
     return visible
 
 
-# --------------------------------------------------
+# ==================================================
 # PAGE CONFIG
-# --------------------------------------------------
+# ==================================================
 
 
 st.set_page_config(
@@ -86,16 +119,28 @@ st.set_page_config(
 st.title("Multi-Robot Clearance")
 
 
-# --------------------------------------------------
-# SIDEBAR WITH SLIDERS
-# --------------------------------------------------
+# ==================================================
+# SIDEBAR
+# ==================================================
+
 
 with st.sidebar:
 
     st.markdown("## Parameters")
 
-    H = st.slider("Height", 5, 20, 10)
-    W = st.slider("Width", 5, 20, 10)
+    H = st.slider(
+        "Height",
+        5,
+        20,
+        10,
+    )
+
+    W = st.slider(
+        "Width",
+        5,
+        20,
+        10,
+    )
 
     detection_radius = st.slider(
         "Detection radius",
@@ -139,9 +184,17 @@ with st.sidebar:
         "🗑 Reset grid",
         use_container_width=True,
     ):
-        st.session_state.obstacles = np.zeros((H, W))
-        st.session_state.priors = np.zeros((H, W))
+
+        st.session_state.obstacles = np.zeros(
+            (H, W)
+        )
+
+        st.session_state.priors = np.zeros(
+            (H, W)
+        )
+
         st.session_state.start_region = set()
+
         st.rerun()
 
     st.markdown("---")
@@ -150,11 +203,16 @@ with st.sidebar:
 
     edit_mode = st.radio(
         "Click sets:",
-        ["Obstacle", "Prior", "Start Region"],
+        [
+            "Obstacle",
+            "Prior",
+            "Start Region",
+        ],
         horizontal=False,
     )
 
     if edit_mode == "Prior":
+
         prior_value = st.slider(
             "Prior value",
             0.0,
@@ -162,7 +220,9 @@ with st.sidebar:
             0.5,
             step=0.05,
         )
+
     else:
+
         prior_value = 0.5
 
     st.markdown("---")
@@ -186,30 +246,42 @@ with st.sidebar:
 
     view_mode = st.radio(
         "View",
-        ["Timestep", "Full strategy overview"],
+        [
+            "Timestep",
+            "Full strategy overview",
+        ],
     )
 
 
-# --------------------------------------------------
+# ==================================================
 # SESSION STATE
-# --------------------------------------------------
+# ==================================================
 
 
 def _init_grid(H, W):
 
     if (
         "obstacles" not in st.session_state
-        or st.session_state.obstacles.shape != (H, W)
+        or st.session_state.obstacles.shape
+        != (H, W)
     ):
-        st.session_state.obstacles = np.zeros((H, W))
+
+        st.session_state.obstacles = np.zeros(
+            (H, W)
+        )
 
     if (
         "priors" not in st.session_state
-        or st.session_state.priors.shape != (H, W)
+        or st.session_state.priors.shape
+        != (H, W)
     ):
-        st.session_state.priors = np.zeros((H, W))
+
+        st.session_state.priors = np.zeros(
+            (H, W)
+        )
 
     if "start_region" not in st.session_state:
+
         st.session_state.start_region = {
             (0, 0),
             (0, 1),
@@ -221,28 +293,34 @@ _init_grid(H, W)
 
 
 for key, default in [
+
     ("trajectories", None),
+
     ("current_time", 0),
+
     ("total_time", 0),
+
     ("graph_data", None),
+
     ("strategy", None),
 
     # Visualization phases:
     #
     # 0 = nothing displayed yet
     # 1 = complete navigation graph
-    # 2 = spanning tree highlighted
-    #
+    # 2 = spanning tree + simulation
+
     ("visualization_phase", 0),
 ]:
 
     if key not in st.session_state:
+
         st.session_state[key] = default
 
 
-# --------------------------------------------------
+# ==================================================
 # INTERACTIVE GRID EDITOR
-# --------------------------------------------------
+# ==================================================
 
 
 st.markdown(
@@ -250,7 +328,6 @@ st.markdown(
 )
 
 
-# CSS to make buttons square and colored
 st.markdown(
     """
 <style>
@@ -284,18 +361,22 @@ for r in range(H - 1, -1, -1):
         with cols[c]:
 
             if obstacles_arr[r, c] == 1:
+
                 label = "■"
                 btn_type = "primary"
 
             elif (r, c) in start_region:
+
                 label = "S"
                 btn_type = "primary"
 
             elif priors_arr[r, c] > 0:
+
                 label = f"{priors_arr[r, c]:.2f}"
                 btn_type = "secondary"
 
             else:
+
                 label = " "
                 btn_type = "secondary"
 
@@ -305,12 +386,13 @@ for r in range(H - 1, -1, -1):
                 type=btn_type,
                 use_container_width=True,
             ):
+
                 clicked_r, clicked_c = r, c
 
 
-# --------------------------------------------------
+# ==================================================
 # HANDLE GRID CLICK
-# --------------------------------------------------
+# ==================================================
 
 
 if clicked_r is not None:
@@ -320,45 +402,72 @@ if clicked_r is not None:
     if edit_mode == "Obstacle":
 
         if st.session_state.obstacles[r, c] == 1:
+
             st.session_state.obstacles[r, c] = 0
 
         else:
+
             st.session_state.obstacles[r, c] = 1
+
             st.session_state.priors[r, c] = 0.0
-            st.session_state.start_region.discard((r, c))
+
+            st.session_state.start_region.discard(
+                (r, c)
+            )
 
     elif edit_mode == "Start Region":
 
         if st.session_state.obstacles[r, c] == 0:
 
-            if (r, c) in st.session_state.start_region:
-                st.session_state.start_region.discard((r, c))
+            if (
+                r,
+                c,
+            ) in st.session_state.start_region:
+
+                st.session_state.start_region.discard(
+                    (r, c)
+                )
 
             else:
-                st.session_state.start_region.add((r, c))
+
+                st.session_state.start_region.add(
+                    (r, c)
+                )
 
     else:
 
         if st.session_state.obstacles[r, c] == 0:
 
-            if st.session_state.priors[r, c] == prior_value:
+            if (
+                st.session_state.priors[r, c]
+                == prior_value
+            ):
+
                 st.session_state.priors[r, c] = 0.0
 
             else:
-                st.session_state.priors[r, c] = prior_value
+
+                st.session_state.priors[r, c] = (
+                    prior_value
+                )
 
     st.rerun()
 
 
-# --------------------------------------------------
+# ==================================================
 # COMPUTE
-# --------------------------------------------------
+# ==================================================
 
 
 if run:
 
-    obstacles = st.session_state.obstacles.copy()
-    priors = st.session_state.priors.copy()
+    obstacles = (
+        st.session_state.obstacles.copy()
+    )
+
+    priors = (
+        st.session_state.priors.copy()
+    )
 
     root = (
         st.session_state.start_region
@@ -368,23 +477,33 @@ if run:
 
     with st.spinner("Building graph..."):
 
-        G, shadyEdges, D, startNodes = graphBuilder(
-            obstacles,
-            priors,
-            lambda p, obs: detectionFnc(
-                p,
-                obs,
-                detection_radius,
-            ),
-            root,
-            alpha,
+        G, shadyEdges, D, startNodes = (
+            graphBuilder(
+                obstacles,
+                priors,
+                lambda p, obs: detectionFnc(
+                    p,
+                    obs,
+                    detection_radius,
+                ),
+                root,
+                alpha,
+            )
         )
 
-    with st.spinner("Computing distance map..."):
+    with st.spinner(
+        "Computing distance map..."
+    ):
 
-        distanceMap = computeObstacleDistance(obstacles)
+        distanceMap = (
+            computeObstacleDistance(
+                obstacles
+            )
+        )
 
-    with st.spinner("Computing strategy..."):
+    with st.spinner(
+        "Computing strategy..."
+    ):
 
         strategy, T = graphSearch(
             G,
@@ -405,7 +524,9 @@ if run:
 
         st.stop()
 
-    with st.spinner("Planning trajectories..."):
+    with st.spinner(
+        "Planning trajectories..."
+    ):
 
         trajectories = computeTrajectory(
             obstacles,
@@ -423,19 +544,27 @@ if run:
         default=0,
     )
 
-    V = list(range(len(G.nodes)))
+    V = list(
+        range(len(G.nodes))
+    )
 
     P = [
         G.nodes[i].pos
         for i in range(len(G.nodes))
     ]
 
-    regularEdges = list(G.edges.keys())
+    regularEdges = list(
+        G.edges.keys()
+    )
 
-    treeEdges = list(T.edges.keys())
+    treeEdges = list(
+        T.edges.keys()
+    )
 
     # Save everything
-    st.session_state.trajectories = trajectories
+    st.session_state.trajectories = (
+        trajectories
+    )
 
     st.session_state.graph_data = (
         obstacles,
@@ -452,27 +581,20 @@ if run:
         treeEdges,
     )
 
-    # Start visualisation at phase 0.
-    #
-    # First click:
-    #     phase 0 -> 1 : show complete graph
-    #
-    # Second click:
-    #     phase 1 -> 2 : highlight tree
-    #
-    # Following clicks:
-    #     increase simulation time
-
     st.session_state.current_time = 0
-    st.session_state.total_time = total_time
+
+    st.session_state.total_time = (
+        total_time
+    )
+
     st.session_state.visualization_phase = 0
 
     st.rerun()
 
 
-# --------------------------------------------------
-# STOP IF NOTHING COMPUTED YET
-# --------------------------------------------------
+# ==================================================
+# STOP IF NOTHING COMPUTED
+# ==================================================
 
 
 if st.session_state.graph_data is None:
@@ -485,9 +607,9 @@ if st.session_state.graph_data is None:
     st.stop()
 
 
-# --------------------------------------------------
+# ==================================================
 # LOAD DATA
-# --------------------------------------------------
+# ==================================================
 
 
 (
@@ -501,20 +623,36 @@ if st.session_state.graph_data is None:
 ) = st.session_state.graph_data
 
 
-trajectories = st.session_state.trajectories
+trajectories = (
+    st.session_state.trajectories
+)
 
-current_time = st.session_state.current_time
+current_time = (
+    st.session_state.current_time
+)
 
-total_time = st.session_state.total_time
+total_time = (
+    st.session_state.total_time
+)
 
-strategy, treeEdges = st.session_state.strategy
+strategy, treeEdges = (
+    st.session_state.strategy
+)
 
-visualization_phase = st.session_state.visualization_phase
+visualization_phase = (
+    st.session_state.visualization_phase
+)
 
 
-# --------------------------------------------------
+# ==================================================
 # ROBOT COUNTS
-# --------------------------------------------------
+#
+# These counts describe robots that are currently
+# associated with graph nodes.
+#
+# Moving robots are handled separately below using
+# positionAtTime().
+# ==================================================
 
 
 robot_counts = computeRobotCounts(
@@ -524,15 +662,16 @@ robot_counts = computeRobotCounts(
 )
 
 
-# --------------------------------------------------
-# METRICS ROW
-# --------------------------------------------------
+# ==================================================
+# METRICS
+# ==================================================
 
 
 m1, m2, m3, m4, m5 = st.columns(5)
 
 
 with m1:
+
     st.metric(
         "Nodes",
         len(V),
@@ -540,6 +679,7 @@ with m1:
 
 
 with m2:
+
     st.metric(
         "Regular edges",
         len(regularEdges),
@@ -547,6 +687,7 @@ with m2:
 
 
 with m3:
+
     st.metric(
         "Total mission time",
         total_time,
@@ -554,6 +695,7 @@ with m3:
 
 
 with m4:
+
     st.metric(
         "Current time",
         current_time,
@@ -561,6 +703,7 @@ with m4:
 
 
 with m5:
+
     st.metric(
         "Available robots",
         available_robots
@@ -569,18 +712,9 @@ with m5:
     )
 
 
-# --------------------------------------------------
+# ==================================================
 # VISUALIZATION CONTROLS
-#
-# Phase 0:
-#     Ready
-#
-# Phase 1:
-#     Full graph
-#
-# Phase 2:
-#     Spanning tree + simulation
-# --------------------------------------------------
+# ==================================================
 
 
 col1, col2, col3, col4 = st.columns(
@@ -596,12 +730,15 @@ with col1:
     )
 
     if visualization_phase == 0:
+
         button_text = "Show Graph"
 
     elif visualization_phase == 1:
+
         button_text = "Show Spanning Tree"
 
     else:
+
         button_text = "Next Step (+1)"
 
     if st.button(
@@ -632,6 +769,7 @@ with col2:
     ):
 
         st.session_state.current_time = 0
+
         st.session_state.visualization_phase = 0
 
         st.rerun()
@@ -659,9 +797,9 @@ with col3:
     )
 
 
-# --------------------------------------------------
+# ==================================================
 # TIME SLIDER
-# --------------------------------------------------
+# ==================================================
 
 
 if (
@@ -679,14 +817,16 @@ if (
 
     if new_time != current_time:
 
-        st.session_state.current_time = new_time
+        st.session_state.current_time = (
+            new_time
+        )
 
         st.rerun()
 
 
-# --------------------------------------------------
+# ==================================================
 # PLOTLY FIGURE
-# --------------------------------------------------
+# ==================================================
 
 
 BASE_GRAY = "#9a9a9a"
@@ -704,6 +844,7 @@ fig = go.Figure()
 
 
 fig.update_layout(
+
     height=650,
 
     margin=dict(
@@ -727,9 +868,14 @@ fig.update_layout(
 
     xaxis=dict(
         title="Column",
-        range=[-0.5, W - 0.5],
+        range=[
+            -0.5,
+            W - 0.5,
+        ],
         tickmode="array",
-        tickvals=list(range(W)),
+        tickvals=list(
+            range(W)
+        ),
         showgrid=True,
         gridcolor="#eeeeee",
         zeroline=False,
@@ -739,9 +885,14 @@ fig.update_layout(
 
     yaxis=dict(
         title="Row",
-        range=[-0.5, H - 0.5],
+        range=[
+            -0.5,
+            H - 0.5,
+        ],
         tickmode="array",
-        tickvals=list(range(H)),
+        tickvals=list(
+            range(H)
+        ),
         showgrid=True,
         gridcolor="#eeeeee",
         zeroline=False,
@@ -753,9 +904,9 @@ fig.update_layout(
 )
 
 
-# --------------------------------------------------
+# ==================================================
 # OBSTACLES
-# --------------------------------------------------
+# ==================================================
 
 
 for x in range(H):
@@ -765,6 +916,7 @@ for x in range(H):
         if obstacles[x, y] == 1:
 
             fig.add_shape(
+
                 type="rect",
 
                 x0=y - 0.5,
@@ -783,6 +935,7 @@ for x in range(H):
 
 fig.add_trace(
     go.Scatter(
+
         x=[None],
         y=[None],
 
@@ -799,26 +952,23 @@ fig.add_trace(
 )
 
 
-# --------------------------------------------------
+# ==================================================
 # COMPLETE NAVIGATION GRAPH
-#
-# Phase >= 1:
-#     The entire graph is visible.
-#
-# This is deliberately drawn before the spanning
-# tree so that the tree can be placed on top of it.
-# --------------------------------------------------
+# ==================================================
 
 
 if visualization_phase >= 1:
 
-    for idx, (u, v) in enumerate(regularEdges):
+    for idx, (u, v) in enumerate(
+        regularEdges
+    ):
 
         p1 = P[u]
         p2 = P[v]
 
         fig.add_trace(
             go.Scatter(
+
                 x=[
                     p1[1],
                     p2[1],
@@ -854,20 +1004,26 @@ if visualization_phase >= 1:
         )
 
 
-# --------------------------------------------------
+# ==================================================
 # SHADY EDGES
-# --------------------------------------------------
+# ==================================================
 
 
-if visualization_phase >= 1 and show_shady:
+if (
+    visualization_phase >= 1
+    and show_shady
+):
 
-    for idx, (u, v) in enumerate(shadyEdges):
+    for idx, (u, v) in enumerate(
+        shadyEdges
+    ):
 
         p1 = P[u]
         p2 = P[v]
 
         fig.add_trace(
             go.Scatter(
+
                 x=[
                     p1[1],
                     p2[1],
@@ -901,13 +1057,9 @@ if visualization_phase >= 1 and show_shady:
         )
 
 
-# --------------------------------------------------
+# ==================================================
 # OPTIONAL REGULAR EDGE HIGHLIGHT
-#
-# Kept as a layer option. The complete graph is
-# already shown in phase 1 even if this checkbox
-# is disabled.
-# --------------------------------------------------
+# ==================================================
 
 
 if (
@@ -915,13 +1067,16 @@ if (
     and show_regular
 ):
 
-    for idx, (u, v) in enumerate(regularEdges):
+    for idx, (u, v) in enumerate(
+        regularEdges
+    ):
 
         p1 = P[u]
         p2 = P[v]
 
         fig.add_trace(
             go.Scatter(
+
                 x=[
                     p1[1],
                     p2[1],
@@ -954,12 +1109,9 @@ if (
         )
 
 
-# --------------------------------------------------
-# SPANNING TREE HIGHLIGHT
-#
-# Phase >= 2:
-#     Draw tree edges on top of the complete graph.
-# --------------------------------------------------
+# ==================================================
+# SPANNING TREE
+# ==================================================
 
 
 if (
@@ -967,13 +1119,16 @@ if (
     and show_tree
 ):
 
-    for idx, (u, v) in enumerate(treeEdges):
+    for idx, (u, v) in enumerate(
+        treeEdges
+    ):
 
         p1 = P[u]
         p2 = P[v]
 
         fig.add_trace(
             go.Scatter(
+
                 x=[
                     p1[1],
                     p2[1],
@@ -1009,9 +1164,9 @@ if (
         )
 
 
-# --------------------------------------------------
+# ==================================================
 # NODES
-# --------------------------------------------------
+# ==================================================
 
 
 node_x = [
@@ -1069,14 +1224,18 @@ for i in V:
 
 fig.add_trace(
     go.Scatter(
+
         x=node_x,
         y=node_y,
 
         mode="markers+text",
 
         marker=dict(
+
             size=node_sizes,
+
             color=node_colors,
+
             line=dict(
                 color="black",
                 width=1,
@@ -1108,9 +1267,15 @@ fig.add_trace(
 )
 
 
-# --------------------------------------------------
-# ROBOT COUNT BADGES
-# --------------------------------------------------
+# ==================================================
+# NODE ROBOT COUNT BADGES
+#
+# These labels are only used for robots that are
+# currently considered stationary by
+# computeRobotCounts().
+#
+# Moving robots receive their own label below.
+# ==================================================
 
 
 if highlight_robots:
@@ -1120,7 +1285,9 @@ if highlight_robots:
         if robot_counts[i] > 0:
 
             fig.add_annotation(
+
                 x=P[i][1] + 0.32,
+
                 y=P[i][0] - 0.32,
 
                 text=(
@@ -1144,28 +1311,31 @@ if highlight_robots:
             )
 
 
-# --------------------------------------------------
+# ==================================================
 # START REGION
-# --------------------------------------------------
+# ==================================================
 
 
-start_region_stored = st.session_state.get(
-    "start_region",
-    {(0, 0)},
+start_region_stored = (
+    st.session_state.get(
+        "start_region",
+        {(0, 0)},
+    )
 )
 
 
 start_xs = [
     P[i][1]
     for i in V
-    if tuple(P[i]) in start_region_stored
+    if tuple(P[i])
+    in start_region_stored
 ]
-
 
 start_ys = [
     P[i][0]
     for i in V
-    if tuple(P[i]) in start_region_stored
+    if tuple(P[i])
+    in start_region_stored
 ]
 
 
@@ -1173,15 +1343,21 @@ if start_xs:
 
     fig.add_trace(
         go.Scatter(
+
             x=start_xs,
+
             y=start_ys,
 
             mode="markers",
 
             marker=dict(
+
                 size=24,
+
                 color=START_GREEN,
+
                 symbol="star",
+
                 line=dict(
                     color="black",
                     width=1.2,
@@ -1193,21 +1369,25 @@ if start_xs:
     )
 
 
-# --------------------------------------------------
+# ==================================================
 # FULL STRATEGY OVERVIEW
-# --------------------------------------------------
+# ==================================================
 
 
 if (
     visualization_phase >= 2
-    and view_mode == "Full strategy overview"
+    and view_mode
+    == "Full strategy overview"
 ):
 
     for m in trajectories:
 
         path = m.get("path")
 
-        if not path or len(path) < 1:
+        if (
+            not path
+            or len(path) < 1
+        ):
             continue
 
         xs = [
@@ -1222,7 +1402,9 @@ if (
 
         fig.add_trace(
             go.Scatter(
+
                 x=xs,
+
                 y=ys,
 
                 mode="lines",
@@ -1243,15 +1425,21 @@ if (
         if len(xs) > 1:
 
             fig.add_annotation(
+
                 x=xs[-1],
+
                 y=ys[-1],
 
                 ax=xs[-2],
+
                 ay=ys[-2],
 
                 xref="x",
+
                 yref="y",
+
                 axref="x",
+
                 ayref="y",
 
                 showarrow=True,
@@ -1272,7 +1460,9 @@ if (
         ]
 
         fig.add_annotation(
+
             x=mid[1],
+
             y=mid[0],
 
             text=(
@@ -1298,7 +1488,9 @@ if (
 
     fig.add_trace(
         go.Scatter(
+
             x=[None],
+
             y=[None],
 
             mode="lines",
@@ -1313,12 +1505,32 @@ if (
     )
 
 
-# --------------------------------------------------
+# ==================================================
 # TIMESTEP MODE
 #
-# Only show movements that are active at the
-# currently selected time.
-# --------------------------------------------------
+# Time convention:
+#
+#   t < departure
+#       robot is at source
+#
+#   departure <= t < arrival
+#       robot is moving
+#
+#   t >= arrival
+#       robot is at target
+#
+# IMPORTANT:
+# We deliberately use
+#
+#   t_departure <= current_time < t_arrival
+#
+# instead of
+#
+#   t_departure <= current_time <= t_arrival
+#
+# This prevents a robot from being displayed both
+# as moving and as already arrived at the target.
+# ==================================================
 
 
 if (
@@ -1332,101 +1544,285 @@ if (
         if (
             m["t_departure"]
             <= current_time
-            <= m["t_arrival"]
+            < m["t_arrival"]
             and m.get("path") is not None
         )
     ]
+
+
+    # ==================================================
+    # MOVING ROBOTS
+    # ==================================================
+
+    active_positions = []
 
 
     for idx, m in enumerate(active):
 
         path = m["path"]
 
-        xs = [
-            p[1]
-            for p in path
-        ]
 
-        ys = [
-            p[0]
-            for p in path
-        ]
-
-
-        fig.add_trace(
-            go.Scatter(
-                x=xs,
-                y=ys,
-
-                mode="lines",
-
-                line=dict(
-                    color=MOTION_ORANGE,
-                    width=3,
-                ),
-
-                opacity=0.8,
-
-                showlegend=(idx == 0),
-
-                name=(
-                    "Robot movement"
-                    if idx == 0
-                    else ""
-                ),
-
-                hovertemplate=(
-                    f"{m['source']}→"
-                    f"{m['target']}: "
-                    f"{m['robots']} robots"
-                    "<extra></extra>"
-                ),
-            )
-        )
-
+        # --------------------------------------------------
+        # Current robot position
+        # --------------------------------------------------
 
         pos = positionAtTime(
+
             path,
+
             m["t_departure"],
+
             m["t_arrival"],
+
             current_time,
         )
 
 
-        if pos is not None:
+        if pos is None:
+            continue
+
+
+        # --------------------------------------------------
+        # Draw only the already travelled part of the path.
+        #
+        # We use the current position as the last point.
+        # This prevents the visualization from showing the
+        # future part of the trajectory as if it had already
+        # been travelled.
+        # --------------------------------------------------
+
+        progress = (
+            current_time
+            - m["t_departure"]
+        ) / (
+            m["t_arrival"]
+            - m["t_departure"]
+        )
+
+
+        progress = max(
+            0.0,
+            min(1.0, progress),
+        )
+
+
+        number_of_path_points = len(
+            path
+        )
+
+
+        if number_of_path_points <= 1:
+
+            travelled_path = [
+                pos
+            ]
+
+        else:
+
+            # Determine approximately how far along
+            # the discrete path we currently are.
+            current_index = int(
+                progress
+                * (
+                    number_of_path_points
+                    - 1
+                )
+            )
+
+            current_index = max(
+                0,
+                min(
+                    current_index,
+                    number_of_path_points - 1,
+                ),
+            )
+
+            travelled_path = (
+                path[
+                    : current_index + 1
+                ]
+            )
+
+            # Replace the last path point by the
+            # actual interpolated position.
+            if travelled_path:
+
+                travelled_path = (
+                    travelled_path[:-1]
+                    + [pos]
+                )
+
+
+        xs = [
+            p[1]
+            for p in travelled_path
+        ]
+
+        ys = [
+            p[0]
+            for p in travelled_path
+        ]
+
+
+        # --------------------------------------------------
+        # Draw travelled path
+        # --------------------------------------------------
+
+        if len(xs) >= 1:
 
             fig.add_trace(
                 go.Scatter(
-                    x=[pos[1]],
-                    y=[pos[0]],
 
-                    mode="markers",
+                    x=xs,
 
-                    marker=dict(
-                        size=16,
+                    y=ys,
+
+                    mode="lines",
+
+                    line=dict(
                         color=MOTION_ORANGE,
-                        symbol="diamond",
-                        line=dict(
-                            color="black",
-                            width=1,
-                        ),
+                        width=3,
                     ),
 
-                    showlegend=False,
+                    opacity=0.8,
+
+                    showlegend=(
+                        idx == 0
+                    ),
+
+                    name=(
+                        "Robot movement"
+                        if idx == 0
+                        else ""
+                    ),
 
                     hovertemplate=(
-                        f"{m['robots']} robots "
-                        f"en route to node "
-                        f"{m['target']}"
+                        f"{m['source']}→"
+                        f"{m['target']}: "
+                        f"{m['robots']} robots"
                         "<extra></extra>"
                     ),
                 )
             )
 
 
-# --------------------------------------------------
+        # --------------------------------------------------
+        # Draw current robot position
+        # --------------------------------------------------
+
+        fig.add_trace(
+            go.Scatter(
+
+                x=[pos[1]],
+
+                y=[pos[0]],
+
+                mode="markers",
+
+                marker=dict(
+
+                    size=16,
+
+                    color=MOTION_ORANGE,
+
+                    symbol="diamond",
+
+                    line=dict(
+                        color="black",
+                        width=1,
+                    ),
+                ),
+
+                showlegend=False,
+
+                hovertemplate=(
+                    f"{m['robots']} robots "
+                    f"en route to node "
+                    f"{m['target']}"
+                    "<extra></extra>"
+                ),
+            )
+        )
+
+
+        # Save the position for grouping labels.
+        active_positions.append(
+            (
+                pos,
+                m["robots"],
+            )
+        )
+
+
+    # ==================================================
+    # GROUP MOVING ROBOTS
+    #
+    # Multiple movement groups can temporarily occupy
+    # the same position. We merge those labels.
+    # ==================================================
+
+    position_groups = {}
+
+
+    for pos, robots in active_positions:
+
+        key = (
+            round(pos[0], 3),
+            round(pos[1], 3),
+        )
+
+
+        if key not in position_groups:
+
+            position_groups[key] = {
+                "pos": pos,
+                "robots": 0,
+            }
+
+
+        position_groups[key][
+            "robots"
+        ] += robots
+
+
+    # ==================================================
+    # DRAW MOVING ROBOT LABELS
+    # ==================================================
+
+    for group in position_groups.values():
+
+        pos = group["pos"]
+
+        fig.add_annotation(
+
+            x=pos[1] + 0.32,
+
+            y=pos[0] - 0.32,
+
+            text=(
+                f"🤖×{group['robots']}"
+            ),
+
+            showarrow=False,
+
+            font=dict(
+                size=10,
+                color="black",
+            ),
+
+            bgcolor="white",
+
+            bordercolor="black",
+
+            borderwidth=1,
+
+            borderpad=2,
+        )
+
+
+# ==================================================
 # DISPLAY
-# --------------------------------------------------
+# ==================================================
 
 
 st.plotly_chart(
