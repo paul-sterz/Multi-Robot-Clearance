@@ -456,13 +456,21 @@ def graphSearch(G : Graph, numOfTrees, availableRobots, startNodes, obstacles, d
                     multiples.sort(key=lambda x: x[2], reverse=True)
                     lastOptions.sort(key = lambda x: x[2], reverse=True)
 
-
+                    loopGuard = 0
                     while len(unExplored) > 0: #as long as there exists unExplored children
+
+                        loopGuard += 1
+                        if loopGuard > 10000:
+                            raise RuntimeError(f"Endlosschleife erkannt bei node={node}, unExplored={unExplored}")
+
+
                         safestadeVisited2 = visited.copy()
                         safestadeGuards2 = copy.deepcopy(guards)
                         safestadeFlags2 = copy.deepcopy(flags)
                         safestadeRobotCount2 = robotCountPerNode.copy()
                         safestadeStrategy = strategy.copy()
+                        safestadeEnteringTime = enteringTime
+                        safestadeUnexplored = unExplored
 
                         exists = False
  
@@ -532,8 +540,15 @@ def graphSearch(G : Graph, numOfTrees, availableRobots, startNodes, obstacles, d
                                                 counter += 1
 
                                         if found == False:
-                                            #Nothing was changed yet so no need to go back to safestades 
+                                            #Nothing was changed yet so no need to go back to safestades, doing it anywaay for testing
+                                            visited = safestadeVisited2
+                                            flags = safestadeFlags2
+                                            guards = safestadeGuards2
+                                            robotCountPerNode = safestadeRobotCount2
                                             exists = False
+                                            strategy = safestadeStrategy
+                                            enteringTime = safestadeEnteringTime
+                                            unExplored = safestadeUnexplored
                                             break
 
                                         #Walk the robot from the flag to the robot  
@@ -673,6 +688,8 @@ def graphSearch(G : Graph, numOfTrees, availableRobots, startNodes, obstacles, d
                                         robotCountPerNode = safestadeRobotCount2
                                         exists = False
                                         strategy = safestadeStrategy
+                                        enteringTime = safestadeEnteringTime
+                                        unExplored = safestadeUnexplored
                                         break
 
                                     strategy.extend(subStrategy)
@@ -696,8 +713,9 @@ def graphSearch(G : Graph, numOfTrees, availableRobots, startNodes, obstacles, d
                                     welcomeBackTime[counter] = strategy[len(strategy)- 1][4]
                                     counter += 1
 
-                                # Continue with the next move when all robots have returned from there inner paths
-                                enteringTime = max(welcomeBackTime)
+                                else: #Only if the for loop is not left with a break
+                                    # Continue with the next move when all robots have returned from there inner paths
+                                    enteringTime = max(welcomeBackTime)
 
                         # End of last multiple case
                         #------------------------------------------------------------------------
@@ -799,7 +817,7 @@ def graphSearch(G : Graph, numOfTrees, availableRobots, startNodes, obstacles, d
 
                                     if feasible == False:
                                         # Case Distinction if a decision was opend, meaning did we go early in the biggest path and this made a difference
-                                        if twice or currentLablesRobotCost[0][0] != robotsNeededSingle:
+                                        if twice or currentLablesRobotCost[0][0] != robotsNeededSingle or len(unExplored) == 0:
                                             visited = safestadeVisited
                                             flags = safestadeFlags
                                             guards = safestadeGuards
@@ -813,6 +831,8 @@ def graphSearch(G : Graph, numOfTrees, availableRobots, startNodes, obstacles, d
                                             guards = safestadeGuards2
                                             robotCountPerNode = safestadeRobotCount2
                                             strategy = safestadeStrategy
+                                            enteringTime = safestadeEnteringTime
+                                            unExplored = safestadeUnexplored
                                             for i in range(counterSingle,len(combinedLables)-1):
                                                 save = combinedLables[i]
                                                 combinedLables[i] = combinedLables[i+1]
@@ -948,30 +968,15 @@ def graphSearch(G : Graph, numOfTrees, availableRobots, startNodes, obstacles, d
                                     unExplored = list(set(unExplored) - {candidateSingle})
                                     subStrategy, feasible = explorePath(candidateSingle, strategy[len(strategy)- 1][4])
                                     if feasible == False:
-                                        # Case Distinction if a decision was opend, meaning did we go early in the biggest path and this made a difference
-                                        if twice or currentLablesRobotCost[0][0] != robotsNeededSingle or contamination or visitedContamination:
-                                            visited = safestadeVisited
-                                            flags = safestadeFlags
-                                            guards = safestadeGuards
-                                            robotCountPerNode = safestadeRobotCount
-                                           
-                                            exists = False
-                                            return strategy, False
-                                        else:
-                                            #Swap this with the last place and rearange accordingly, to ensure max subtree is taken at last
-                                            visited = safestadeVisited2
-                                            flags = safestadeFlags2
-                                            guards = safestadeGuards2
-                                            robotCountPerNode = safestadeRobotCount2
-                                            strategy = safestadeStrategy
-                                            exists = False
-                                            unExplored = list(set(unExplored) | {candidateSingle})
-                                            counterSingle -= 1
-                                            for i in range(counterSingle,len(combinedLables)-1):
-                                                save = combinedLables[i]
-                                                combinedLables[i] = combinedLables[i+1]
-                                                combinedLables[i + 1] = save
-                                            continue
+                                        # Since there is only once child left there can't be a backtrack decision
+                                        visited = safestadeVisited
+                                        flags = safestadeFlags
+                                        guards = safestadeGuards
+                                        robotCountPerNode = safestadeRobotCount
+                                        
+                                        exists = False
+                                        return strategy, False
+
                                             
                                     strategy.extend(subStrategy)
                                     if not finish:
@@ -1050,9 +1055,15 @@ def graphSearch(G : Graph, numOfTrees, availableRobots, startNodes, obstacles, d
                             # -> No checking for recontamination through graph edge / Slidemoves are neicessary since we can not leave the node here    
                             #--------------------------------------------------------
                             #Note that no slide move prevention or contamination cheks are neicessary since we need at max availablerobots -1
-               
+
                             counterMultiple += 1 
+                            #Check if this is a failed last multiple case
+                            if len(list(set(unExplored) - set(candidateMultiple))) == 0:
+                                continue
+
                             unExplored = list(set(unExplored) - set(candidateMultiple))
+
+                            
 
                             #Checking if an Graph-Edge leads to recontamination
                             contamination = False
@@ -1132,24 +1143,17 @@ def graphSearch(G : Graph, numOfTrees, availableRobots, startNodes, obstacles, d
                                 #Check if during the run not enough robots are available if yes this decision has to be backtracked
                                 if feasible == False:
                                     #Note that this strategy might be feasible in a later time, but this is not implemented here
-                                    unExplored = list(set(unExplored) | set(candidateMultiple))
+                                    unExplored = safestadeUnexplored
 
                                     visited = safestadeVisited2
                                     flags = safestadeFlags2
                                     guards = safestadeGuards2
                                     robotCountPerNode = safestadeRobotCount2
                                     strategy = safestadeStrategy
-                                
-                                    continue
+                                    enteringTime = safestadeEnteringTime
+                                    break
 
                                 #Remove all flags that represent the spare rebots during the exploration of the subtree
-                                remainingFlags = []
-                                for flag in flags:
-                                    if flag[0] == node:
-                                        robotCountPerNode[node] += flag[1]
-                                    else: remainingFlags.append(flag)
-
-                                flags = remainingFlags
                                 strategy.extend(subStrategy)
                                 #Note that we always have to backtrack since this can't be the last move
                                 strategy.append((y,node,robotsNeeded,strategy[len(strategy)- 1][4],strategy[len(strategy)- 1][4] + T.edges[(node,y)].time))
@@ -1159,9 +1163,17 @@ def graphSearch(G : Graph, numOfTrees, availableRobots, startNodes, obstacles, d
                                 # Save when the robots return from this inner path
                                 welcomeBackTime[counter] = strategy[len(strategy)- 1][4]
                                 counter += 1
+                            else: #Only if the for loop is not left with a break
+                                remainingFlags = []
+                                for flag in flags:
+                                    if flag[0] == node:
+                                        robotCountPerNode[node] += flag[1]
+                                    else: remainingFlags.append(flag)
 
-                            # Continue with the next move when all robots have returned from there inner paths
-                            enteringTime = max(welcomeBackTime)
+                                flags = remainingFlags
+
+                                # Continue with the next move when all robots have returned from there inner paths
+                                enteringTime = max(welcomeBackTime)
 
             return strategy, True
 
