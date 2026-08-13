@@ -326,6 +326,7 @@ def graphSearch(G : Graph, numOfTrees, availableRobots, startNodes, obstacles, d
                             for waechter in guards:
                                 if y in waechter[1]:
                                     waechter[1].remove(y)
+                                    waechter[3] = max(enteringTime, waechter[3])
                                     if len(waechter[1]) == 0:
                                         #Guard turns into a flag as normal
                                         # guards[3] saves how long a guard needs at least to stay for slide move prevention
@@ -659,6 +660,7 @@ def graphSearch(G : Graph, numOfTrees, availableRobots, startNodes, obstacles, d
                                         for waechter in guards:
                                             if y in waechter[1]:
                                                 waechter[1].remove(y)
+                                                waechter[3] = max(enteringTime, waechter[3])
                                                 if len(waechter[1]) == 0:
                                                     #Guard turns into a flag as normal
                                                     # guards[3] saves how long a guard needs at least to stay for slide move prevention
@@ -743,6 +745,10 @@ def graphSearch(G : Graph, numOfTrees, availableRobots, startNodes, obstacles, d
                                 if vertex not in unExplored:
                                     alreadyExplored = True
 
+                            if not alreadyExplored and set(candidateMultiple) == set(unExplored):
+                                alreadyExplored = True
+
+
                         if alreadyExplored == True or (effSingle > effMultiple and (candidateSingle not in candidateMultiple or effSingle * 1/2 > effMultiple )) : #This implies that the single move is the better choice or that no multiple move exists
                             #--------------------------------------------------------
                             # A Single Move is the best one, Note that we have to do a case distinction here if we need slide moves & and this opens a decision or not
@@ -798,6 +804,7 @@ def graphSearch(G : Graph, numOfTrees, availableRobots, startNodes, obstacles, d
                                         for waechter in guards:
                                             if candidateSingle in waechter[1]:
                                                 waechter[1].remove(candidateSingle)
+                                                waechter[3] = max(enteringTime, waechter[3])
                                                 if len(waechter[1]) == 0:
                                                     #Guard turns into a flag as normal
                                                     # guards[3] saves how long a guard needs at least to stay for slide move prevention
@@ -948,6 +955,7 @@ def graphSearch(G : Graph, numOfTrees, availableRobots, startNodes, obstacles, d
                                         for waechter in guards:
                                             if candidateSingle in waechter[1]:
                                                 waechter[1].remove(candidateSingle)
+                                                waechter[3] = max(enteringTime, waechter[3])
                                                 if len(waechter[1]) == 0:
                                                     #Guard turns into a flag as normal
                                                     # guards[3] saves how long a guard needs at least to stay for slide move prevention
@@ -1056,9 +1064,9 @@ def graphSearch(G : Graph, numOfTrees, availableRobots, startNodes, obstacles, d
                             #--------------------------------------------------------
                             #Note that no slide move prevention or contamination cheks are neicessary since we need at max availablerobots -1
 
-                            counterMultiple += 1 
                             #Check if this is a failed last multiple case
                             if len(list(set(unExplored) - set(candidateMultiple))) == 0:
+                                multipleAtOnce
                                 continue
 
                             unExplored = list(set(unExplored) - set(candidateMultiple))
@@ -1124,6 +1132,7 @@ def graphSearch(G : Graph, numOfTrees, availableRobots, startNodes, obstacles, d
                                     for waechter in guards:
                                         if y in waechter[1]:
                                             waechter[1].remove(y)
+                                            waechter[3] = max(enteringTime, waechter[3])
                                             if len(waechter[1]) == 0: 
                                                 #Guard turns into a flag as normal
                                                 # guards[3] saves how long a guard needs at least to stay for slide move prevention
@@ -1144,13 +1153,14 @@ def graphSearch(G : Graph, numOfTrees, availableRobots, startNodes, obstacles, d
                                 if feasible == False:
                                     #Note that this strategy might be feasible in a later time, but this is not implemented here
                                     unExplored = safestadeUnexplored
-
                                     visited = safestadeVisited2
                                     flags = safestadeFlags2
                                     guards = safestadeGuards2
                                     robotCountPerNode = safestadeRobotCount2
                                     strategy = safestadeStrategy
                                     enteringTime = safestadeEnteringTime
+                                    multiples.pop(counterMultiple)
+
                                     break
 
                                 #Remove all flags that represent the spare rebots during the exploration of the subtree
