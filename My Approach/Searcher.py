@@ -116,7 +116,7 @@ def graphSearch(G : Graph, numOfTrees, availableRobots, startNodes, obstacles, d
                   
 
         return edgeLabelsRobotCost, edgeLabelsEfficiency, multipleAtOnce, totalTime, totalPrior
-    
+
     
     # ---------------------------------------------------
     # CALCULATING A STRATEGY FOR TREES AND TRANSFORMING IT TO THE GRAPH
@@ -176,7 +176,6 @@ def graphSearch(G : Graph, numOfTrees, availableRobots, startNodes, obstacles, d
                     (eff, robotsNeeded, y) = combinedLables[0]
                     if robotCountPerNode[node] >= robotsNeeded : #Are there enough robots to clear
                         # Note that (robotsNeeded == robotCountPerNode[node] and robotsNeeded == 1) could only happen if we are in the root
-                        # TODO implent this case
                         
                         slideMove = False
 

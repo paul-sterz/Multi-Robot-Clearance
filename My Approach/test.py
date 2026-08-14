@@ -1,3 +1,5 @@
+import time
+
 import numpy as np
 import streamlit as st
 import plotly.graph_objects as go
@@ -195,6 +197,8 @@ with st.sidebar:
 
         st.session_state.start_region = set()
 
+        st.session_state.playing = False
+
         st.rerun()
 
     st.markdown("---")
@@ -242,6 +246,11 @@ with st.sidebar:
     show_tree = st.checkbox(
         "Spanning tree",
         value=True,
+    )
+
+    show_cleared = st.checkbox(
+        "Cleared area",
+        value=False,
     )
 
     view_mode = st.radio(
@@ -303,6 +312,15 @@ for key, default in [
     ("graph_data", None),
 
     ("strategy", None),
+
+    # Detection sets per node (node_idx -> set of (row, col) cells)
+    # and the time at which each node was first reached ("visited").
+    ("detection_sets", None),
+
+    ("node_visited_time", None),
+
+    # Whether the timestep animation is currently auto-advancing.
+    ("playing", False),
 
     # Visualization phases:
     #
@@ -561,6 +579,55 @@ if run:
         T.edges.keys()
     )
 
+    # --------------------------------------------------
+    # Determine, for every node, the earliest time at
+    # which it was reached ("visited"). Start-region
+    # nodes count as visited from t = 0. Every other
+    # node counts as visited as soon as a move targeting
+    # it has arrived (t_arrival). Detection sets are not
+    # disjoint, so several nodes can share cells - this
+    # is only used to decide *when* a node's detection
+    # set is added to the cleared area, not to dedupe
+    # the cells themselves.
+    # --------------------------------------------------
+
+    # graphBuilder keeps adding start-region nodes until the
+    # whole start region is *covered* - this is purely about
+    # graph coverage and does NOT mean every one of these
+    # nodes actually has robots on it at t = 0. Only the
+    # node(s) that are never the target of a move (i.e. the
+    # true root(s) of the spanning tree / forest) start out
+    # occupied. Every other node - including start-region
+    # nodes that merely help cover the area - only becomes
+    # "visited" once a trajectory actually arrives there.
+
+    targeted_nodes = {
+        m["target"] for m in trajectories
+    }
+
+    node_visited_time = {}
+
+    # startNodes is the *count* of start-region nodes
+    # (they are created first, so they occupy indices
+    # 0 .. startNodes - 1).
+    for i in range(startNodes):
+
+        if i not in targeted_nodes:
+
+            node_visited_time[i] = 0
+
+    for m in trajectories:
+
+        tgt = m["target"]
+        t_arr = m["t_arrival"]
+
+        if (
+            tgt not in node_visited_time
+            or t_arr < node_visited_time[tgt]
+        ):
+
+            node_visited_time[tgt] = t_arr
+
     # Save everything
     st.session_state.trajectories = (
         trajectories
@@ -581,6 +648,12 @@ if run:
         treeEdges,
     )
 
+    st.session_state.detection_sets = D
+
+    st.session_state.node_visited_time = (
+        node_visited_time
+    )
+
     st.session_state.current_time = 0
 
     st.session_state.total_time = (
@@ -588,6 +661,8 @@ if run:
     )
 
     st.session_state.visualization_phase = 0
+
+    st.session_state.playing = False
 
     st.rerun()
 
@@ -637,6 +712,14 @@ total_time = (
 
 strategy, treeEdges = (
     st.session_state.strategy
+)
+
+detection_sets = (
+    st.session_state.detection_sets
+)
+
+node_visited_time = (
+    st.session_state.node_visited_time
 )
 
 visualization_phase = (
@@ -717,8 +800,8 @@ with m5:
 # ==================================================
 
 
-col1, col2, col3, col4 = st.columns(
-    [1, 1, 2, 4]
+col1, col2, col3, col4, col5 = st.columns(
+    [1, 1, 1, 2, 3]
 )
 
 
@@ -743,7 +826,7 @@ with col1:
 
     if st.button(
         button_text,
-        disabled=at_end,
+        disabled=at_end or st.session_state.playing,
         use_container_width=True,
     ):
 
@@ -763,6 +846,43 @@ with col1:
 
 with col2:
 
+    # Play / Pause is only meaningful once the spanning
+    # tree / simulation is being shown in Timestep view.
+    play_disabled = not (
+        visualization_phase >= 2
+        and view_mode == "Timestep"
+    )
+
+    play_label = (
+        "⏸ Pause"
+        if st.session_state.playing
+        else "▶ Play"
+    )
+
+    if st.button(
+        play_label,
+        use_container_width=True,
+        disabled=play_disabled,
+    ):
+
+        st.session_state.playing = (
+            not st.session_state.playing
+        )
+
+        # If we start playing right at the end, jump back
+        # to the start so the animation is visible again.
+        if (
+            st.session_state.playing
+            and current_time >= total_time
+        ):
+
+            st.session_state.current_time = 0
+
+        st.rerun()
+
+
+with col3:
+
     if st.button(
         "Reset",
         use_container_width=True,
@@ -772,10 +892,12 @@ with col2:
 
         st.session_state.visualization_phase = 0
 
+        st.session_state.playing = False
+
         st.rerun()
 
 
-with col3:
+with col4:
 
     if visualization_phase == 0:
 
@@ -791,6 +913,10 @@ with col3:
             f"Spanning tree → "
             f"t = {current_time} / {total_time}"
         )
+
+    if st.session_state.playing:
+
+        phase += "  ▶ playing..."
 
     st.caption(
         f"Phase: **{phase}**"
@@ -813,9 +939,13 @@ if (
         0,
         int(total_time),
         int(current_time),
+        disabled=st.session_state.playing,
     )
 
-    if new_time != current_time:
+    if (
+        not st.session_state.playing
+        and new_time != current_time
+    ):
 
         st.session_state.current_time = (
             new_time
@@ -838,6 +968,9 @@ MOTION_ORANGE = "#e76f51"
 
 START_GREEN = "#2a9d8f"
 TEXT_DARK = "#264653"
+
+CLEARED_GREEN_FILL = "rgba(56, 176, 0, 0.28)"
+CLEARED_GREEN_SOLID = "#38b000"
 
 
 fig = go.Figure()
@@ -950,6 +1083,86 @@ fig.add_trace(
         name="Obstacle",
     )
 )
+
+
+# ==================================================
+# CLEARED AREA
+#
+# For every node that has already been visited (i.e.
+# node_visited_time[node] <= t_ref), all cells in that
+# node's detection set are shaded green. Detection sets
+# are not disjoint - multiple nodes can contribute the
+# same cell - so we simply union them into a set.
+# ==================================================
+
+
+if (
+    show_cleared
+    and visualization_phase >= 2
+    and detection_sets is not None
+    and node_visited_time is not None
+):
+
+    if view_mode == "Full strategy overview":
+
+        t_ref = total_time
+
+    else:
+
+        t_ref = current_time
+
+    cleared_cells = set()
+
+    # detection_sets (D) is a list indexed like G.nodes:
+    # detection_sets[node_idx] -> set of (row, col) cells.
+    for node_idx, t_visit in node_visited_time.items():
+
+        if (
+            t_visit <= t_ref
+            and node_idx < len(detection_sets)
+        ):
+
+            cleared_cells |= detection_sets[node_idx]
+
+    for (x, y) in cleared_cells:
+
+        if obstacles[x, y] == 1:
+            continue
+
+        fig.add_shape(
+
+            type="rect",
+
+            x0=y - 0.5,
+            x1=y + 0.5,
+
+            y0=x - 0.5,
+            y1=x + 0.5,
+
+            fillcolor=CLEARED_GREEN_FILL,
+
+            line=dict(width=0),
+
+            layer="below",
+        )
+
+    fig.add_trace(
+        go.Scatter(
+
+            x=[None],
+            y=[None],
+
+            mode="markers",
+
+            marker=dict(
+                symbol="square",
+                size=12,
+                color=CLEARED_GREEN_SOLID,
+            ),
+
+            name="Cleared area",
+        )
+    )
 
 
 # ==================================================
@@ -1829,3 +2042,36 @@ st.plotly_chart(
     fig,
     use_container_width=True,
 )
+
+
+# ==================================================
+# AUTOPLAY LOOP
+#
+# When "playing" is active, we render the current
+# frame (above), wait one second, advance the time
+# by one step and trigger a rerun. This repeats until
+# total_time is reached or the user hits Pause.
+# ==================================================
+
+
+if st.session_state.playing:
+
+    if (
+        visualization_phase >= 2
+        and current_time < total_time
+    ):
+
+        time.sleep(1)
+
+        st.session_state.current_time = min(
+            current_time + 1,
+            total_time,
+        )
+
+        st.rerun()
+
+    else:
+
+        st.session_state.playing = False
+
+        st.rerun()
