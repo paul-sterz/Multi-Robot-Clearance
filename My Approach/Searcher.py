@@ -6,12 +6,13 @@ from Graph import Graph, Node, Edge
 from itertools import combinations
 from TrajectoryPlanning import aStar
 import copy
+import time
 
 
-def graphSearch(G : Graph, numOfTrees, availableRobots, startNodes, obstacles, distanceMap, alpha):
+def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles, distanceMap, alpha):
     #INPUT:
     # G: a Graph object repesenting the merged navigationgraph
-    # numOfTrees: an integer which represents the number of evaluated trees
+    # availableTime: a number which represents the available computation time
     # availableRobots: an integer representing the amount of robots available
     # startNodes:  an integer representing that all nodes from 0 to startNode-1 are valid startNodes for our Algorithim
     # aerialSpeed: TO-DO
@@ -1186,34 +1187,19 @@ def graphSearch(G : Graph, numOfTrees, availableRobots, startNodes, obstacles, d
 
             return strategy, True
 
-        # If there that much robots we can simply directly walk to each node
-        if availableRobots < len(G.nodes):
-            strategy, clearance = explorePath(root, 0)
-            #Determine the finishtime
-            
-            finishTime = -1
-            for tuple in visited:
-                if finishTime < tuple[1]:
-                    finishTime = tuple[1]
-    
-            #Cut of strategy moves that go over t_finish, meaning unneicessary backtrack moves
-            strategy = [move for move in strategy if move[4] <= finishTime]
-            
-        else:
-            #Easy Case where optimum is obvious
-            clearance = True
-            strategy = []
-            for node in G.nodes:
-                if node.idx != root:
-                    path = aStar(T.nodes[root].pos, node.pos, obstacles,distanceMap, alpha)
-                    strategy.append((root, node.idx, 1, 0, len(path) - 1))
 
+        strategy, clearance = explorePath(root, 0)
 
-        if clearance == False:
-            strategy = computeClosingExits(strategy, G)
-       
+        #Determine the finishtime        
+        finishTime = -1
+        for tuple in visited:
+            if finishTime < tuple[1]:
+                finishTime = tuple[1]
+
+        #Cut of strategy moves that go over t_finish, meaning unneicessary backtrack moves
+        strategy = [move for move in strategy if move[4] <= finishTime]
+            
         #Since through flag movements some nodes can be visited earlier than i implemented, i determine the correct visited times here
-
         realVisitedTime = [sys.maxsize] * len(T.nodes)
         realVisitedTime[root] = 0
         for move in strategy:
@@ -1269,7 +1255,7 @@ def graphSearch(G : Graph, numOfTrees, availableRobots, startNodes, obstacles, d
         T = Graph()
         for i in range(len(G.nodes)):
             T.add_node2(G.nodes[i])
-        
+       
         visited = set()
 
         def dfs(node):
@@ -1295,7 +1281,7 @@ def graphSearch(G : Graph, numOfTrees, availableRobots, startNodes, obstacles, d
 
     # ---------------------------------------------------
     # COMPUTING THE CLOSING EXISTS STRATEGY IF NOT ENOUGH ROBOTS ARE GIVEN
-    # TO-DO: Implement method
+    # TODO: Implement method
     # ---------------------------------------------------
 
     def computeClosingExits(graphStrategy, G):
@@ -1314,48 +1300,158 @@ def graphSearch(G : Graph, numOfTrees, availableRobots, startNodes, obstacles, d
 
         return eff
 
+
+
+    # ---------------------------------------------------
+    # Computing the cross over of two trees so for the Genetic Algorithim
+    # ---------------------------------------------------
+    def crossOver(parentA, parentB, G):
+
+        # parent = (Tree, root)
+        treeA, rootA = parentA
+        treeB, rootB = parentB
+
+
+        # 1. Choose root from one of the parents
+        root = random.choice([rootA, rootB])
+
+        # 2. Union of edges from both parents
+        parentEdges = set(treeA.edges.keys()) | set(treeB.edges.keys())
+
+        # 3. Find edges of G that are contained in neither
+        #    parent
+        possibleRandomEdges = [
+            edgeKey
+            for edgeKey in G.edges.keys()
+            if edgeKey not in parentEdges
+        ]
+
+        # 4. Add up to two random new edges
+        numberOfRandomEdges = min(2, len(possibleRandomEdges))
+
+        randomEdges = random.sample(
+            possibleRandomEdges,
+            numberOfRandomEdges
+        )
+
+        candidateEdges = parentEdges | set(randomEdges)
+
+        # 5. Build temporary graph containing exactly these
+        #    candidate edges
+        candidateGraph = Graph()
+
+        for node in G.nodes:
+            candidateGraph.add_node2(node)
+
+        for u, v in candidateEdges:
+
+            # Get original edge information from G
+            edge = G.edges[(u, v)]
+
+            candidateGraph.add_edge(
+                candidateGraph.nodes[u],
+                candidateGraph.nodes[v],
+                edge.time,
+                edge.robotType
+            )
+
+        # 6. Generate random spanning tree from candidate graph
+        childTree = computeRandomSpanningTree(
+            candidateGraph,
+            root
+        )
+
+        return childTree, root
+        
+
+    # ---------------------------------------------------
+    # Computing the next Generation of Spanning Trees for the Genetic Algorithim
+    # ---------------------------------------------------
+    def evolve(oldGen, fitnesses, G):
+        newGen = []
+        sortedGen = [individual for fitness, individual in sorted(zip(fitnesses, oldGen), key=lambda x: x[0])]
+        del sortedGen[3:]
+        P = [0.6, 0.25, 0.15]
+        for i in range(0,5):
+            ParentA = random.choices(sortedGen, weights= P,k=1)[0]
+            ParentB = random.choices(sortedGen, weights= P,k=1)[0]
+            while ParentB == ParentA:
+                ParentB = random.choices(sortedGen, weights= P,k=1)[0]
+
+            newGen.append(crossOver(ParentA, ParentB, G))
+        return newGen
+
     # ------------------------------------------------------------
     # THE REAL GRAPH SEARCH ALGORITHIM USING EVERYTHING FROM ABOVE
     # ------------------------------------------------------------
 
-    minExpTime = np.inf
-    bestStrategy = None
-    bestTree = None
-    clearStrat = False
-    counter = [0] * startNodes
+    #If we have that many robots the optimal solution is obvious
+    if len(G.nodes) <= availableRobots:
+        root = 0
+        strategy = []
+        for node in G.nodes:
+            if node.idx != root:
+                path = aStar(G.nodes[root].pos, node.pos, obstacles,distanceMap, alpha)
+                strategy.append((root, node.idx, 1, 0, len(path) - 1))
 
-    for i in range(numOfTrees):
+        strategy.insert(0, (None, root, availableRobots))
+        return strategy, G
+        
+    else:
+        startingTime = time.monotonic()
+        bestFitness = np.inf
+        bestStrategy = None
+        bestTree = None
+        counter = [0] * startNodes
+        currGen = []
+        checkedTreesCounter = 0
+        #------------------------------------------------------------
+        # INITALIZING THE STARTING POPULATION
+        #------------------------------------------------------------
+        for i in range(0,10):
+            if counter != [1] * startNodes:
+                for i in range(0,len(counter)):
+                    if counter[i] == 0:
+                        counter[i] = 1
+                        root = i
+                        T = computeGreedySpanningTree(G,root)
+                        currGen.append((T,root))
+                        break
+            else: 
+                root = random.randint(0,startNodes-1)
+                T = computeRandomSpanningTree(G,root)
+                currGen.append((T,root))
 
-        root = random.randint(0,startNodes-1)
 
-        if counter[root] == 0:
-            T = computeGreedySpanningTree(G,root)
-            counter[root] += 1
-        else:
-            T = computeRandomSpanningTree(G,root)
+        #------------------------------------------------------------
+        # ANYTIME ALGORITHIM
+        #------------------------------------------------------------
 
-        treeStrategy, clear, visitedTimes = treeSearch(T,root, availableRobots, G)
-        #Check if strategy is perfomable. If not use closing exists strategy
+        while time.monotonic() - startingTime < availableTime:
+            fitnesses = []
+            for indivium in currGen:
+                if time.monotonic() - startingTime >= availableTime:
+                    break
 
-        if clear == False and clearStrat == False:
-            #TODO: Find a way to compare to closing-exits strategys
-            print("Hello World")
-        elif clear == True and clearStrat == False:
-            #Always take the clearance strategy
-            expTime = computeExpTime(visitedTimes, G)
-            minExpTime = expTime
-            bestStrategy = treeStrategy
-            bestTree = T
-            clearStrat = True
+                strategy, clearance, visitedTimes = treeSearch(indivium[0], indivium[1], availableRobots, G)
+                checkedTreesCounter += 1
+                if clearance: fitness = computeExpTime(visitedTimes, G)
+                else: fitness = np.inf
+                fitnesses.append(fitness)
+                if fitness < bestFitness:
+                    bestFitness = fitness
+                    bestTree = indivium[0]
+                    bestStrategy = strategy
+
+            if time.monotonic() - startingTime >= availableTime:
+                break      
             
-        elif clear == True and clearStrat == True:
-            # Take the strategy with best expected search time
-            expTime = computeExpTime(visitedTimes, G)
-            if expTime < minExpTime:
-                minExpTime = expTime
-                bestStrategy = treeStrategy
-                bestTree = T
+            currGen = evolve(currGen, fitnesses, G) 
+            
+        if bestFitness == np.inf:
+            bestStrategy = computeClosingExits(bestStrategy,G)
+            bestTree = G
 
-
-    return bestStrategy, bestTree
+        print(bestStrategy)
+        return bestStrategy, bestTree, checkedTreesCounter
 

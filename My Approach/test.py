@@ -151,19 +151,19 @@ with st.sidebar:
         3,
     )
 
-    num_trees = st.slider(
-        "Trees (graphSearch)",
-        10,
-        200,
-        50,
-        step=10,
+    computation_time = st.slider(
+        "Computation Time (s)",
+        1,
+        60,
+        3,
+        step=1,
     )
 
     available_robots = st.slider(
         "Available Robots",
         1,
         50,
-        10,
+        6,
     )
 
     alpha = st.slider(
@@ -312,6 +312,8 @@ for key, default in [
     ("graph_data", None),
 
     ("strategy", None),
+
+    ("checked_tree_counter", 0),
 
     # Detection sets per node (node_idx -> set of (row, col) cells)
     # and the time at which each node was first reached ("visited").
@@ -523,9 +525,9 @@ if run:
         "Computing strategy..."
     ):
 
-        strategy, T = graphSearch(
+        strategy, T, checkedTreeCounter = graphSearch(
             G,
-            num_trees,
+            computation_time,
             available_robots,
             startNodes,
             obstacles,
@@ -648,6 +650,10 @@ if run:
         treeEdges,
     )
 
+    st.session_state.checked_tree_counter = (
+        checkedTreeCounter
+    )
+
     st.session_state.detection_sets = D
 
     st.session_state.node_visited_time = (
@@ -714,6 +720,10 @@ strategy, treeEdges = (
     st.session_state.strategy
 )
 
+checkedTreeCounter = (
+    st.session_state.checked_tree_counter
+)
+
 detection_sets = (
     st.session_state.detection_sets
 )
@@ -750,7 +760,7 @@ robot_counts = computeRobotCounts(
 # ==================================================
 
 
-m1, m2, m3, m4, m5 = st.columns(5)
+m1, m2, m3, m4, m5, m6 = st.columns(6)
 
 
 with m1:
@@ -792,6 +802,13 @@ with m5:
         available_robots
         if "available_robots" in dir()
         else "-",
+    )
+
+with m6:
+
+    st.metric(
+        "Trees Searched",
+        checkedTreeCounter
     )
 
 
