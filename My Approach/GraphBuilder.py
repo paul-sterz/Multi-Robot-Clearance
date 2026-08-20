@@ -6,12 +6,14 @@ from TrajectoryPlanning import aStar, computeObstacleDistance
 
 
 
-def graphBuilder(obstacles, priors, detectionFnc, startRegion, alpha):
+def graphBuilder(obstacles, hotspots, detectionFnc, startRegion, l, sigma, alpha):
     # INPUT:
     # obstacles: (H,W) dimensional numpy array that represents the enviroment, 1=obstacle, 0=free
-    # priors: (H,W) dimensional numpy array that represents the enviroment and has the prior values for each cell
+    # hotspots: List of hotspots in format (pos, low/medium/high) beeing ((x,y),0/1/2)
     # detectionFnc: function p -> set of detected cells
     # startRegion: set of tuples of point where the robots can start
+    # k: factor of how much eache hotspot category increases probability
+    # alpha: Constant needed for a-star algorithim
 
     # OUTPUT:
     # G: a Graph object representing the created Graph using only the regular edges
@@ -34,7 +36,32 @@ def graphBuilder(obstacles, priors, detectionFnc, startRegion, alpha):
 
 
     # ---------------------------------------------------
-    # PART 1: VERTEX GENERATION
+    # PART 1: CALCULATE PRIORS FOR EACH NODE 
+    # ---------------------------------------------------
+    #TODO Optimize for sped such that a star ist not called for every hotspot cell pair alone but for each hotspot calculates the distances to all cells with dijkstra,...
+    obstacleDistance = computeObstacleDistance(obstacles)
+
+    priors = np.zeros((H,W)) 
+    weights = [1, l, l**2]
+
+    for cell in E:
+        for hotspot in hotspots:
+            dist = len(aStar(hotspot[0], cell, obstacles, obstacleDistance , alpha)) -1 
+            priors[cell[0], cell[1]]  += weights[hotspot[1]] * np.exp(-(dist)**2/(2*sigma**2))
+
+    val = 0
+    for x in range(H):
+        for y in range(W):
+            val += priors[x,y]
+            
+    if val != 0:
+        for x in range(H):
+            for y in range(W):
+                priors[x, y] = priors[x,y] / val
+
+
+    # ---------------------------------------------------
+    # PART 2: VERTEX GENERATION
     # ---------------------------------------------------
 
     G = Graph()
@@ -84,7 +111,7 @@ def graphBuilder(obstacles, priors, detectionFnc, startRegion, alpha):
         i += 1
 
     # ---------------------------------------------------
-    # PART 2: BOUNDARY COMPUTATION
+    # PART 3: BOUNDARY COMPUTATION
     # Note: Each cell in the detection set with neighbours outside or a Node outside the detection set with a neighbour inside is contained in the boundary 
     # ---------------------------------------------------
 
@@ -110,7 +137,7 @@ def graphBuilder(obstacles, priors, detectionFnc, startRegion, alpha):
 
 
     # ---------------------------------------------------
-    # PART 3: EDGE CONSTRUCTION
+    # PART 4: EDGE CONSTRUCTION
     # ---------------------------------------------------
 
     edges_shady = []
@@ -143,7 +170,7 @@ def graphBuilder(obstacles, priors, detectionFnc, startRegion, alpha):
             if is_shady:
                 edges_shady.append((i, j))
             else:
-                trajectory = aStar(G.nodes[i].pos,G.nodes[j].pos, obstacles, computeObstacleDistance(obstacles), alpha)
+                trajectory = aStar(G.nodes[i].pos,G.nodes[j].pos, obstacles, obstacleDistance, alpha)
                 G.add_edge(G.nodes[i], G.nodes[j],len(trajectory) - 1,2)
 
-    return G, edges_shady, D, startNodes
+    return G, edges_shady, D, startNodes, priors

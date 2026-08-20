@@ -109,6 +109,21 @@ def detectionFnc(p, obstacles, radius=3):
 
 
 # ==================================================
+# SIGMA FROM PRIOR RADIUS
+#
+# The prior radius slider defines how many cells around
+# a hotspot the target is in 50% of cases if the prior is true 
+#
+# ==================================================
+
+
+def computeSigma(prior_radius):
+    sigma = prior_radius / np.sqrt(2 * np.log(50))
+
+    return sigma
+
+
+# ==================================================
 # PAGE CONFIG
 # ==================================================
 
@@ -124,6 +139,20 @@ st.title("Multi-Robot Clearance")
 # ==================================================
 # SIDEBAR
 # ==================================================
+
+
+# Category constants used for hotspots: 0 = low, 1 = medium, 2 = high
+PRIOR_CATEGORIES = {
+    "Low": 0,
+    "Medium": 1,
+    "High": 2,
+}
+
+PRIOR_CATEGORY_LABELS = {
+    0: "L",
+    1: "M",
+    2: "H",
+}
 
 
 with st.sidebar:
@@ -176,6 +205,27 @@ with st.sidebar:
 
     st.markdown("---")
 
+    st.markdown("## Prior settings")
+
+    prior_l = st.slider(
+        "Prior weight l "
+        "(low = l^0, medium = l^1, high = l^2)",
+        0.1,
+        10.0,
+        2.0,
+        step=0.1,
+    )
+
+    prior_radius = st.slider(
+        "Prior radius "
+        "(Target inside in 50% of cases if prior is true)",
+        1,
+        10,
+        3,
+    )
+
+    st.markdown("---")
+
     run = st.button(
         "▶ Run",
         use_container_width=True,
@@ -191,9 +241,7 @@ with st.sidebar:
             (H, W)
         )
 
-        st.session_state.priors = np.zeros(
-            (H, W)
-        )
+        st.session_state.hotspots = {}
 
         st.session_state.start_region = set()
 
@@ -217,17 +265,19 @@ with st.sidebar:
 
     if edit_mode == "Prior":
 
-        prior_value = st.slider(
-            "Prior value",
-            0.0,
-            1.0,
-            0.5,
-            step=0.05,
+        prior_category_label = st.radio(
+            "Prior level",
+            list(PRIOR_CATEGORIES.keys()),
+            horizontal=True,
         )
+
+        prior_category = PRIOR_CATEGORIES[
+            prior_category_label
+        ]
 
     else:
 
-        prior_value = 0.5
+        prior_category = None
 
     st.markdown("---")
 
@@ -250,6 +300,11 @@ with st.sidebar:
 
     show_cleared = st.checkbox(
         "Cleared area",
+        value=False,
+    )
+
+    show_heatmap = st.checkbox(
+        "Prior heatmap",
         value=False,
     )
 
@@ -279,15 +334,10 @@ def _init_grid(H, W):
             (H, W)
         )
 
-    if (
-        "priors" not in st.session_state
-        or st.session_state.priors.shape
-        != (H, W)
-    ):
+    if "hotspots" not in st.session_state:
 
-        st.session_state.priors = np.zeros(
-            (H, W)
-        )
+        # dict: (row, col) -> category (0=low, 1=medium, 2=high)
+        st.session_state.hotspots = {}
 
     if "start_region" not in st.session_state:
 
@@ -320,6 +370,10 @@ for key, default in [
     ("detection_sets", None),
 
     ("node_visited_time", None),
+
+    # Per-cell prior values (H, W) as returned by graphBuilder,
+    # used for the optional heatmap layer.
+    ("cellpriors", None),
 
     # Whether the timestep animation is currently auto-advancing.
     ("playing", False),
@@ -365,7 +419,7 @@ div[data-testid="column"] > div > div > div > button {
 
 
 obstacles_arr = st.session_state.obstacles
-priors_arr = st.session_state.priors
+hotspots_dict = st.session_state.hotspots
 start_region = st.session_state.start_region
 
 
@@ -390,9 +444,11 @@ for r in range(H - 1, -1, -1):
                 label = "S"
                 btn_type = "primary"
 
-            elif priors_arr[r, c] > 0:
+            elif (r, c) in hotspots_dict:
 
-                label = f"{priors_arr[r, c]:.2f}"
+                label = PRIOR_CATEGORY_LABELS[
+                    hotspots_dict[(r, c)]
+                ]
                 btn_type = "secondary"
 
             else:
@@ -429,7 +485,9 @@ if clicked_r is not None:
 
             st.session_state.obstacles[r, c] = 1
 
-            st.session_state.priors[r, c] = 0.0
+            st.session_state.hotspots.pop(
+                (r, c), None
+            )
 
             st.session_state.start_region.discard(
                 (r, c)
@@ -459,17 +517,21 @@ if clicked_r is not None:
         if st.session_state.obstacles[r, c] == 0:
 
             if (
-                st.session_state.priors[r, c]
-                == prior_value
+                st.session_state.hotspots.get(
+                    (r, c)
+                )
+                == prior_category
             ):
 
-                st.session_state.priors[r, c] = 0.0
+                st.session_state.hotspots.pop(
+                    (r, c), None
+                )
 
             else:
 
-                st.session_state.priors[r, c] = (
-                    prior_value
-                )
+                st.session_state.hotspots[
+                    (r, c)
+                ] = prior_category
 
     st.rerun()
 
@@ -485,9 +547,11 @@ if run:
         st.session_state.obstacles.copy()
     )
 
-    priors = (
-        st.session_state.priors.copy()
-    )
+    hotspots = [
+        (pos, category)
+        for pos, category in
+        st.session_state.hotspots.items()
+    ]
 
     root = (
         st.session_state.start_region
@@ -495,18 +559,22 @@ if run:
         else {(0, 0)}
     )
 
+    sigma = computeSigma(prior_radius)
+
     with st.spinner("Building graph..."):
 
-        G, shadyEdges, D, startNodes = (
+        G, shadyEdges, D, startNodes, cellpriors = (
             graphBuilder(
                 obstacles,
-                priors,
+                hotspots,
                 lambda p, obs: detectionFnc(
                     p,
                     obs,
                     detection_radius,
                 ),
                 root,
+                prior_l,
+                sigma,
                 alpha,
             )
         )
@@ -533,6 +601,8 @@ if run:
             obstacles,
             distanceMap,
             alpha,
+            cellpriors,
+            D,
         )
 
     if strategy is None:
@@ -660,6 +730,8 @@ if run:
         node_visited_time
     )
 
+    st.session_state.cellpriors = cellpriors
+
     st.session_state.current_time = 0
 
     st.session_state.total_time = (
@@ -730,6 +802,10 @@ detection_sets = (
 
 node_visited_time = (
     st.session_state.node_visited_time
+)
+
+cellpriors = (
+    st.session_state.cellpriors
 )
 
 visualization_phase = (
@@ -989,6 +1065,8 @@ TEXT_DARK = "#264653"
 CLEARED_GREEN_FILL = "rgba(56, 176, 0, 0.28)"
 CLEARED_GREEN_SOLID = "#38b000"
 
+HEATMAP_RED_SOLID = "#d62828"
+
 
 fig = go.Figure()
 
@@ -1100,6 +1178,80 @@ fig.add_trace(
         name="Obstacle",
     )
 )
+
+
+# ==================================================
+# PRIOR HEATMAP
+#
+# Shades every free cell red, with opacity scaling with
+# its (normalized) prior value. Higher prior -> redder.
+# ==================================================
+
+
+if (
+    show_heatmap
+    and cellpriors is not None
+):
+
+    max_prior = float(np.max(cellpriors))
+
+    if max_prior > 0:
+
+        for x in range(H):
+
+            for y in range(W):
+
+                if obstacles[x, y] == 1:
+                    continue
+
+                value = cellpriors[x, y]
+
+                if value <= 0:
+                    continue
+
+                norm = min(
+                    1.0,
+                    value / max_prior,
+                )
+
+                fig.add_shape(
+
+                    type="rect",
+
+                    x0=y - 0.5,
+                    x1=y + 0.5,
+
+                    y0=x - 0.5,
+                    y1=x + 0.5,
+
+                    fillcolor=(
+                        f"rgba(214, 40, 40, "
+                        f"{0.08 + 0.72 * norm:.3f})"
+                    ),
+
+                    line=dict(width=0),
+
+                    layer="below",
+                )
+
+    fig.add_trace(
+        go.Scatter(
+
+            x=[None],
+
+            y=[None],
+
+            mode="markers",
+
+            marker=dict(
+                symbol="square",
+                size=12,
+                color=HEATMAP_RED_SOLID,
+            ),
+
+            name="Prior heatmap",
+        )
+    )
 
 
 # ==================================================

@@ -9,12 +9,17 @@ import copy
 import time
 
 
-def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles, distanceMap, alpha):
+def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles, distanceMap, alpha, cellpriors, D):
     #INPUT:
     # G: a Graph object repesenting the merged navigationgraph
     # availableTime: a number which represents the available computation time
     # availableRobots: an integer representing the amount of robots available
     # startNodes:  an integer representing that all nodes from 0 to startNode-1 are valid startNodes for our Algorithim
+    # obstacles:
+    # distanceMap: 
+    # alpha:
+    # cellpriors: All prior values for each cell for calculating the expected searchtime function
+    # D: Detection set for each node for calculating the expected searchtime function
     # aerialSpeed: TO-DO
     # groundSpeed: TO-DO
     # aerialBattery: TO-DO
@@ -1295,8 +1300,12 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
     def computeExpTime(visitedTimes, G: Graph):
         #Computing the expected search time
         eff = 0
-        for node in G.nodes:
-            eff += node.prior * visitedTimes[node.idx]
+        foundPriors = np.copy(cellpriors)
+        sortedNodes = sorted(G.nodes, key=lambda node: visitedTimes[node.idx])
+        for node in sortedNodes:
+            for cell in D[node.idx]:
+                eff += foundPriors[cell[0], cell[1]] * visitedTimes[node.idx]
+                foundPriors[cell[0], cell[1]] = 0
 
         return eff
 
@@ -1395,7 +1404,7 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
                 strategy.append((root, node.idx, 1, 0, len(path) - 1))
 
         strategy.insert(0, (None, root, availableRobots))
-        return strategy, G
+        return strategy, G, 0
         
     else:
         startingTime = time.monotonic()
@@ -1450,8 +1459,9 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
             
         if bestFitness == np.inf:
             bestStrategy = computeClosingExits(bestStrategy,G)
+            print(availableRobots)
+            print("HAALLLO")
             bestTree = G
 
-        print(bestStrategy)
         return bestStrategy, bestTree, checkedTreesCounter
 
