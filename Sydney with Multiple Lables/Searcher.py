@@ -367,7 +367,7 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
 
                             remainingFlags = []
                             for flag in flags:
-                                if flag[0] == node:
+                                if flag[0] == node and flag[2] <= enteringTime:
                                     robotCountPerNode[node] += flag[1]
                                 else: remainingFlags.append(flag)
 
@@ -665,7 +665,7 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
                                         for waechter in guards:
                                             if y in waechter[1]:
                                                 waechter[1].remove(y)
-                                                waechter[3] = max(enteringTime, waechter[3])
+                                                waechter[3] = max(arrvTime, waechter[3])
                                                 if len(waechter[1]) == 0:
                                                     #Guard turns into a flag as normal
                                                     # guards[3] saves how long a guard needs at least to stay for slide move prevention
@@ -709,7 +709,7 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
     
                                         remainingFlags = []
                                         for flag in flags:
-                                            if flag[0] == node:
+                                            if flag[0] == node and flag[2]<= max(welcomeBackTime):
                                                 robotCountPerNode[node] += flag[1]
                                             else: remainingFlags.append(flag)
 
@@ -860,7 +860,7 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
 
                                         remainingFlags = []
                                         for flag in flags:
-                                            if flag[0] == node:
+                                            if flag[0] == node and flag[2]<= enteringTime:
                                                 robotCountPerNode[node] += flag[1]
                                             else: remainingFlags.append(flag)
 
@@ -1137,11 +1137,11 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
                                     for waechter in guards:
                                         if y in waechter[1]:
                                             waechter[1].remove(y)
-                                            waechter[3] = max(enteringTime, waechter[3])
+                                            waechter[3] = max(enteringTime + T.edges[(node,y)].time, waechter[3])
                                             if len(waechter[1]) == 0: 
-                                                #Guard turns into a flag as normal
+                                                # Guard turns into a flag as normal
                                                 # guards[3] saves how long a guard needs at least to stay for slide move prevention
-                                                flags.append([waechter[0], 1, max(enteringTime, waechter[3])])
+                                                flags.append([waechter[0], 1, max(enteringTime + T.edges[(node,y)].time, waechter[3])])
                                                 guards.remove(waechter)
 
 
@@ -1179,16 +1179,19 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
                                 welcomeBackTime[counter] = strategy[len(strategy)- 1][4]
                                 counter += 1
                             else: #Only if the for loop is not left with a break
+
+                                # Continue with the next move when all robots have returned from there inner paths
+                                enteringTime = max(welcomeBackTime)
+
                                 remainingFlags = []
                                 for flag in flags:
-                                    if flag[0] == node:
+                                    if flag[0] == node and flag[2] <= enteringTime:
                                         robotCountPerNode[node] += flag[1]
                                     else: remainingFlags.append(flag)
 
                                 flags = remainingFlags
 
-                                # Continue with the next move when all robots have returned from there inner paths
-                                enteringTime = max(welcomeBackTime)
+                               
 
             return strategy, True
 
