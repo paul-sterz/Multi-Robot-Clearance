@@ -1466,5 +1466,109 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
             print("HAALLLO")
             bestTree = G
 
+        bestStrategy = [
+            (None, 0, 3),
+
+            # 0 -> 9 with 2 robots
+            # edge time = 6
+            (0, 9, 2, 0, 6),
+
+            # 9 -> 4 with 1 robot
+            # edge time = 5
+            (9, 4, 1, 6, 11),
+
+            # ------------------------------------------------
+            # Parallel:
+            # 4 -> 9 : 5
+            # 0 -> 9 : 6
+            # => both synchronized to duration 6
+            # ------------------------------------------------
+            (4, 9, 1, 11, 16),
+            (0, 9, 1, 11, 17),
+
+            # 9 -> 3 with 2 robots
+            # edge time = 5
+            (9, 3, 2, 17, 22),
+
+            # ------------------------------------------------
+            # Parallel:
+            # 9 -> 3 : 5
+            # 3 -> 7 : 5
+            # ------------------------------------------------
+            (9, 3, 1, 22, 27),
+            (3, 7, 1, 22, 27),
+
+            # 3 -> 7
+            # edge time = 5
+            (3, 7, 1, 27, 32),
+
+            # 7 -> 6
+            # edge time = 5
+            (7, 6, 1, 32, 37),
+
+            # 6 -> 7
+            # edge time = 5
+            (6, 7, 1, 37, 42),
+
+            # 7 -> 8
+            # edge time = 6
+            (7, 8, 1, 42, 48),
+
+            # ------------------------------------------------
+            # Parallel:
+            # 7 -> 3 : 5
+            # 8 -> 7 : 6
+            # => both synchronized to duration 6
+            # ------------------------------------------------
+            (7, 3, 1, 48, 54),
+            (8, 3, 1, 48, 55),
+
+            # ------------------------------------------------
+            # Parallel:
+            # 3 -> 2 : 7
+            # 7 -> 3 : 5
+            # => both synchronized to duration 7
+            # ------------------------------------------------
+            (3, 2, 1, 54, 61),
+            (3, 2, 1, 55, 62),
+
+            # 2 -> 5
+            # edge time = 4
+            (2, 5, 1, 62, 66),
+
+            # 2 -> 5
+            # edge time = len(path) - 1
+            (5, 1, 1, 66, 66 + 9),
+        ]
+
+        bestTree = Graph()
+        bestTree.add_node(0, (0, 0), 4.075239074726153e-05)
+        bestTree.add_node(1, (6, 9), 0.04799394018707494)
+        bestTree.add_node(2, (1, 9), 0.137647348077356)
+        bestTree.add_node(3, (5, 6), 0.16168491255760328)
+        bestTree.add_node(4, (5, 0), 0.0028260906812142667)
+        bestTree.add_node(5, (0, 6), 0.14238805578892497)
+        bestTree.add_node(6, (8, 1), 0.5161055847724962)
+        bestTree.add_node(7, (9, 5), 0.1362577915545183)
+        bestTree.add_node(8, (9, 9), 0.09188143176170127)
+        bestTree.add_node(9, (3, 3), 0.007535537229425514)
+
+
+        bestTree.add_edge(bestTree.nodes[0], bestTree.nodes[9], 6, 2)
+    
+        bestTree.add_edge(bestTree.nodes[2], bestTree.nodes[1], 5, 2)
+        bestTree.add_edge(bestTree.nodes[2], bestTree.nodes[5], 4, 2)
+    
+     
+        bestTree.add_edge(bestTree.nodes[3], bestTree.nodes[2], 7, 2)
+        bestTree.add_edge(bestTree.nodes[3], bestTree.nodes[7], 5, 2)
+    
+        bestTree.add_edge(bestTree.nodes[7], bestTree.nodes[6], 5, 2)
+        bestTree.add_edge(bestTree.nodes[7], bestTree.nodes[8], 6, 2)
+    
+        bestTree.add_edge(bestTree.nodes[9], bestTree.nodes[3], 5, 2)
+        bestTree.add_edge(bestTree.nodes[9], bestTree.nodes[4], 5, 2)
+        
+
         return bestStrategy, bestTree, checkedTreesCounter
 

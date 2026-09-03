@@ -893,128 +893,6 @@ with m6:
 # ==================================================
 
 
-col1, col2, col3, col4, col5 = st.columns(
-    [1, 1, 1, 2, 3]
-)
-
-
-with col1:
-
-    at_end = (
-        visualization_phase >= 2
-        and current_time >= total_time
-    )
-
-    if visualization_phase == 0:
-
-        button_text = "Show Graph"
-
-    elif visualization_phase == 1:
-
-        button_text = "Show Spanning Tree"
-
-    else:
-
-        button_text = "Next Step (+1)"
-
-    if st.button(
-        button_text,
-        disabled=at_end or st.session_state.playing,
-        use_container_width=True,
-    ):
-
-        if visualization_phase < 2:
-
-            st.session_state.visualization_phase += 1
-
-        else:
-
-            st.session_state.current_time = min(
-                current_time + 1,
-                total_time,
-            )
-
-        st.rerun()
-
-
-with col2:
-
-    # Play / Pause is only meaningful once the spanning
-    # tree / simulation is being shown in Timestep view.
-    play_disabled = not (
-        visualization_phase >= 2
-        and view_mode == "Timestep"
-    )
-
-    play_label = (
-        "⏸ Pause"
-        if st.session_state.playing
-        else "▶ Play"
-    )
-
-    if st.button(
-        play_label,
-        use_container_width=True,
-        disabled=play_disabled,
-    ):
-
-        st.session_state.playing = (
-            not st.session_state.playing
-        )
-
-        # If we start playing right at the end, jump back
-        # to the start so the animation is visible again.
-        if (
-            st.session_state.playing
-            and current_time >= total_time
-        ):
-
-            st.session_state.current_time = 0
-
-        st.rerun()
-
-
-with col3:
-
-    if st.button(
-        "Reset",
-        use_container_width=True,
-    ):
-
-        st.session_state.current_time = 0
-
-        st.session_state.visualization_phase = 0
-
-        st.session_state.playing = False
-
-        st.rerun()
-
-
-with col4:
-
-    if visualization_phase == 0:
-
-        phase = "Ready"
-
-    elif visualization_phase == 1:
-
-        phase = "Full graph"
-
-    else:
-
-        phase = (
-            f"Spanning tree → "
-            f"t = {current_time} / {total_time}"
-        )
-
-    if st.session_state.playing:
-
-        phase += "  ▶ playing..."
-
-    st.caption(
-        f"Phase: **{phase}**"
-    )
-
 
 # ==================================================
 # TIME SLIDER
@@ -2206,11 +2084,137 @@ if (
 # DISPLAY
 # ==================================================
 
+# ==================================================
+# DISPLAY + CONTROLS
+# ==================================================
 
-st.plotly_chart(
-    fig,
-    use_container_width=True,
-)
+plot_col, control_col = st.columns([6, 1])
+
+# ---------------------------
+# LEFT: PLOT
+# ---------------------------
+
+with plot_col:
+    st.plotly_chart(
+        fig,
+        use_container_width=True,
+    )
+
+
+# ---------------------------
+# RIGHT: CONTROLS
+# ---------------------------
+
+with control_col:
+
+    st.markdown("### Controls")
+
+    at_end = (
+        visualization_phase >= 2
+        and current_time >= total_time
+    )
+
+    if visualization_phase == 0:
+        button_text = "Show Graph"
+
+    elif visualization_phase == 1:
+        button_text = "Show Tree"
+
+    else:
+        button_text = "Next Step"
+
+    if st.button(
+        button_text,
+        disabled=at_end or st.session_state.playing,
+        use_container_width=True,
+    ):
+
+        if visualization_phase < 2:
+
+            st.session_state.visualization_phase += 1
+
+        else:
+
+            st.session_state.current_time = min(
+                current_time + 1,
+                total_time,
+            )
+
+        st.rerun()
+
+
+    # ---------------------------
+    # PLAY / PAUSE
+    # ---------------------------
+
+    play_disabled = not (
+        visualization_phase >= 2
+        and view_mode == "Timestep"
+    )
+
+    play_label = (
+        "⏸ Pause"
+        if st.session_state.playing
+        else "▶ Play"
+    )
+
+    if st.button(
+        play_label,
+        use_container_width=True,
+        disabled=play_disabled,
+    ):
+
+        st.session_state.playing = (
+            not st.session_state.playing
+        )
+
+        if (
+            st.session_state.playing
+            and current_time >= total_time
+        ):
+            st.session_state.current_time = 0
+
+        st.rerun()
+
+
+    # ---------------------------
+    # RESET
+    # ---------------------------
+
+    if st.button(
+        "↺ Reset",
+        use_container_width=True,
+    ):
+
+        st.session_state.current_time = 0
+        st.session_state.visualization_phase = 0
+        st.session_state.playing = False
+
+        st.rerun()
+
+
+    # ---------------------------
+    # STATUS
+    # ---------------------------
+
+    st.markdown("---")
+
+    if visualization_phase == 0:
+        phase = "Ready"
+
+    elif visualization_phase == 1:
+        phase = "Full graph"
+
+    else:
+        phase = (
+            f"Spanning tree  \n"
+            f"t = {current_time} / {total_time}"
+        )
+
+    if st.session_state.playing:
+        phase += "  \n▶ playing..."
+
+    st.caption(phase)
 
 
 # ==================================================
@@ -2230,7 +2234,7 @@ if st.session_state.playing:
         and current_time < total_time
     ):
 
-        time.sleep(1)
+        time.sleep(0.3)
 
         st.session_state.current_time = min(
             current_time + 1,
