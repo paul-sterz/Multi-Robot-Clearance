@@ -29,198 +29,247 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
     #bestStrategy: A list containing the best strategy where each entry is in the form (source node,target node, amount of Robots)
 
     # ---------------------------------------------------
-    # COMPUTING B-Lables and the Efficiency Lables in dependency of the available robots
-    # Remark: Lables represent the amount of robots needed for this path
-    # --------------------------------------------------- 
+    # COMPUTING B-LABELS and efficiency labels depending on available robots
+    # ---------------------------------------------------
     def computeLabelsWithBudget(T: Graph, root, parent, maxRobots: int):
-        #CHECKED
 
         bLabels = {}
         robotTable = {}
+        policyTable = {}
 
         children = [y.idx for y in T.adj[T.nodes[root]] if y.idx != parent]
 
-        # ---------------- Leaf ----------------
+        # ---------------- LEAF ----------------
         if len(children) == 0:
             bLabels[(parent, root)] = 1
 
             edgeTime = T.edges[(parent, root)].time if parent is not None else 1
             prior = T.nodes[root].prior
 
-            # In a leaf the amount of robots can not sped up the exploration
-            table = {r: (edgeTime, prior / edgeTime) for r in range(1, maxRobots + 1)}
-            robotTable[(parent, root)] = table
+            robotTable[(parent, root)] = {
+                r: (edgeTime, prior / edgeTime)
+                for r in range(1, maxRobots + 1)
+            }
 
-            return bLabels, robotTable, prior, edgeTime
+            policyTable[(parent, root)] = {
+                r: [] for r in range(1, maxRobots + 1)
+            }
 
-        # ------------- Inner node: visit children first -------------
-        childBLabel = {}      # child -> BLabel(child)
-        childPrior = {}       # child -> totalPrior(subtree(child))
-        childTimeTable = {}   # child -> {ri: time}   (aus robotTable des Kindes)
+            return bLabels, robotTable, policyTable, prior, edgeTime
+
+        # ---------------- INNER NODE ----------------
+        childBLabel = {}
+        childPrior = {}
+        childTimeTable = {}
 
         totalPrior = T.nodes[root].prior
 
         for child in children:
-            subB, subTable, subPrior, _ = computeLabelsWithBudget(T, child, root, maxRobots)
+            subB, subTable, subPolicy, subPrior, _ = computeLabelsWithBudget(
+                T, child, root, maxRobots
+            )
+
             bLabels.update(subB)
             robotTable.update(subTable)
+            policyTable.update(subPolicy)
 
             childBLabel[child] = subB[(root, child)]
             childPrior[child] = subPrior
-            childTimeTable[child] = {r: t for r, (t, _eff) in subTable[(root, child)].items()}
+            childTimeTable[child] = {
+                r: t for r, (t, _eff) in subTable[(root, child)].items()
+            }
 
             totalPrior += subPrior
 
-        # ---------- Set B-Label for inner node (formular from the Andreas Kolling paper) ----------
+        # ---------------- B-LABEL ----------------
         childLabelsSorted = sorted(childBLabel.values(), reverse=True)
+
         p1 = childLabelsSorted[0]
         p2 = childLabelsSorted[1] if len(childLabelsSorted) > 1 else 0
 
-        bLabelRoot = (p1 + 1) if p1 == 1 else max(p1, p2 + 1)
+        bLabelRoot = p1 + 1 if p1 == 1 else max(p1, p2 + 1)
         bLabels[(parent, root)] = bLabelRoot
 
-        # ---- Check if the bLable is feasible----
+        # ---------------- FEASIBILITY ----------------
         if maxRobots < bLabelRoot:
-            # No guaranteed clearance is possible
             robotTable[(parent, root)] = {}
-            return bLabels, robotTable, totalPrior, float('inf')
+            policyTable[(parent, root)] = {}
+
+            return bLabels, robotTable, policyTable, totalPrior, float('inf')
 
         edgeTime = T.edges[(parent, root)].time if parent is not None else 1
 
-        # ---------- For each r: Calculate the optimal Batch-Schedule ----------
+        # ---------------- BEST POLICY FOR EACH ROBOT BUDGET ----------------
         table = {}
+        policies = {}
+
         for r in range(bLabelRoot, maxRobots + 1):
-            bestChildrenTime = _bestChildrenSchedule(children, childBLabel, childTimeTable, r)
+            bestChildrenTime, bestSchedule = _bestChildrenSchedule(
+                children, childBLabel, childTimeTable, childPrior, r
+            )
+
             time_r = edgeTime + bestChildrenTime
+
             table[r] = (time_r, totalPrior / time_r)
+            policies[r] = bestSchedule
 
         robotTable[(parent, root)] = table
-        totalTimeAtMax = table[maxRobots][0]
+        policyTable[(parent, root)] = policies
 
-        return bLabels, robotTable, totalPrior, totalTimeAtMax
+        return bLabels, robotTable, policyTable, totalPrior, table[maxRobots][0]
 
 
-    def _bestChildrenSchedule(children, childBLabel, childTimeTable, r):
-        # Returns the minimal total time to fully clear all children subtrees with r robots
-        # by considering all possible partitions of children into batches
+    def _bestChildrenSchedule(children, childBLabel, childTimeTable, childPrior, r):
+        """
+        Returns:
+            bestTime:
+                Minimal total clearance time of all child subtrees.
 
-        # If there exists no children then no time is needed to clear them
+            schedule:
+                Ordered list of sequential batches.
+                Children inside one batch run in parallel.
+
+                [
+                    {
+                        "children": [...],
+                        "robots": {child: robots, ...},
+                        "time": batchTime,
+                        "prior": batchPrior,
+                        "efficiency": batchPrior / batchTime
+                    },
+                    ...
+                ]
+        """
+
         k = len(children)
-        if k == 0:
-            return 0.0
 
-        # Bitmask of the form 111...1 (k ones): bit i set means child i is
-        # included in this subset. fullMask represents "all children".
+        if k == 0:
+            return 0.0, []
+
         fullMask = (1 << k) - 1
 
-        # ---- Step 1: precompute parallelBatchCost for every possible subset ----
-        costOfSubset = [float('inf')] * (1 << k)  # cost per subset, indexed by bitmask
+        # ---------------- COST OF EVERY POSSIBLE PARALLEL BATCH ----------------
+        costOfSubset = [float('inf')] * (1 << k)
+        allocationOfSubset = [None] * (1 << k)
+
         costOfSubset[0] = 0.0
-        for mask in range(1, 1 << k):  # loop over all possible subsets (as bitmasks)
-            subset = [children[i] for i in range(k) if mask & (1 << i)]
-
-            # If a subset needs more robots than available it is unfeasible
-            minRobotsNeeded = sum(childBLabel[c] for c in subset)
-            if minRobotsNeeded > r:
-                costOfSubset[mask] = float('inf')
-                continue
-
-            costOfSubset[mask] = _parallelBatchCost(subset, childTimeTable, r)
-
-        # ---- Step 2: DP over partitions ----
-        # We do NOT need to check the order of the batches, since batches run
-        # sequentially with robots fully reset in between -- the total time is
-        # just a sum of batch times, and addition doesn't care about order.
-        # We also don't need to re-check the robot budget here: that check
-        # already happened inside parallelBatchCost / the B-Label skip above,
-        # and any infeasible subset is simply marked as inf, which min() will
-        # naturally never select.
-        
-        # dp[mask] = minimal total time for the best partition of the children
-        # in 'mask' into any number of sequential batches.
-        dp = [float('inf')] * (1 << k)
-        dp[0] = 0.0  # base case: no children -> no time needed
+        allocationOfSubset[0] = {}
 
         for mask in range(1, 1 << k):
-            # Pick a fixed "anchor" child that must be part of mask: its lowest
-            # set bit. Any child would work here, we just need one fixed choice
-            # per mask so that every partition of mask gets counted exactly once
-            # (see explanation below).
-            low = mask & (-mask)
+            subset = [children[i] for i in range(k) if mask & (1 << i)]
 
-            # We want dp[mask] = the best way to split the children in 'mask'
-            # into batches. Key idea: in ANY such split, the anchor child 'low'
-            # belongs to exactly one batch. So instead of enumerating all
-            # partitions directly, we enumerate all possible choices for "which
-            # batch contains low" (call it 'sub'), and combine it with the best
-            # possible partition of whatever children are left over
-            # (mask ^ sub, i.e. mask with sub's bits removed).
-            #
-            # Because 'sub' ranges over every subset of 'mask' that contains
-            # 'low', and dp[mask ^ sub] was already fully computed in an earlier
-            # iteration (mask ^ sub is always a strictly smaller number than
-            # mask, since it has strictly fewer bits set), dp[mask ^ sub] already
-            # represents the OPTIMAL split of the remainder -- including splits
-            # into two, three, or more further batches. So even though this loop
-            # only ever picks "one batch (sub) + one rest (mask^sub)", the
-            # recursive structure of dp means every partition into any number of
-            # batches is implicitly covered.
-            #
-            # Enumerating only subsets containing 'low' (instead of all subsets
-            # of mask) guarantees each partition of mask is considered exactly
-            # once -- not zero times, not multiple times -- because the batch
-            # containing 'low' is a well-defined, unique part of any partition.
-            # This also cuts the total work across all masks down to O(3^k)
-            # instead of a naive O(4^k).
+            if sum(childBLabel[c] for c in subset) > r:
+                continue
+
+            batchTime, allocation = _parallelBatchCost(
+                subset, childTimeTable, r
+            )
+
+            costOfSubset[mask] = batchTime
+            allocationOfSubset[mask] = allocation
+
+        # ---------------- DP OVER PARTITIONS ----------------
+        dp = [float('inf')] * (1 << k)
+        choice = [None] * (1 << k)
+
+        dp[0] = 0.0
+
+        for mask in range(1, 1 << k):
+            low = mask & (-mask)
             sub = mask
+
             while sub > 0:
-                if sub & low:  # only consider 'sub' if it contains the anchor child
-                    # Candidate: treat 'sub' as one batch, and combine with the
-                    # already-optimal partition of the remaining children.
+                if sub & low:
                     candidate = costOfSubset[sub] + dp[mask ^ sub]
+
                     if candidate < dp[mask]:
                         dp[mask] = candidate
-                sub = (sub - 1) & mask  # move to the next subset of mask
+                        choice[mask] = sub
 
-        return dp[fullMask]
+                sub = (sub - 1) & mask
+
+        if dp[fullMask] == float('inf'):
+            return float('inf'), []
+
+        # ---------------- RECONSTRUCT OPTIMAL PARTITION ----------------
+        schedule = []
+        mask = fullMask
+
+        while mask != 0:
+            chosenMask = choice[mask]
+
+            if chosenMask is None:
+                return float('inf'), []
+
+            subset = [
+                children[i]
+                for i in range(k)
+                if chosenMask & (1 << i)
+            ]
+
+            batchTime = costOfSubset[chosenMask]
+            batchPrior = sum(childPrior[c] for c in subset)
+            batchEfficiency = batchPrior / batchTime
+
+            schedule.append({
+                "children": subset,
+                "robots": allocationOfSubset[chosenMask],
+                "time": batchTime,
+                "prior": batchPrior,
+                "efficiency": batchEfficiency
+            })
+
+            mask ^= chosenMask
+
+        # ---------------- ORDER BATCHES BY PRIOR / TIME ----------------
+        schedule.sort(key=lambda batch: batch["efficiency"], reverse=True)
+
+        return dp[fullMask], schedule
 
 
     def _parallelBatchCost(subset, childTimeTable, r):
-        #Calculate the minimal time to clear all subtrees inside the batch subset together when r robots are available
-        #Checked
+        """
+        Returns:
+            batchTime:
+                Minimal time in which all children of the subset can be
+                cleared in parallel.
 
-        #Empty batch takes no time
+            allocation:
+                child -> required number of robots
+        """
+
         if len(subset) == 0:
-            return 0.0
+            return 0.0, {}
 
-        #The needed time of the batch will be one of the individual times of the contained subtrees since we do all of them in parallel and the biggest determines the searchtime
         candidateTimes = set()
+
         for c in subset:
             candidateTimes.update(childTimeTable[c].values())
 
-
-        # Sort the times ascending and then check starting with the lowest time if it is feasible to reach this time
         for T in sorted(candidateTimes):
+            allocation = {}
             totalRobots = 0
             feasible = True
+
             for c in subset:
-                #find the lowest amount of robots which can clear c under T 
                 minRi = None
-                for ri in sorted(childTimeTable[c].keys()):
+
+                for ri in sorted(childTimeTable[c]):
                     if childTimeTable[c][ri] <= T:
                         minRi = ri
                         break
+
                 if minRi is None:
                     feasible = False
                     break
+
+                allocation[c] = minRi
                 totalRobots += minRi
+
             if feasible and totalRobots <= r:
-                #It's possible to clear batch in T
-                return T
+                return T, allocation
 
-        #Batch can not be cleared together hence infinity is returned
-        return float('inf')
-
+        return float('inf'), None
     
     # ---------------------------------------------------
     # CALCULATING A STRATEGY FOR TREES AND TRANSFORMING IT TO THE GRAPH
@@ -232,7 +281,7 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
 
         clearance = True #Can a true graph clear be performed or is the amount of available robots to small for this tree? If not try to change the decisions towards robotcosts instead of efficiency
 
-        labelsRobotCost, lablesEfficiency, multipleAtOnce , _ , _ = computeLabels(T,root, None)
+        labelsRobotCost, lablesEfficiency, multipleAtOnce , _ , _ = computeLabelsWithBudget(T,root, None)
 
         #Saving which notes where already visited so we can stop backtracking if the graph is cleared and no unneicessary moves are done.
         visited = [(0,0)] * len(T.nodes) #Format: visited[node.idx] = (0 or 1, visitingTime) 
