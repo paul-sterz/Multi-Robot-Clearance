@@ -1,7 +1,7 @@
 import random
 import numpy as np
 from Graph import Graph, Node, Edge
-from TrajectoryPlanning import aStar, computeObstacleDistance
+from TrajectoryPlanning import aStar, computeObstacleDistance, dijkstra, pathLength
 
 
 
@@ -38,16 +38,18 @@ def graphBuilder(obstacles, hotspots, detectionFnc, startRegion, l, sigma, alpha
     # ---------------------------------------------------
     # PART 1: CALCULATE PRIORS FOR EACH NODE 
     # ---------------------------------------------------
-    #TODO Optimize for sped such that a star ist not called for every hotspot cell pair alone but for each hotspot calculates the distances to all cells with dijkstra,...
     obstacleDistance = computeObstacleDistance(obstacles)
 
-    priors = np.zeros((H,W)) 
+    priors = np.zeros((H,W))
     weights = [1, l, l**2]
 
-    for cell in E:
-        for hotspot in hotspots:
-            dist = len(aStar(hotspot[0], cell, obstacles, obstacleDistance , alpha)) -1 
-            priors[cell[0], cell[1]]  += weights[hotspot[1]] * np.exp(-(dist)**2/(2*sigma**2))
+    for hotspot in hotspots:
+        _, predecessor = dijkstra(hotspot[0], obstacles, obstacleDistance, alpha)
+        for cell in E:
+            dist = pathLength(predecessor, hotspot[0], cell)
+            if dist is None:
+                continue
+            priors[cell[0], cell[1]] += weights[hotspot[1]] * np.exp(-(dist)**2/(2*sigma**2))
 
     val = 0
     for x in range(H):
