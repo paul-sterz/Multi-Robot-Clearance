@@ -321,6 +321,8 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
 
                 successful = True
                 for batch in schedule:
+                    #TODO: When executing a batch the amount of determined robots from the batch has to be considered. A node from the batch can not simply use all flags since then the others will have to wait
+                    # IS THIS TRUE???
                     successful, newMoves, batchTime = executeBatch(batch , enteringTime, node)
 
                     if not successful:
@@ -362,7 +364,7 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
 
 
             strat = []
-            welcomeBackTimes = [-1] * (len( batch["children"]))
+            welcomeBackTimes = [-1] * (len( batch["children"])) #Saving when the batch is cleared meaning the longest time that is needed for a children
             counter = 0
 
             for node in batch["children"]:
@@ -376,14 +378,13 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
                 visitedTimes[node] = arrTime
 
                 #Remove visited node from guard lists and update minGuardTime if neicessary
-                for guard in guards:
+                for guard in guards[:]:   # Iterate over a copy of the guard list so that when removing an item nothing is skipped
                     if node in guard[1]:
-                        guard[1].remove(node) 
-                        guard[2] =  max(guard[2], arrTime)
-                        #If a guard has no enemy he can turn into a flag
+                        guard[1].remove(node) #alters the real guard list
+                        guard[2] = max(guard[2], arrTime) #alters the real guard list
                         if len(guard[1]) == 0:
                             flags.append((guard[0], guard[2]))
-                            guards.remove(guard)
+                            guards.remove(guard) #Removes from the real guard list
 
                 enemys = []
                 minGuardTime = arrTime
@@ -622,74 +623,61 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
     # THE REAL GRAPH SEARCH ALGORITHIM USING EVERYTHING FROM ABOVE
     # ------------------------------------------------------------
 
-    #If we have that many robots the optimal solution is obvious
-    if len(G.nodes) <= availableRobots:
-        root = 0
-        strategy = []
-        for node in G.nodes:
-            if node.idx != root:
-                path = aStar(G.nodes[root].pos, node.pos, obstacles,distanceMap, alpha)
-                strategy.append((root, node.idx, 1, 0, len(path) - 1))
-
-        strategy.insert(0, (None, root, availableRobots))
-        return strategy, G, 0
-        
-    else:
-        startingTime = time.monotonic()
-        bestFitness = np.inf
-        bestStrategy = None
-        bestTree = None
-        counter = [0] * startNodes
-        currGen = []
-        checkedTreesCounter = 0
-        #------------------------------------------------------------
-        # INITALIZING THE STARTING POPULATION
-        #------------------------------------------------------------
-        for i in range(0,10):
-            if counter != [1] * startNodes:
-                for i in range(0,len(counter)):
-                    if counter[i] == 0:
-                        counter[i] = 1
-                        root = i
-                        T = computeGreedySpanningTree(G,root)
-                        currGen.append((T,root))
-                        break
-            else: 
-                root = random.randint(0,startNodes-1)
-                T = computeRandomSpanningTree(G,root)
-                currGen.append((T,root))
-
-
-        #------------------------------------------------------------
-        # ANYTIME ALGORITHIM
-        #------------------------------------------------------------
-
-        while time.monotonic() - startingTime < availableTime:
-            fitnesses = []
-            for indivium in currGen:
-                if time.monotonic() - startingTime >= availableTime:
+    startingTime = time.monotonic()
+    bestFitness = np.inf
+    bestStrategy = None
+    bestTree = None
+    counter = [0] * startNodes
+    currGen = []
+    checkedTreesCounter = 0
+    #------------------------------------------------------------
+    # INITALIZING THE STARTING POPULATION
+    #------------------------------------------------------------
+    for i in range(0,10):
+        if counter != [1] * startNodes:
+            for i in range(0,len(counter)):
+                if counter[i] == 0:
+                    counter[i] = 1
+                    root = i
+                    T = computeGreedySpanningTree(G,root)
+                    currGen.append((T,root))
                     break
+        else: 
+            root = random.randint(0,startNodes-1)
+            T = computeRandomSpanningTree(G,root)
+            currGen.append((T,root))
 
-                strategy, clearance, visitedTimes = treeSearch(indivium[0], indivium[1], availableRobots, G)
-                checkedTreesCounter += 1
-                if clearance: fitness = computeExpTime(visitedTimes, G)
-                else: fitness = np.inf
-                fitnesses.append(fitness)
-                if fitness < bestFitness:
-                    bestFitness = fitness
-                    bestTree = indivium[0]
-                    bestStrategy = strategy
 
+    #------------------------------------------------------------
+    # ANYTIME ALGORITHIM
+    #------------------------------------------------------------
+    #NOTE: If the available Robots is greater or equal than the amount of nodes the result will always be the trivial strategy that immidiatly sends a robot to every node 
+    while time.monotonic() - startingTime < availableTime:
+        fitnesses = []
+        for indivium in currGen:
             if time.monotonic() - startingTime >= availableTime:
-                break      
-            
-            currGen = evolve(currGen, fitnesses, G) 
-            
-        if bestFitness == np.inf:
-            bestStrategy = computeClosingExits(bestStrategy,G)
-            print(availableRobots)
-            print("HAALLLO")
-            bestTree = G
+                break
 
-        return bestStrategy, bestTree, checkedTreesCounter
+            strategy, clearance, visitedTimes = treeSearch(indivium[0], indivium[1], availableRobots, G)
+            checkedTreesCounter += 1
+            if clearance: fitness = computeExpTime(visitedTimes, G)
+            else: fitness = np.inf
+            fitnesses.append(fitness)
+            if fitness < bestFitness:
+                bestFitness = fitness
+                bestTree = indivium[0]
+                bestStrategy = strategy
+
+        if time.monotonic() - startingTime >= availableTime:
+            break      
+        
+        currGen = evolve(currGen, fitnesses, G) 
+        
+    if bestFitness == np.inf:
+        bestStrategy = computeClosingExits(bestStrategy,G)
+        print(availableRobots)
+        print("HAALLLO")
+        bestTree = G
+
+    return bestStrategy, bestTree, checkedTreesCounter
 
