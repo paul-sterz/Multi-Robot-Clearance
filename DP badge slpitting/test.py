@@ -2230,7 +2230,7 @@ if st.session_state.playing:
         and current_time < total_time
     ):
 
-        time.sleep(1)
+        time.sleep(0.5)
 
         st.session_state.current_time = min(
             current_time + 1,
