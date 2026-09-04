@@ -5,6 +5,7 @@ import sys
 from Graph import Graph, Node, Edge
 from itertools import combinations
 from TrajectoryPlanning import aStar
+from collections import defaultdict
 import copy
 import time
 
@@ -484,12 +485,18 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
     # So that each iteration considers a new spanning tree
     # ---------------------------------------------------
     
-    def computeRandomSpanningTree(G : Graph, root):
-     
+    def computeRandomSpanningTree(G : Graph, root, preferredEdges=None):
+
+        # preferredEdges: an optional set of directed (u,v) edge keys that should
+        # always be picked over a non-preferred edge whenever both are available
+        # at a given step of the DFS (used to favour edges shared by both parents)
+        if preferredEdges is None:
+            preferredEdges = set()
+
         T = Graph()
         for i in range(len(G.nodes)):
             T.add_node2(G.nodes[i])
-       
+
         visited = set()
 
         def dfs(node):
@@ -498,7 +505,11 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
 
             neighbours = list(G.adj[G.nodes[node]])
 
-            random.shuffle(neighbours)
+            preferred = [n for n in neighbours if (node, n.idx) in preferredEdges]
+            others = [n for n in neighbours if (node, n.idx) not in preferredEdges]
+            random.shuffle(preferred)
+            random.shuffle(others)
+            neighbours = preferred + others
 
             for neighbour in neighbours:
 
@@ -541,6 +552,94 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
 
 
     # ---------------------------------------------------
+    # Splicing a mutation edge (contained in neither parent) into an
+    # already complete spanning tree while keeping it a valid tree:
+    # the edge on the existing path between u and v is removed and
+    # replaced by the new (u,v) edge, oriented away from the root
+    # ---------------------------------------------------
+    def applyMutation(tree, root, u, v, G):
+
+        undirectedAdj = defaultdict(set)
+        for a, b in tree.edges.keys():
+            undirectedAdj[a].add(b)
+            undirectedAdj[b].add(a)
+
+        # BFS from the root to know each node's parent in the current tree
+        parent = {root: None}
+        frontier = [root]
+        while frontier:
+            nextFrontier = []
+            for node in frontier:
+                for neighbour in undirectedAdj[node]:
+                    if neighbour not in parent:
+                        parent[neighbour] = node
+                        nextFrontier.append(neighbour)
+            frontier = nextFrontier
+
+        # Walk from u and v up to their lowest common ancestor to get the
+        # path between them
+        def ancestors(node):
+            path = []
+            while node is not None:
+                path.append(node)
+                node = parent[node]
+            return path
+
+        ancestorsUSet = set(ancestors(u))
+        lca = next(node for node in ancestors(v) if node in ancestorsUSet)
+
+        pathEdges = []
+        node = u
+        while node != lca:
+            pathEdges.append((parent[node], node))
+            node = parent[node]
+        node = v
+        while node != lca:
+            pathEdges.append((parent[node], node))
+            node = parent[node]
+
+        if not pathEdges:
+            return
+
+        # Removing one edge on the u-v path splits the tree into a part
+        # containing u and a part containing v
+        removedParent, removedChild = random.choice(pathEdges)
+
+        subtree = {removedChild}
+        stack = [removedChild]
+        while stack:
+            node = stack.pop()
+            for neighbour in undirectedAdj[node]:
+                if neighbour != removedParent and neighbour not in subtree:
+                    subtree.add(neighbour)
+                    stack.append(neighbour)
+
+        rootSide, childSide = (v, u) if u in subtree else (u, v)
+
+        # childSide is not necessarily removedChild itself but possibly one
+        # of its descendants - every edge on the old path from removedChild
+        # down to childSide has to flip direction so the reattached subtree
+        # stays oriented away from the (unchanged) overall root
+        reorientPath = []
+        node = childSide
+        while node != removedChild:
+            reorientPath.append((parent[node], node))
+            node = parent[node]
+
+        for a, b in reorientPath:
+            del tree.edges[(a, b)]
+            tree.adj[tree.nodes[a]].remove(tree.nodes[b])
+            edgeInfo = G.edges[(b, a)] if (b, a) in G.edges else G.edges[(a, b)]
+            tree.add_edge(tree.nodes[b], tree.nodes[a], edgeInfo.time, edgeInfo.robotType)
+
+        del tree.edges[(removedParent, removedChild)]
+        tree.adj[tree.nodes[removedParent]].remove(tree.nodes[removedChild])
+
+        newEdge = G.edges[(rootSide, childSide)] if (rootSide, childSide) in G.edges else G.edges[(childSide, rootSide)]
+        tree.add_edge(tree.nodes[rootSide], tree.nodes[childSide], newEdge.time, newEdge.robotType)
+
+
+    # ---------------------------------------------------
     # Computing the cross over of two trees so for the Genetic Algorithim
     # ---------------------------------------------------
     def crossOver(parentA, parentB, G):
@@ -553,38 +652,34 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
         # 1. Choose root from one of the parents
         root = random.choice([rootA, rootB])
 
-        # 2. Union of edges from both parents
-        parentEdges = set(treeA.edges.keys()) | set(treeB.edges.keys())
+        # 2. Union of edges from both parents, ignoring direction: for every
+        #    A-B edge of a parent, the B-A edge is added as well
+        def undirectedEdgeSet(tree):
+            edges = set()
+            for u, v in tree.edges.keys():
+                edges.add((u, v))
+                edges.add((v, u))
+            return edges
 
-        # 3. Find edges of G that are contained in neither
-        #    parent
-        possibleRandomEdges = [
-            edgeKey
-            for edgeKey in G.edges.keys()
-            if edgeKey not in parentEdges
-        ]
+        undirectedA = undirectedEdgeSet(treeA)
+        undirectedB = undirectedEdgeSet(treeB)
+        parentEdges = undirectedA | undirectedB
 
-        # 4. Add up to two random new edges
-        numberOfRandomEdges = min(2, len(possibleRandomEdges))
+        # Edges contained in both parents (direction-independent) are always
+        # preferred when building the child's spanning tree
+        commonEdges = undirectedA & undirectedB
 
-        randomEdges = random.sample(
-            possibleRandomEdges,
-            numberOfRandomEdges
-        )
-
-        candidateEdges = parentEdges | set(randomEdges)
-
-        # 5. Build temporary graph containing exactly these
-        #    candidate edges
+        # 3. Build temporary graph containing exactly the parents' edges
         candidateGraph = Graph()
 
         for node in G.nodes:
             candidateGraph.add_node2(node)
 
-        for u, v in candidateEdges:
+        for u, v in parentEdges:
 
-            # Get original edge information from G
-            edge = G.edges[(u, v)]
+            # Get original edge information from G, falling back to the
+            # opposite direction in case G does not have this exact one
+            edge = G.edges[(u, v)] if (u, v) in G.edges else G.edges[(v, u)]
 
             candidateGraph.add_edge(
                 candidateGraph.nodes[u],
@@ -593,31 +688,49 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
                 edge.robotType
             )
 
-        # 6. Generate random spanning tree from candidate graph
+        # 4. Generate a spanning tree from the candidate graph, always
+        #    preferring edges that are contained in both parents
         childTree = computeRandomSpanningTree(
             candidateGraph,
-            root
+            root,
+            preferredEdges=commonEdges
         )
 
+        # 5. Mutation: only once the child's spanning tree is complete,
+        #    splice in up to two edges that are contained in neither parent
+        possibleRandomEdges = [
+            edgeKey
+            for edgeKey in G.edges.keys()
+            if edgeKey not in parentEdges
+        ]
+
+        numberOfRandomEdges = min(2, len(possibleRandomEdges))
+
+        randomEdges = random.sample(
+            possibleRandomEdges,
+            numberOfRandomEdges
+        )
+
+        for u, v in randomEdges:
+            applyMutation(childTree, root, u, v, G)
+
         return childTree, root
-        
+
 
     # ---------------------------------------------------
-    # Computing the next Generation of Spanning Trees for the Genetic Algorithim
+    # Weighted selection of two distinct parents for the Genetic Algorithim,
+    # used by the steady state evaluation loop
     # ---------------------------------------------------
-    def evolve(oldGen, fitnesses, G):
-        newGen = []
-        sortedGen = [individual for fitness, individual in sorted(zip(fitnesses, oldGen), key=lambda x: x[0])]
+    def selectParents(population, fitnesses):
+        sortedGen = [individual for fitness, individual in sorted(zip(fitnesses, population), key=lambda x: x[0])]
         del sortedGen[3:]
         P = [0.6, 0.25, 0.15]
-        for i in range(0,5):
-            ParentA = random.choices(sortedGen, weights= P,k=1)[0]
+        ParentA = random.choices(sortedGen, weights= P,k=1)[0]
+        ParentB = random.choices(sortedGen, weights= P,k=1)[0]
+        while ParentB == ParentA:
             ParentB = random.choices(sortedGen, weights= P,k=1)[0]
-            while ParentB == ParentA:
-                ParentB = random.choices(sortedGen, weights= P,k=1)[0]
 
-            newGen.append(crossOver(ParentA, ParentB, G))
-        return newGen
+        return ParentA, ParentB
 
     # ------------------------------------------------------------
     # THE REAL GRAPH SEARCH ALGORITHIM USING EVERYTHING FROM ABOVE
@@ -649,30 +762,49 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
 
 
     #------------------------------------------------------------
-    # ANYTIME ALGORITHIM
+    # ANYTIME ALGORITHIM (STEADY STATE EVALUATION)
     #------------------------------------------------------------
-    #NOTE: If the available Robots is greater or equal than the amount of nodes the result will always be the trivial strategy that immidiatly sends a robot to every node 
-    while time.monotonic() - startingTime < availableTime:
-        fitnesses = []
-        for indivium in currGen:
-            if time.monotonic() - startingTime >= availableTime:
-                break
+    #NOTE: If the available Robots is greater or equal than the amount of nodes the result will always be the trivial strategy that immidiatly sends a robot to every node
 
-            strategy, clearance, visitedTimes = treeSearch(indivium[0], indivium[1], availableRobots, G)
-            checkedTreesCounter += 1
-            if clearance: fitness = computeExpTime(visitedTimes, G)
-            else: fitness = np.inf
-            fitnesses.append(fitness)
-            if fitness < bestFitness:
-                bestFitness = fitness
-                bestTree = indivium[0]
-                bestStrategy = strategy
-
+    # Evaluating the starting population once
+    fitnesses = []
+    for indivium in currGen:
         if time.monotonic() - startingTime >= availableTime:
-            break      
-        
-        currGen = evolve(currGen, fitnesses, G) 
-        
+            break
+
+        strategy, clearance, visitedTimes = treeSearch(indivium[0], indivium[1], availableRobots, G)
+        checkedTreesCounter += 1
+        if clearance: fitness = computeExpTime(visitedTimes, G)
+        else: fitness = np.inf
+        fitnesses.append(fitness)
+        if fitness < bestFitness:
+            bestFitness = fitness
+            bestTree = indivium[0]
+            bestStrategy = strategy
+
+    # Steady state reproduction: always select parents via weighted selection,
+    # add one evaluated child to the population and remove its worst member
+    while time.monotonic() - startingTime < availableTime:
+
+        ParentA, ParentB = selectParents(currGen, fitnesses)
+        child = crossOver(ParentA, ParentB, G)
+
+        strategy, clearance, visitedTimes = treeSearch(child[0], child[1], availableRobots, G)
+        checkedTreesCounter += 1
+        if clearance: fitness = computeExpTime(visitedTimes, G)
+        else: fitness = np.inf
+        if fitness < bestFitness:
+            bestFitness = fitness
+            bestTree = child[0]
+            bestStrategy = strategy
+
+        currGen.append(child)
+        fitnesses.append(fitness)
+
+        worstIdx = max(range(len(fitnesses)), key=lambda i: fitnesses[i])
+        del currGen[worstIdx]
+        del fitnesses[worstIdx]
+
     if bestFitness == np.inf:
         bestStrategy = computeClosingExits(bestStrategy,G)
         print(availableRobots)
