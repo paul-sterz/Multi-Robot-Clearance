@@ -98,6 +98,7 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
                 "visitedTimes": copy.deepcopy(visitedTimes),
                 "guards": copy.deepcopy(guards),
                 "flags": copy.deepcopy(flags),
+                "enteringTimes": enteringTime
             }
 
             bestCost = np.inf
@@ -112,6 +113,7 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
                 visitedTimes = copy.deepcopy(baseSnap["visitedTimes"])
                 guards = copy.deepcopy(baseSnap["guards"])
                 flags = copy.deepcopy(baseSnap["flags"])
+                enteringTime = baseSnap["enteringTimes"]
 
                 strat = []
                 currTime = enteringTime
