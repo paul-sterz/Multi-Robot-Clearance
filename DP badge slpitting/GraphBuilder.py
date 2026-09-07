@@ -6,7 +6,7 @@ from TrajectoryPlanning import aStar, computeObstacleDistance, dijkstra, pathLen
 
 
 
-def graphBuilder(obstacles, hotspots, detectionFnc, startRegion, l, sigma, alpha):
+def graphBuilder(obstacles, hotspots, detectionFnc, startRegion, l, sigma, alpha, epsilon = 0.05):
     # INPUT:
     # obstacles: (H,W) dimensional numpy array that represents the enviroment, 1=obstacle, 0=free
     # hotspots: List of hotspots in format (pos, low/medium/high) beeing ((x,y),0/1/2)
@@ -36,30 +36,61 @@ def graphBuilder(obstacles, hotspots, detectionFnc, startRegion, l, sigma, alpha
 
 
     # ---------------------------------------------------
-    # PART 1: CALCULATE PRIORS FOR EACH NODE 
+    # PART 1: CALCULATE PRIORS FOR EACH CELL
     # ---------------------------------------------------
+
     obstacleDistance = computeObstacleDistance(obstacles)
 
     priors = np.zeros((H,W))
     weights = [1, l, l**2]
 
+    # Gaussian mixture
     for hotspot in hotspots:
-        _, predecessor = dijkstra(hotspot[0], obstacles, obstacleDistance, alpha)
+        _, predecessor = dijkstra(
+            hotspot[0],
+            obstacles,
+        )
+
         for cell in E:
-            dist = pathLength(predecessor, hotspot[0], cell)
+            dist = pathLength(
+                predecessor,
+                hotspot[0],
+                cell
+            )
+
             if dist is None:
                 continue
-            priors[cell[0], cell[1]] += weights[hotspot[1]] * np.exp(-(dist)**2/(2*sigma**2))
 
-    val = 0
-    for x in range(H):
-        for y in range(W):
-            val += priors[x,y]
-            
-    if val != 0:
-        for x in range(H):
-            for y in range(W):
-                priors[x, y] = priors[x,y] / val
+            priors[cell[0], cell[1]] += (
+                weights[hotspot[1]]
+                * np.exp(-(dist**2) / (2 * sigma**2))
+            )
+
+
+    # ---------------------------------------------------
+    # NORMALIZE + UNIFORM BACKGROUND PRIOR
+    # ---------------------------------------------------
+
+    if len(E) > 0:
+        val = sum(priors[x, y] for x, y in E)
+        uniformPrior = 1.0 / len(E)
+
+        if val > 0:
+            # Normalize Gaussian mixture
+            for x, y in E:
+                priors[x, y] /= val
+
+            # Add background uncertainty
+            for x, y in E:
+                priors[x, y] = (
+                    (1 - epsilon) * priors[x, y]
+                    + epsilon * uniformPrior
+                )
+
+        else:
+            # No hotspots -> uniform distribution
+            for x, y in E:
+                priors[x, y] = uniformPrior
 
 
     # ---------------------------------------------------

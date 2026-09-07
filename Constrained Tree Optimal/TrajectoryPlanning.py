@@ -153,41 +153,26 @@ def aStar(start, goal, obstacles, distanceMap, alpha):
 # Dijkstra's algorithm computing the single-source shortest path cost from
 # start to every reachable free cell. Used for hotspots
 # ---------------------------------------------------
-def dijkstra(start, obstacles, distanceMap, alpha):
-    # start is a point of the form (x,y)
-    # Returns (cost, predecessor): cost[p] is the cheapest cost from start to
-    # p, predecessor[p] is the previous cell on that cheapest path (used for
-    # path reconstruction / hop counting, see pathLength below).
-
+def dijkstra(start, obstacles):
     H, W = obstacles.shape
-
     directions = [(1, 0), (-1, 0), (0, 1), (0, -1)]
 
-    queue = []
-    heapq.heappush(queue, (0, start))
-
+    queue = [(0, start)]
     predecessor = {}
+    cost = {start: 0}
+    visited = np.zeros((H, W), dtype=bool)
 
-    cost = {}
-    cost[start] = 0
-
-    visited = np.zeros((H, W))
-
-    while len(queue) > 0:
-
+    while queue:
         currentCost, current = heapq.heappop(queue)
 
-        if visited[current[0]][current[1]] == 1:
+        if visited[current]:
             continue
 
-        visited[current[0]][current[1]] = 1
-
+        visited[current] = True
         x, y = current
 
         for dx, dy in directions:
-
-            nx = x + dx
-            ny = y + dy
+            nx, ny = x + dx, y + dy
 
             if not (0 <= nx < H and 0 <= ny < W):
                 continue
@@ -196,23 +181,14 @@ def dijkstra(start, obstacles, distanceMap, alpha):
                 continue
 
             neighbour = (nx, ny)
-
-            stepDistance = abs(dx) + abs(dy)
-
-            df = distanceMap[nx, ny]
-
-            newCost = currentCost + alpha * stepDistance / df
+            newCost = currentCost + 1
 
             if neighbour not in cost or newCost < cost[neighbour]:
-
                 cost[neighbour] = newCost
-
                 predecessor[neighbour] = current
-
                 heapq.heappush(queue, (newCost, neighbour))
 
     return cost, predecessor
-
 
 # ---------------------------------------------------
 # Number of grid steps (hops) from start to goal along a Dijkstra
