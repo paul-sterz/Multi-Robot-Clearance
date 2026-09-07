@@ -10,11 +10,12 @@ import copy
 import time
 
 
-def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles, distanceMap, alpha, cellpriors, D):
+def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles, distanceMap, alpha, cellpriors, D, maxTrees=None):
     #INPUT:
     # G: a Graph object repesenting the merged navigationgraph
-    # availableTime: a number which represents the available computation time
+    # availableTime: the available computation time budget in seconds (ignored if maxTrees is given)
     # availableRobots: an integer representing the amount of robots available
+    # maxTrees: if given (not None), stop after evaluating exactly this many spanning trees instead of using availableTime
     # startNodes:  an integer representing that all nodes from 0 to startNode-1 are valid startNodes for our Algorithim
     # obstacles:
     # distanceMap: 
@@ -585,6 +586,12 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
     counter = [0] * startNodes
     currGen = []
     checkedTreesCounter = 0
+
+    def shouldStop():
+        if maxTrees is not None:
+            return checkedTreesCounter >= maxTrees
+        return time.monotonic() - startingTime >= availableTime
+
     #------------------------------------------------------------
     # INITALIZING THE STARTING POPULATION
     #------------------------------------------------------------
@@ -611,7 +618,7 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
     # Evaluating the starting population once
     fitnesses = []
     for indivium in currGen:
-        if time.monotonic() - startingTime >= availableTime:
+        if shouldStop():
             break
 
         strategy, clearance, visitedTimes = treeSearch(indivium[0], indivium[1], availableRobots, G)
@@ -626,7 +633,7 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
 
     # Steady state reproduction: always select parents via weighted selection,
     # add one evaluated child to the population and remove its worst member
-    while time.monotonic() - startingTime < availableTime:
+    while not shouldStop():
 
         ParentA, ParentB = selectParents(currGen, fitnesses)
         child = crossOver(ParentA, ParentB, G)

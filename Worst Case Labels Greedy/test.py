@@ -180,13 +180,37 @@ with st.sidebar:
         3,
     )
 
-    computation_time = st.slider(
-        "Computation Time (s)",
-        1,
-        60,
-        3,
-        step=1,
+    stopping_criterion = st.radio(
+        "Stop after",
+        [
+            "Computation time",
+            "Number of spanning trees",
+        ],
+        horizontal=True,
     )
+
+    if stopping_criterion == "Computation time":
+
+        computation_time = st.slider(
+            "Computation Time (s)",
+            1,
+            60,
+            3,
+            step=1,
+        )
+
+        max_trees = None
+
+    else:
+
+        max_trees = st.slider(
+            "Number of spanning trees",
+            1,
+            500,
+            20,
+        )
+
+        computation_time = None
 
     available_robots = st.slider(
         "Available Robots",
@@ -603,6 +627,7 @@ if run:
             alpha,
             cellpriors,
             D,
+            maxTrees=max_trees,
         )
 
     if strategy is None:
