@@ -1,6 +1,7 @@
 import os
 import sys
 import importlib.util
+import time
 
 import numpy as np
 
@@ -317,6 +318,8 @@ def approachTest(detecRad : int, numOfRuns : int, availableRobots : int, availab
 
     resultsCellPrior = np.zeros((numOfRuns, 4))
     resultsNodePrior = np.zeros((numOfRuns, 4))
+    resultsTrees = np.zeros((numOfRuns, 4))
+    resultsTime = np.zeros((numOfRuns, 4))
 
     #------------------------------------------------------------------
     # STEP 2: EVALUATE THE 4 METHODS ON THE GRAPH AND STORE THE RESULTS
@@ -329,6 +332,8 @@ def approachTest(detecRad : int, numOfRuns : int, availableRobots : int, availab
             # calculate the best strategy with the searcher method for the 4 approaches.
             # the best fittnes value according to the cell prior is immidieatly returned and can be stored in the according numpy array
             # the node prior value has to be calculated with a sperate function that goes along the strategy and everythime a node is visited for the first time to the objective function is added prior of node * visited time
+
+            startTime = time.time()
 
             strategy, tree, checkedTrees, cellPriorFitness = graphSearchFn(
                 G,
@@ -343,11 +348,16 @@ def approachTest(detecRad : int, numOfRuns : int, availableRobots : int, availab
                 maxTrees=maxTrees,
             )
 
+            resultsTime[i, approachIdx] = time.time() - startTime
+            resultsTrees[i, approachIdx] = checkedTrees
+
+            print("Approach " + str(approachIdx) + " beendet")
             resultsCellPrior[i, approachIdx] = cellPriorFitness
 
             if cellPriorFitness == np.inf:
                 resultsNodePrior[i, approachIdx] = np.inf
             else:
                 resultsNodePrior[i, approachIdx] = computeNodePriorObjective(strategy, G, startNodes)
+        print("Run Nummer " + str(i) + " beendet!")
 
-    return G, edges_shady, D, startNodes, priors, resultsCellPrior, resultsNodePrior
+    return G, edges_shady, D, startNodes, priors, resultsCellPrior, resultsNodePrior, resultsTrees, resultsTime

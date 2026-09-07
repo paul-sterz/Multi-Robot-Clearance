@@ -551,6 +551,8 @@ if st.button(
             simPriors,
             resultsCellPrior,
             resultsNodePrior,
+            resultsTrees,
+            resultsTime,
         ) = approachTest(
             detecRad=detection_radius,
             numOfRuns=num_of_runs,
@@ -565,6 +567,8 @@ if st.button(
         "priors": simPriors,
         "resultsCellPrior": resultsCellPrior,
         "resultsNodePrior": resultsNodePrior,
+        "resultsTrees": resultsTrees,
+        "resultsTime": resultsTime,
         "stopping_criterion": stopping_criterion,
         "computation_time": computation_time,
         "max_trees": max_trees,
@@ -603,15 +607,12 @@ if results is not None:
     # possible" counter.
     # --------------------------------------------------
 
-    if results["stopping_criterion"] == "Computation time":
-
-        criterionLabel = "Computation Time / Spanning Trees"
-        criterionValue = f"{results['computation_time']} s"
-
-    else:
-
-        criterionLabel = "Computation Time / Spanning Trees"
-        criterionValue = f"{results['max_trees']} trees"
+    # Whichever of {computation time, spanning trees} was the stopping
+    # criterion is fixed (prescribed) and shown as-is; the other one was
+    # left free to vary run-by-run, so it is averaged over all runs
+    # instead (per approach, since approaches don't check trees / use
+    # time at the same rate).
+    timeIsPrescribed = results["stopping_criterion"] == "Computation time"
 
     def buildStatsTable(resultsArray):
 
@@ -626,9 +627,17 @@ if results is not None:
 
             noClearanceCount = int(np.sum(~finiteMask))
 
+            if timeIsPrescribed:
+                usedTime = f"{results['computation_time']} s"
+                spanningTrees = float(np.mean(results["resultsTrees"][:, approachIdx]))
+            else:
+                usedTime = float(np.mean(results["resultsTime"][:, approachIdx]))
+                spanningTrees = f"{results['max_trees']} trees"
+
             rows.append({
                 "Approach Name": approachName,
-                criterionLabel: criterionValue,
+                "Spanning Trees": spanningTrees,
+                "Used Time": usedTime,
                 "Available Robots": results["available_robots"],
                 "Min": float(np.min(finiteValues)) if finiteValues.size > 0 else None,
                 "Max": float(np.max(finiteValues)) if finiteValues.size > 0 else None,

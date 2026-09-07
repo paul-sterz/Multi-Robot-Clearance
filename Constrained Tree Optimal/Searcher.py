@@ -31,31 +31,14 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
     #bestStrategy: A list containing the best strategy where each entry is in the form (source node,target node, amount of Robots)
 
     # ---------------------------------------------------
-    # BRUTE FORCE ENUMERATION OF EVERY BATCH COMBINATION AND ORDER
-    # A batch is a subset of a node's children that is explored in
-    # parallel; a schedule is an ordered sequence of batches partitioning
-    # all of a node's children. This yields every possible partition of
-    # the children into batches, in every possible order.
+    # BRUTE FORCE ENUMERATION OF EVERY ORDER
+    # Children are always explored one at a time (no parallel batches);
+    # this yields every possible ordering of a node's children, each as
+    # a sequence of single-child batches.
     # ---------------------------------------------------
-    def _setPartitions(items):
-        if len(items) == 1:
-            yield [items]
-            return
-
-        first = items[0]
-        for smaller in _setPartitions(items[1:]):
-            for i in range(len(smaller)):
-                yield smaller[:i] + [[first] + smaller[i]] + smaller[i + 1:]
-            yield [[first]] + smaller
-
     def generateAllSchedules(children):
-        if len(children) == 0:
-            yield []
-            return
-
-        for partition in _setPartitions(children):
-            for ordering in permutations(partition):
-                yield [list(batch) for batch in ordering]
+        for ordering in permutations(children):
+            yield [[child] for child in ordering]
 
 
     # ---------------------------------------------------
