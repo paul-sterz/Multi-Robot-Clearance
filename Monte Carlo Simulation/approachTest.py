@@ -44,10 +44,11 @@ def _loadGraphSearch(approachDir):
 
 # Shared modules (identical for every approach) - loaded once from "DP"
 _graphModule = _loadModule("Graph", os.path.join(APPROACH_DIRS["DP"], "Graph.py"))
-_loadModule("TrajectoryPlanning", os.path.join(APPROACH_DIRS["DP"], "TrajectoryPlanning.py"))
+_trajectoryPlanningModule = _loadModule("TrajectoryPlanning", os.path.join(APPROACH_DIRS["DP"], "TrajectoryPlanning.py"))
 _graphBuilderModule = _loadModule("GraphBuilder", os.path.join(APPROACH_DIRS["DP"], "GraphBuilder.py"))
 
 graphBuilder = _graphBuilderModule.graphBuilder
+computeObstacleDistance = _trajectoryPlanningModule.computeObstacleDistance
 
 Graph = _graphModule.Graph
 Node = _graphModule.Node
@@ -58,6 +59,16 @@ graphSearchDP = _loadGraphSearch(APPROACH_DIRS["DP"])
 graphSearchDPBadgeSplitting = _loadGraphSearch(APPROACH_DIRS["DP Badge Splitting"])
 graphSearchWorstCaseLabels = _loadGraphSearch(APPROACH_DIRS["Worst Case Labels Greedy"])
 graphSearchConstrainedTreeOptimal = _loadGraphSearch(APPROACH_DIRS["Constrained Tree Optimal"])
+
+# Fixed column order used throughout the Monte Carlo comparison (Step 2/3)
+APPROACHES = [
+    graphSearchDP,
+    graphSearchDPBadgeSplitting,
+    graphSearchWorstCaseLabels,
+    graphSearchConstrainedTreeOptimal,
+]
+
+APPROACH_NAMES = list(APPROACH_DIRS.keys())
 
 
 # ==================================================
@@ -228,6 +239,48 @@ def computeLabels(T : Graph, root, parent):
     return edgeLabels
 
 
+# ==================================================
+# NODE PRIOR OBJECTIVE
+#
+# Unlike the cell-prior objective (computeExpTime() inside each Searcher.py,
+# returned directly as bestFitness), there is no existing node-based
+# equivalent - so it is computed here by walking the winning strategy:
+# every node's first-visit time is determined from the strategy moves, and
+# the objective sums node.prior * firstVisitTime over all nodes.
+# ==================================================
+
+
+def computeNodePriorObjective(strategy, G : Graph, startNodes):
+
+    targetedNodes = {move[1] for move in strategy if len(move) == 5}
+
+    nodeVisitedTime = {}
+
+    # Start-region nodes that are never the target of a move already have
+    # robots on them at t = 0 (see computeRobotCounts() in TrajectoryPlanning.py)
+    for i in range(startNodes):
+        if i not in targetedNodes:
+            nodeVisitedTime[i] = 0
+
+    for move in strategy:
+
+        if len(move) != 5:
+            continue
+
+        _, target, _, _, tArrival = move
+
+        if target not in nodeVisitedTime or tArrival < nodeVisitedTime[target]:
+            nodeVisitedTime[target] = tArrival
+
+    objective = 0.0
+
+    for node in G.nodes:
+        if node.idx in nodeVisitedTime:
+            objective += node.prior * nodeVisitedTime[node.idx]
+
+    return objective
+
+
 # Fixed GraphBuilder prior/A* parameters, shared between approachTest() and
 # the Streamlit UI (test.py) so both use the exact same prior computation.
 START_REGION = {(0, 0)}
@@ -236,7 +289,7 @@ GRAPH_PRIOR_SIGMA = 2.860054369471078
 GRAPH_ALPHA = 1
 
 
-def approachTest(detecRad : int, numOfRuns : int, availableRobots : int):
+def approachTest(detecRad : int, numOfRuns : int, availableRobots : int, availableTime, maxTrees):
 
     #-------------------------------------------------------------------
     # STEP 1: ALLOCATION
@@ -255,18 +308,46 @@ def approachTest(detecRad : int, numOfRuns : int, availableRobots : int):
         GRAPH_ALPHA,
     )
 
+    distanceMap = computeObstacleDistance(obstacles)
 
-   #NUR EIN GRAPH
-   # 100 runs auf dem GRPH PLOTTE MIN, MAX AVG und ändere die gegebene Rechenzeit bzw. Trees ist intuitiver
-   
+    # NUR EIN GRAPH: the graph above is built once and reused for every run
+    # and every approach below - only the (randomized) search itself differs
+    # between runs.
+    # 100 runs auf dem GRPH PLOTTE MIN, MAX AVG und ändere die gegebene Rechenzeit bzw. Trees ist intuitiver
 
+    resultsCellPrior = np.zeros((numOfRuns, 4))
+    resultsNodePrior = np.zeros((numOfRuns, 4))
 
     #------------------------------------------------------------------
     # STEP 2: EVALUATE THE 4 METHODS ON THE GRAPH AND STORE THE RESULTS
     #------------------------------------------------------------------
 
+    for i in range(numOfRuns):
 
+        for approachIdx, graphSearchFn in enumerate(APPROACHES):
 
-    #------------------------------------------------------------------
-    # STEP 3: PLOT & STORE THE DATA
-    #------------------------------------------------------------------
+            # calculate the best strategy with the searcher method for the 4 approaches.
+            # the best fittnes value according to the cell prior is immidieatly returned and can be stored in the according numpy array
+            # the node prior value has to be calculated with a sperate function that goes along the strategy and everythime a node is visited for the first time to the objective function is added prior of node * visited time
+
+            strategy, tree, checkedTrees, cellPriorFitness = graphSearchFn(
+                G,
+                availableTime,
+                availableRobots,
+                startNodes,
+                obstacles,
+                distanceMap,
+                GRAPH_ALPHA,
+                priors,
+                D,
+                maxTrees=maxTrees,
+            )
+
+            resultsCellPrior[i, approachIdx] = cellPriorFitness
+
+            if cellPriorFitness == np.inf:
+                resultsNodePrior[i, approachIdx] = np.inf
+            else:
+                resultsNodePrior[i, approachIdx] = computeNodePriorObjective(strategy, G, startNodes)
+
+    return G, edges_shady, D, startNodes, priors, resultsCellPrior, resultsNodePrior

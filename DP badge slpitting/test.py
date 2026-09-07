@@ -617,7 +617,7 @@ if run:
         "Computing strategy..."
     ):
 
-        strategy, T, checkedTreeCounter = graphSearch(
+        strategy, T, checkedTreeCounter, _ = graphSearch(
             G,
             computation_time,
             available_robots,

@@ -660,5 +660,5 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
         print("HAALLLO")
         bestTree = G
 
-    return bestStrategy, bestTree, checkedTreesCounter
+    return bestStrategy, bestTree, checkedTreesCounter, bestFitness
 
