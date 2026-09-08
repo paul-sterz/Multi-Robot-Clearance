@@ -185,15 +185,22 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
                 maxBLabelNeighbours = [neighbour for neighbour in neighbours if BLabels[(node, neighbour.idx)] == maxBLabel]
 
                 if len(maxBLabelNeighbours) >= 2:
-                    return False, [], enteringTime
-
-                largestNeighbour = maxBLabelNeighbours[0]
-                orderedNeighbours = sorted(
-                    (neighbour for neighbour in neighbours if neighbour.idx != largestNeighbour.idx),
-                    key=lambda neighbour: effLables[(node, neighbour.idx)],
-                    reverse=True
-                )
-                orderedNeighbours.append(largestNeighbour)
+                    #Ambiguous largest BLabel: no order can guarantee the "largest
+                    #last" property, so fall back to a plain efficiency order instead
+                    #of failing outright.
+                    orderedNeighbours = sorted(
+                        neighbours,
+                        key=lambda neighbour: effLables[(node, neighbour.idx)],
+                        reverse=True
+                    )
+                else:
+                    largestNeighbour = maxBLabelNeighbours[0]
+                    orderedNeighbours = sorted(
+                        (neighbour for neighbour in neighbours if neighbour.idx != largestNeighbour.idx),
+                        key=lambda neighbour: effLables[(node, neighbour.idx)],
+                        reverse=True
+                    )
+                    orderedNeighbours.append(largestNeighbour)
 
                 for neighbour in orderedNeighbours:
                     singleBatch = {"children": [neighbour.idx]}

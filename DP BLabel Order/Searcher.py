@@ -345,15 +345,22 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
                 maxBLabelNeighbours = [neighbour for neighbour in neighbours if BLabels[(node, neighbour.idx)] == maxBLabel]
 
                 if len(maxBLabelNeighbours) >= 2:
-                    return False, [], enteringTime
-
-                largestNeighbour = maxBLabelNeighbours[0]
-                orderedNeighbours = sorted(
-                    (neighbour for neighbour in neighbours if neighbour.idx != largestNeighbour.idx),
-                    key=lambda neighbour: robotTable[(node, neighbour.idx)][BLabels[(node, neighbour.idx)]][1],
-                    reverse=True
-                )
-                orderedNeighbours.append(largestNeighbour)
+                    #Ambiguous largest BLabel: no order can guarantee the "largest
+                    #last" property, so fall back to a plain efficiency order instead
+                    #of failing outright.
+                    orderedNeighbours = sorted(
+                        neighbours,
+                        key=lambda neighbour: robotTable[(node, neighbour.idx)][BLabels[(node, neighbour.idx)]][1],
+                        reverse=True
+                    )
+                else:
+                    largestNeighbour = maxBLabelNeighbours[0]
+                    orderedNeighbours = sorted(
+                        (neighbour for neighbour in neighbours if neighbour.idx != largestNeighbour.idx),
+                        key=lambda neighbour: robotTable[(node, neighbour.idx)][BLabels[(node, neighbour.idx)]][1],
+                        reverse=True
+                    )
+                    orderedNeighbours.append(largestNeighbour)
 
                 for neighbour in orderedNeighbours:
                     singleBatch = {"children": [neighbour.idx], "robots": {neighbour.idx: BLabels[(node, neighbour.idx)]}}
