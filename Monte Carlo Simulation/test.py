@@ -16,6 +16,8 @@ from approachTest import (
     GRAPH_ALPHA,
 )
 
+from treeTest import runSpanningTreeEvolution
+
 
 # ==================================================
 # PAGE CONFIG
@@ -28,6 +30,24 @@ st.set_page_config(
 )
 
 st.title("Multi-Robot Clearance — Monte Carlo Comparison")
+
+
+# ==================================================
+# MODE SELECTION
+# ==================================================
+
+
+app_mode = st.radio(
+    "Mode",
+    [
+        "Approach Test",
+        "Spanning Tree Evolution",
+    ],
+    horizontal=True,
+    key="app_mode",
+)
+
+st.markdown("---")
 
 
 # ==================================================
@@ -65,6 +85,20 @@ for key, default in [
     ("available_robots", 6),
 
     ("simulation_results", None),
+
+    ("evo_approach", APPROACH_NAMES[0]),
+
+    ("evo_stopping_criterion", "Computation time"),
+
+    ("evo_computation_time", 3),
+
+    ("evo_max_trees", 100),
+
+    ("evo_available_robots", 6),
+
+    ("evo_population_size", 10),
+
+    ("evolution_results", None),
 
 ]:
 
@@ -458,213 +492,434 @@ st.caption(
 )
 
 
-# ==================================================
-# RUN PARAMETERS
-# ==================================================
+if app_mode == "Approach Test":
+
+    # ==================================================
+    # RUN PARAMETERS
+    # ==================================================
 
 
-st.markdown("### Run Parameters")
+    st.markdown("### Run Parameters")
 
-num_of_runs = st.slider(
-    "Number of runs per graph",
-    1,
-    1000,
-    st.session_state.num_of_runs,
-)
-
-st.session_state.num_of_runs = num_of_runs
-
-stopping_criterion = st.radio(
-    "Stop after",
-    [
-        "Computation time",
-        "Number of spanning trees",
-    ],
-    horizontal=True,
-    index=[
-        "Computation time",
-        "Number of spanning trees",
-    ].index(st.session_state.stopping_criterion),
-)
-
-st.session_state.stopping_criterion = stopping_criterion
-
-if stopping_criterion == "Computation time":
-
-    computation_time = st.slider(
-        "Computation Time (s)",
+    num_of_runs = st.slider(
+        "Number of runs per graph",
         1,
-        60,
-        st.session_state.computation_time,
+        1000,
+        st.session_state.num_of_runs,
     )
 
-    st.session_state.computation_time = computation_time
+    st.session_state.num_of_runs = num_of_runs
 
-    max_trees = None
+    stopping_criterion = st.radio(
+        "Stop after",
+        [
+            "Computation time",
+            "Number of spanning trees",
+        ],
+        horizontal=True,
+        index=[
+            "Computation time",
+            "Number of spanning trees",
+        ].index(st.session_state.stopping_criterion),
+    )
+
+    st.session_state.stopping_criterion = stopping_criterion
+
+    if stopping_criterion == "Computation time":
+
+        computation_time = st.slider(
+            "Computation Time (s)",
+            1,
+            60,
+            st.session_state.computation_time,
+        )
+
+        st.session_state.computation_time = computation_time
+
+        max_trees = None
+
+    else:
+
+        max_trees = st.slider(
+            "Number of spanning trees",
+            100,
+            10000,
+            st.session_state.max_trees,
+            step=100,
+        )
+
+        st.session_state.max_trees = max_trees
+
+        computation_time = None
+
+    available_robots = st.slider(
+        "Available robots",
+        1,
+        50,
+        st.session_state.available_robots,
+    )
+
+    st.session_state.available_robots = available_robots
+
+
+    # ==================================================
+    # SIMULATE
+    # ==================================================
+
+
+    st.markdown("---")
+
+    if st.button(
+        "Simulate Strategys",
+        type="primary",
+        use_container_width=True,
+    ):
+
+        with st.spinner(
+            f"Running {num_of_runs} runs × {len(APPROACH_NAMES)} approaches..."
+        ):
+
+            (
+                simG,
+                simEdgesShady,
+                simD,
+                simStartNodes,
+                simPriors,
+                resultsCellPrior,
+                resultsNodePrior,
+                resultsTrees,
+                resultsTime,
+            ) = approachTest(
+                detecRad=detection_radius,
+                numOfRuns=num_of_runs,
+                availableRobots=available_robots,
+                availableTime=computation_time,
+                maxTrees=max_trees,
+            )
+
+        st.session_state.simulation_results = {
+            "G": simG,
+            "regularEdges": list(simG.edges.keys()),
+            "priors": simPriors,
+            "resultsCellPrior": resultsCellPrior,
+            "resultsNodePrior": resultsNodePrior,
+            "resultsTrees": resultsTrees,
+            "resultsTime": resultsTime,
+            "stopping_criterion": stopping_criterion,
+            "computation_time": computation_time,
+            "max_trees": max_trees,
+            "available_robots": available_robots,
+        }
+
+
+    #------------------------------------------------------------------
+    # PLOTS OF THE RESULTS
+    #------------------------------------------------------------------
+
+
+    results = st.session_state.simulation_results
+
+    if results is not None:
+
+        st.markdown("### Environment with Navigation Graph")
+
+        st.plotly_chart(
+            buildEnvironmentFigure(
+                obstacles,
+                results["priors"],
+                H,
+                W,
+                G=results["G"],
+                regularEdges=results["regularEdges"],
+            ),
+            use_container_width=True,
+        )
+
+        # --------------------------------------------------
+        # STATS TABLES
+        #
+        # Runs without clearance (objective value == inf) are excluded from
+        # min/max/mean/variance - they only increase the "No clearance
+        # possible" counter.
+        # --------------------------------------------------
+
+        # Whichever of {computation time, spanning trees} was the stopping
+        # criterion is fixed (prescribed) and shown as-is; the other one was
+        # left free to vary run-by-run, so it is averaged over all runs
+        # instead (per approach, since approaches don't check trees / use
+        # time at the same rate).
+        timeIsPrescribed = results["stopping_criterion"] == "Computation time"
+
+        numGraphNodes = len(results["G"].nodes)
+        numGraphEdges = len(results["G"].edges)
+
+        def buildStatsTable(resultsArray):
+
+            rows = []
+
+            for approachIdx, approachName in enumerate(APPROACH_NAMES):
+
+                column = resultsArray[:, approachIdx]
+
+                finiteMask = np.isfinite(column)
+                finiteValues = column[finiteMask]
+
+                noClearanceCount = int(np.sum(~finiteMask))
+
+                if timeIsPrescribed:
+                    usedTime = f"{results['computation_time']} s"
+                    spanningTrees = float(np.mean(results["resultsTrees"][:, approachIdx]))
+                else:
+                    usedTime = float(np.mean(results["resultsTime"][:, approachIdx]))
+                    spanningTrees = f"{results['max_trees']} trees"
+
+                rows.append({
+                    "Approach Name": approachName,
+                    "Nodes": numGraphNodes,
+                    "Edges": numGraphEdges,
+                    "Spanning Trees": spanningTrees,
+                    "Used Time": usedTime,
+                    "Available Robots": results["available_robots"],
+                    "Min": float(np.min(finiteValues)) if finiteValues.size > 0 else None,
+                    "Max": float(np.max(finiteValues)) if finiteValues.size > 0 else None,
+                    "Mean": float(np.mean(finiteValues)) if finiteValues.size > 0 else None,
+                    "Variance": float(np.var(finiteValues)) if finiteValues.size > 0 else None,
+                    "No Clearance Count": noClearanceCount,
+                })
+
+            return pd.DataFrame(rows)
+
+        st.markdown("### Cell Prior Objective")
+
+        st.dataframe(
+            buildStatsTable(results["resultsCellPrior"]).round(4),
+            use_container_width=True,
+            hide_index=True,
+        )
+
+        st.markdown("### Node Prior Objective")
+
+        st.dataframe(
+            buildStatsTable(results["resultsNodePrior"]).round(4),
+            use_container_width=True,
+            hide_index=True,
+        )
+
 
 else:
 
-    max_trees = st.slider(
-        "Number of spanning trees",
-        100,
-        10000,
-        st.session_state.max_trees,
-        step=100,
+    # ==================================================
+    # SPANNING TREE EVOLUTION
+    #
+    # Runs a single approach once (no averaging over many runs) and tracks,
+    # tree by tree, the objective value of the tree just checked and the
+    # best objective value found so far - so the search's convergence can
+    # be plotted directly.
+    # ==================================================
+
+
+    st.markdown("### Run Parameters")
+
+    evo_approach = st.selectbox(
+        "Approach",
+        APPROACH_NAMES,
+        index=APPROACH_NAMES.index(st.session_state.evo_approach),
     )
 
-    st.session_state.max_trees = max_trees
+    st.session_state.evo_approach = evo_approach
 
-    computation_time = None
+    evo_stopping_criterion = st.radio(
+        "Stop after",
+        [
+            "Computation time",
+            "Number of spanning trees",
+        ],
+        horizontal=True,
+        index=[
+            "Computation time",
+            "Number of spanning trees",
+        ].index(st.session_state.evo_stopping_criterion),
+        key="evo_stopping_radio",
+    )
 
-available_robots = st.slider(
-    "Available robots",
-    1,
-    50,
-    st.session_state.available_robots,
-)
+    st.session_state.evo_stopping_criterion = evo_stopping_criterion
 
-st.session_state.available_robots = available_robots
+    if evo_stopping_criterion == "Computation time":
 
-
-# ==================================================
-# SIMULATE
-# ==================================================
-
-
-st.markdown("---")
-
-if st.button(
-    "Simulate Strategys",
-    type="primary",
-    use_container_width=True,
-):
-
-    with st.spinner(
-        f"Running {num_of_runs} runs × {len(APPROACH_NAMES)} approaches..."
-    ):
-
-        (
-            simG,
-            simEdgesShady,
-            simD,
-            simStartNodes,
-            simPriors,
-            resultsCellPrior,
-            resultsNodePrior,
-            resultsTrees,
-            resultsTime,
-        ) = approachTest(
-            detecRad=detection_radius,
-            numOfRuns=num_of_runs,
-            availableRobots=available_robots,
-            availableTime=computation_time,
-            maxTrees=max_trees,
+        evo_computation_time = st.slider(
+            "Computation Time (s)",
+            1,
+            60,
+            st.session_state.evo_computation_time,
+            key="evo_computation_time_slider",
         )
 
-    st.session_state.simulation_results = {
-        "G": simG,
-        "regularEdges": list(simG.edges.keys()),
-        "priors": simPriors,
-        "resultsCellPrior": resultsCellPrior,
-        "resultsNodePrior": resultsNodePrior,
-        "resultsTrees": resultsTrees,
-        "resultsTime": resultsTime,
-        "stopping_criterion": stopping_criterion,
-        "computation_time": computation_time,
-        "max_trees": max_trees,
-        "available_robots": available_robots,
-    }
+        st.session_state.evo_computation_time = evo_computation_time
 
+        evo_max_trees = None
 
-#------------------------------------------------------------------
-# PLOTS OF THE RESULTS
-#------------------------------------------------------------------
+    else:
 
+        evo_max_trees = st.slider(
+            "Number of spanning trees",
+            100,
+            10000,
+            st.session_state.evo_max_trees,
+            step=100,
+            key="evo_max_trees_slider",
+        )
 
-results = st.session_state.simulation_results
+        st.session_state.evo_max_trees = evo_max_trees
 
-if results is not None:
+        evo_computation_time = None
 
-    st.markdown("### Environment with Navigation Graph")
-
-    st.plotly_chart(
-        buildEnvironmentFigure(
-            obstacles,
-            results["priors"],
-            H,
-            W,
-            G=results["G"],
-            regularEdges=results["regularEdges"],
-        ),
-        use_container_width=True,
+    evo_available_robots = st.slider(
+        "Available robots",
+        1,
+        50,
+        st.session_state.evo_available_robots,
+        key="evo_available_robots_slider",
     )
 
-    # --------------------------------------------------
-    # STATS TABLES
-    #
-    # Runs without clearance (objective value == inf) are excluded from
-    # min/max/mean/variance - they only increase the "No clearance
-    # possible" counter.
-    # --------------------------------------------------
+    st.session_state.evo_available_robots = evo_available_robots
 
-    # Whichever of {computation time, spanning trees} was the stopping
-    # criterion is fixed (prescribed) and shown as-is; the other one was
-    # left free to vary run-by-run, so it is averaged over all runs
-    # instead (per approach, since approaches don't check trees / use
-    # time at the same rate).
-    timeIsPrescribed = results["stopping_criterion"] == "Computation time"
-
-    numGraphNodes = len(results["G"].nodes)
-    numGraphEdges = len(results["G"].edges)
-
-    def buildStatsTable(resultsArray):
-
-        rows = []
-
-        for approachIdx, approachName in enumerate(APPROACH_NAMES):
-
-            column = resultsArray[:, approachIdx]
-
-            finiteMask = np.isfinite(column)
-            finiteValues = column[finiteMask]
-
-            noClearanceCount = int(np.sum(~finiteMask))
-
-            if timeIsPrescribed:
-                usedTime = f"{results['computation_time']} s"
-                spanningTrees = float(np.mean(results["resultsTrees"][:, approachIdx]))
-            else:
-                usedTime = float(np.mean(results["resultsTime"][:, approachIdx]))
-                spanningTrees = f"{results['max_trees']} trees"
-
-            rows.append({
-                "Approach Name": approachName,
-                "Nodes": numGraphNodes,
-                "Edges": numGraphEdges,
-                "Spanning Trees": spanningTrees,
-                "Used Time": usedTime,
-                "Available Robots": results["available_robots"],
-                "Min": float(np.min(finiteValues)) if finiteValues.size > 0 else None,
-                "Max": float(np.max(finiteValues)) if finiteValues.size > 0 else None,
-                "Mean": float(np.mean(finiteValues)) if finiteValues.size > 0 else None,
-                "Variance": float(np.var(finiteValues)) if finiteValues.size > 0 else None,
-                "No Clearance Count": noClearanceCount,
-            })
-
-        return pd.DataFrame(rows)
-
-    st.markdown("### Cell Prior Objective")
-
-    st.dataframe(
-        buildStatsTable(results["resultsCellPrior"]).round(4),
-        use_container_width=True,
-        hide_index=True,
+    evo_population_size = st.slider(
+        "Initial generation size",
+        2,
+        50,
+        st.session_state.evo_population_size,
+        key="evo_population_size_slider",
     )
 
-    st.markdown("### Node Prior Objective")
+    st.session_state.evo_population_size = evo_population_size
 
-    st.dataframe(
-        buildStatsTable(results["resultsNodePrior"]).round(4),
+
+    # ==================================================
+    # RUN EVOLUTION
+    # ==================================================
+
+
+    st.markdown("---")
+
+    if st.button(
+        "Run Spanning Tree Evolution",
+        type="primary",
         use_container_width=True,
-        hide_index=True,
-    )
+    ):
+
+        with st.spinner(
+            f"Running {evo_approach}..."
+        ):
+
+            evolution = runSpanningTreeEvolution(
+                approachName=evo_approach,
+                detecRad=detection_radius,
+                availableRobots=evo_available_robots,
+                availableTime=evo_computation_time,
+                maxTrees=evo_max_trees,
+                populationSize=evo_population_size,
+            )
+
+        st.session_state.evolution_results = {
+            "approach": evo_approach,
+            "G": evolution["G"],
+            "regularEdges": list(evolution["G"].edges.keys()),
+            "priors": evolution["priors"],
+            "history": evolution["history"],
+            "checkedTrees": evolution["checkedTrees"],
+            "bestFitness": evolution["bestFitness"],
+        }
+
+
+    #------------------------------------------------------------------
+    # PLOTS OF THE RESULTS
+    #------------------------------------------------------------------
+
+
+    evoResults = st.session_state.evolution_results
+
+    if evoResults is not None:
+
+        st.markdown("### Environment with Navigation Graph")
+
+        st.plotly_chart(
+            buildEnvironmentFigure(
+                obstacles,
+                evoResults["priors"],
+                H,
+                W,
+                G=evoResults["G"],
+                regularEdges=evoResults["regularEdges"],
+            ),
+            use_container_width=True,
+        )
+
+        history = evoResults["history"]
+
+        treeIndices = [entry[0] for entry in history]
+        currentFitness = [entry[1] for entry in history]
+        bestFitness = [entry[2] for entry in history]
+
+        # inf (no clearance found by that tree) can't be plotted - leave a
+        # gap in the line instead.
+        currentFitnessPlot = [v if np.isfinite(v) else None for v in currentFitness]
+        bestFitnessPlot = [v if np.isfinite(v) else None for v in bestFitness]
+
+        st.caption(
+            f"**{evoResults['approach']}** — "
+            f"{evoResults['checkedTrees']} spanning trees checked, "
+            f"best objective found: "
+            f"{evoResults['bestFitness']:.4f}"
+            if np.isfinite(evoResults["bestFitness"])
+            else f"**{evoResults['approach']}** — "
+            f"{evoResults['checkedTrees']} spanning trees checked, "
+            f"no clearance found"
+        )
+
+        st.markdown("### Best Objective Value Found So Far")
+
+        bestFig = go.Figure()
+
+        bestFig.add_trace(
+            go.Scatter(
+                x=treeIndices,
+                y=bestFitnessPlot,
+                mode="lines",
+                line=dict(color="#2a9d8f", width=2),
+                name="Best objective so far",
+            )
+        )
+
+        bestFig.update_layout(
+            height=450,
+            margin=dict(l=10, r=10, t=30, b=10),
+            plot_bgcolor="white",
+            xaxis=dict(title="Number of Spanning Trees", gridcolor="#eeeeee"),
+            yaxis=dict(title="Best Objective Value", gridcolor="#eeeeee"),
+        )
+
+        st.plotly_chart(bestFig, use_container_width=True)
+
+        st.markdown("### Objective Value per Checked Spanning Tree")
+
+        currentFig = go.Figure()
+
+        currentFig.add_trace(
+            go.Scatter(
+                x=treeIndices,
+                y=currentFitnessPlot,
+                mode="markers",
+                marker=dict(color="#d62828", size=5),
+                name="Objective value of checked tree",
+            )
+        )
+
+        currentFig.update_layout(
+            height=450,
+            margin=dict(l=10, r=10, t=30, b=10),
+            plot_bgcolor="white",
+            xaxis=dict(title="Number of Spanning Trees", gridcolor="#eeeeee"),
+            yaxis=dict(title="Objective Value", gridcolor="#eeeeee"),
+        )
+
+        st.plotly_chart(currentFig, use_container_width=True)

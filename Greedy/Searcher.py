@@ -10,7 +10,7 @@ import copy
 import time
 
 
-def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles, distanceMap, alpha, cellpriors, D, maxTrees=None):
+def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles, distanceMap, alpha, cellpriors, D, maxTrees=None, populationSize=10, historyCallback=None):
     #INPUT:
     # G: a Graph object repesenting the merged navigationgraph
     # availableTime: the available computation time budget in seconds (ignored if maxTrees is given)
@@ -634,7 +634,7 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
     #------------------------------------------------------------
     # INITALIZING THE STARTING POPULATION
     #------------------------------------------------------------
-    for i in range(0,10):
+    for i in range(0, populationSize):
         if counter != [1] * startNodes:
             for i in range(0,len(counter)):
                 if counter[i] == 0:
@@ -669,6 +669,8 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
             bestFitness = fitness
             bestTree = indivium[0]
             bestStrategy = strategy
+        if historyCallback is not None:
+            historyCallback(checkedTreesCounter, fitness, bestFitness)
 
     # Steady state reproduction: always select parents via weighted selection,
     # add one evaluated child to the population and remove its worst member
@@ -685,6 +687,8 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
             bestFitness = fitness
             bestTree = child[0]
             bestStrategy = strategy
+        if historyCallback is not None:
+            historyCallback(checkedTreesCounter, fitness, bestFitness)
 
         currGen.append(child)
         fitnesses.append(fitness)

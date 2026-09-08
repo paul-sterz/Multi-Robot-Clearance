@@ -14,6 +14,7 @@ def graphBuilder(obstacles, hotspots, detectionFnc, startRegion, l, sigma, alpha
     # startRegion: set of tuples of point where the robots can start
     # k: factor of how much eache hotspot category increases probability
     # alpha: Constant needed for a-star algorithim
+    # epsilon: Uncertinty variable
 
     # OUTPUT:
     # G: a Graph object representing the created Graph using only the regular edges
