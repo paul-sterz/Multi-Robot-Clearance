@@ -540,7 +540,7 @@ if st.button(
 ):
 
     with st.spinner(
-        f"Running {num_of_runs} runs × 4 approaches..."
+        f"Running {num_of_runs} runs × {len(APPROACH_NAMES)} approaches..."
     ):
 
         (

@@ -7,26 +7,27 @@ import numpy as np
 
 
 # ==================================================
-# LOADING THE 4 APPROACHES
+# LOADING THE 2 APPROACHES
 # ==================================================
-# The approach folders ("DP", "DP badge slpitting", "Worst Case Labels
-# Greedy", "Constrained Tree Optimal") are not Python packages (their names
-# contain spaces) and each one defines its own Graph.py / GraphBuilder.py /
-# TrajectoryPlanning.py / Searcher.py using plain, unqualified imports
-# (e.g. "from Graph import Graph"). Graph.py, GraphBuilder.py and
-# TrajectoryPlanning.py are identical across all 4 approaches, only
-# Searcher.py differs. So the shared modules are loaded once (from the DP
-# folder) and only Searcher.py is loaded separately - and under a unique
-# module name - for every approach.
+# The approach folders ("DP badge slpitting", "Worst Case Labels Greedy")
+# are not Python packages (their names contain spaces) and each one defines
+# its own Graph.py / GraphBuilder.py / TrajectoryPlanning.py / Searcher.py
+# using plain, unqualified imports (e.g. "from Graph import Graph").
+# Graph.py, GraphBuilder.py and TrajectoryPlanning.py are identical across
+# all approaches, only Searcher.py differs. So the shared modules are
+# loaded once (from the DP folder) and only Searcher.py is loaded
+# separately - and under a unique module name - for every approach.
 
 REPO_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 APPROACH_DIRS = {
-    "DP": os.path.join(REPO_DIR, "DP"),
     "DP Badge Splitting": os.path.join(REPO_DIR, "DP badge slpitting"),
     "Worst Case Labels Greedy": os.path.join(REPO_DIR, "Worst Case Labels Greedy"),
-    "Constrained Tree Optimal": os.path.join(REPO_DIR, "Constrained Tree Optimal"),
 }
+
+# Shared modules are still loaded from the DP folder since it is not part
+# of the compared approaches anymore.
+_SHARED_MODULES_DIR = os.path.join(REPO_DIR, "DP")
 
 
 def _loadModule(name, path):
@@ -44,9 +45,9 @@ def _loadGraphSearch(approachDir):
 
 
 # Shared modules (identical for every approach) - loaded once from "DP"
-_graphModule = _loadModule("Graph", os.path.join(APPROACH_DIRS["DP"], "Graph.py"))
-_trajectoryPlanningModule = _loadModule("TrajectoryPlanning", os.path.join(APPROACH_DIRS["DP"], "TrajectoryPlanning.py"))
-_graphBuilderModule = _loadModule("GraphBuilder", os.path.join(APPROACH_DIRS["DP"], "GraphBuilder.py"))
+_graphModule = _loadModule("Graph", os.path.join(_SHARED_MODULES_DIR, "Graph.py"))
+_trajectoryPlanningModule = _loadModule("TrajectoryPlanning", os.path.join(_SHARED_MODULES_DIR, "TrajectoryPlanning.py"))
+_graphBuilderModule = _loadModule("GraphBuilder", os.path.join(_SHARED_MODULES_DIR, "GraphBuilder.py"))
 
 graphBuilder = _graphBuilderModule.graphBuilder
 computeObstacleDistance = _trajectoryPlanningModule.computeObstacleDistance
@@ -56,17 +57,13 @@ Node = _graphModule.Node
 Edge = _graphModule.Edge
 
 # Approach specific search methods
-graphSearchDP = _loadGraphSearch(APPROACH_DIRS["DP"])
 graphSearchDPBadgeSplitting = _loadGraphSearch(APPROACH_DIRS["DP Badge Splitting"])
 graphSearchWorstCaseLabels = _loadGraphSearch(APPROACH_DIRS["Worst Case Labels Greedy"])
-graphSearchConstrainedTreeOptimal = _loadGraphSearch(APPROACH_DIRS["Constrained Tree Optimal"])
 
 # Fixed column order used throughout the Monte Carlo comparison (Step 2/3)
 APPROACHES = [
-    graphSearchDP,
     graphSearchDPBadgeSplitting,
     graphSearchWorstCaseLabels,
-    graphSearchConstrainedTreeOptimal,
 ]
 
 APPROACH_NAMES = list(APPROACH_DIRS.keys())
@@ -316,20 +313,22 @@ def approachTest(detecRad : int, numOfRuns : int, availableRobots : int, availab
     # between runs.
     # 100 runs auf dem GRPH PLOTTE MIN, MAX AVG und ändere die gegebene Rechenzeit bzw. Trees ist intuitiver
 
-    resultsCellPrior = np.zeros((numOfRuns, 4))
-    resultsNodePrior = np.zeros((numOfRuns, 4))
-    resultsTrees = np.zeros((numOfRuns, 4))
-    resultsTime = np.zeros((numOfRuns, 4))
+    numApproaches = len(APPROACHES)
+
+    resultsCellPrior = np.zeros((numOfRuns, numApproaches))
+    resultsNodePrior = np.zeros((numOfRuns, numApproaches))
+    resultsTrees = np.zeros((numOfRuns, numApproaches))
+    resultsTime = np.zeros((numOfRuns, numApproaches))
 
     #------------------------------------------------------------------
-    # STEP 2: EVALUATE THE 4 METHODS ON THE GRAPH AND STORE THE RESULTS
+    # STEP 2: EVALUATE THE METHODS ON THE GRAPH AND STORE THE RESULTS
     #------------------------------------------------------------------
 
     for i in range(numOfRuns):
 
         for approachIdx, graphSearchFn in enumerate(APPROACHES):
 
-            # calculate the best strategy with the searcher method for the 4 approaches.
+            # calculate the best strategy with the searcher method for the compared approaches.
             # the best fittnes value according to the cell prior is immidieatly returned and can be stored in the according numpy array
             # the node prior value has to be calculated with a sperate function that goes along the strategy and everythime a node is visited for the first time to the objective function is added prior of node * visited time
 
