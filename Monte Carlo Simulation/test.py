@@ -808,7 +808,8 @@ else:
     ):
 
         with st.spinner(
-            f"Running {evo_approach}..."
+            f"Running {evo_approach} "
+            f"(evolutionary search + random spanning tree baseline)..."
         ):
 
             evolution = runSpanningTreeEvolution(
@@ -825,9 +826,8 @@ else:
             "G": evolution["G"],
             "regularEdges": list(evolution["G"].edges.keys()),
             "priors": evolution["priors"],
-            "history": evolution["history"],
-            "checkedTrees": evolution["checkedTrees"],
-            "bestFitness": evolution["bestFitness"],
+            "evolutionary": evolution["evolutionary"],
+            "random": evolution["random"],
         }
 
 
@@ -854,72 +854,138 @@ else:
             use_container_width=True,
         )
 
-        history = evoResults["history"]
+        def renderRunCaption(runResult, methodLabel):
 
-        treeIndices = [entry[0] for entry in history]
-        currentFitness = [entry[1] for entry in history]
-        bestFitness = [entry[2] for entry in history]
+            if np.isfinite(runResult["bestFitness"]):
+                st.caption(
+                    f"**{evoResults['approach']} — {methodLabel}** — "
+                    f"{runResult['checkedTrees']} spanning trees checked, "
+                    f"best objective found: {runResult['bestFitness']:.4f}"
+                )
+            else:
+                st.caption(
+                    f"**{evoResults['approach']} — {methodLabel}** — "
+                    f"{runResult['checkedTrees']} spanning trees checked, "
+                    f"no clearance found"
+                )
 
-        # inf (no clearance found by that tree) can't be plotted - leave a
-        # gap in the line instead.
-        currentFitnessPlot = [v if np.isfinite(v) else None for v in currentFitness]
-        bestFitnessPlot = [v if np.isfinite(v) else None for v in bestFitness]
+        def renderHistoryPlots(history, methodLabel, colorBest, colorCurrent):
 
-        st.caption(
-            f"**{evoResults['approach']}** — "
-            f"{evoResults['checkedTrees']} spanning trees checked, "
-            f"best objective found: "
-            f"{evoResults['bestFitness']:.4f}"
-            if np.isfinite(evoResults["bestFitness"])
-            else f"**{evoResults['approach']}** — "
-            f"{evoResults['checkedTrees']} spanning trees checked, "
-            f"no clearance found"
-        )
+            treeIndices = [entry[0] for entry in history]
+            currentFitness = [entry[1] for entry in history]
+            bestFitness = [entry[2] for entry in history]
 
-        st.markdown("### Best Objective Value Found So Far")
+            # inf (no clearance found by that tree) can't be plotted - leave
+            # a gap in the line instead.
+            currentFitnessPlot = [v if np.isfinite(v) else None for v in currentFitness]
+            bestFitnessPlot = [v if np.isfinite(v) else None for v in bestFitness]
 
-        bestFig = go.Figure()
+            st.markdown(f"##### {methodLabel} — Best Objective Value Found So Far")
 
-        bestFig.add_trace(
-            go.Scatter(
-                x=treeIndices,
-                y=bestFitnessPlot,
-                mode="lines",
-                line=dict(color="#2a9d8f", width=2),
-                name="Best objective so far",
+            bestFig = go.Figure()
+
+            bestFig.add_trace(
+                go.Scatter(
+                    x=treeIndices,
+                    y=bestFitnessPlot,
+                    mode="lines",
+                    line=dict(color=colorBest, width=2),
+                    name="Best objective so far",
+                )
             )
-        )
 
-        bestFig.update_layout(
-            height=450,
-            margin=dict(l=10, r=10, t=30, b=10),
-            plot_bgcolor="white",
-            xaxis=dict(title="Number of Spanning Trees", gridcolor="#eeeeee"),
-            yaxis=dict(title="Best Objective Value", gridcolor="#eeeeee"),
-        )
-
-        st.plotly_chart(bestFig, use_container_width=True)
-
-        st.markdown("### Objective Value per Checked Spanning Tree")
-
-        currentFig = go.Figure()
-
-        currentFig.add_trace(
-            go.Scatter(
-                x=treeIndices,
-                y=currentFitnessPlot,
-                mode="markers",
-                marker=dict(color="#d62828", size=5),
-                name="Objective value of checked tree",
+            bestFig.update_layout(
+                height=400,
+                margin=dict(l=10, r=10, t=30, b=10),
+                plot_bgcolor="white",
+                xaxis=dict(title="Number of Spanning Trees", gridcolor="#eeeeee"),
+                yaxis=dict(title="Best Objective Value", gridcolor="#eeeeee"),
             )
+
+            st.plotly_chart(bestFig, use_container_width=True)
+
+            st.markdown(f"##### {methodLabel} — Objective Value per Checked Spanning Tree")
+
+            currentFig = go.Figure()
+
+            currentFig.add_trace(
+                go.Scatter(
+                    x=treeIndices,
+                    y=currentFitnessPlot,
+                    mode="markers",
+                    marker=dict(color=colorCurrent, size=5),
+                    name="Objective value of checked tree",
+                )
+            )
+
+            currentFig.update_layout(
+                height=400,
+                margin=dict(l=10, r=10, t=30, b=10),
+                plot_bgcolor="white",
+                xaxis=dict(title="Number of Spanning Trees", gridcolor="#eeeeee"),
+                yaxis=dict(title="Objective Value", gridcolor="#eeeeee"),
+            )
+
+            st.plotly_chart(currentFig, use_container_width=True)
+
+        st.markdown("### Evolutionary Search")
+
+        renderRunCaption(evoResults["evolutionary"], "Evolutionary Search")
+
+        renderHistoryPlots(
+            evoResults["evolutionary"]["history"],
+            "Evolutionary Search",
+            colorBest="#2a9d8f",
+            colorCurrent="#d62828",
         )
 
-        currentFig.update_layout(
-            height=450,
-            margin=dict(l=10, r=10, t=30, b=10),
-            plot_bgcolor="white",
-            xaxis=dict(title="Number of Spanning Trees", gridcolor="#eeeeee"),
-            yaxis=dict(title="Objective Value", gridcolor="#eeeeee"),
+        st.markdown("### Random Spanning Tree Generation")
+
+        renderRunCaption(evoResults["random"], "Random Spanning Tree Generation")
+
+        renderHistoryPlots(
+            evoResults["random"]["history"],
+            "Random Spanning Tree Generation",
+            colorBest="#264653",
+            colorCurrent="#e76f51",
         )
 
-        st.plotly_chart(currentFig, use_container_width=True)
+        # --------------------------------------------------
+        # COMPARISON TABLE: EVOLUTIONARY SEARCH vs. RANDOM SPANNING TREES
+        #
+        # Best / mean / variance over all checked trees' objective values
+        # (trees without clearance, i.e. objective value == inf, are
+        # excluded - same convention as the Approach Test stats tables).
+        # --------------------------------------------------
+
+        st.markdown("### Evolutionary Search vs. Random Spanning Tree Generation")
+
+        def buildEvolutionComparisonRow(runResult, methodLabel):
+
+            fitnessValues = np.array(
+                [entry[1] for entry in runResult["history"]],
+                dtype=float,
+            )
+
+            finiteMask = np.isfinite(fitnessValues)
+            finiteValues = fitnessValues[finiteMask]
+
+            return {
+                "Method": methodLabel,
+                "Spanning Trees Checked": runResult["checkedTrees"],
+                "Best": float(np.min(finiteValues)) if finiteValues.size > 0 else None,
+                "Mean": float(np.mean(finiteValues)) if finiteValues.size > 0 else None,
+                "Variance": float(np.var(finiteValues)) if finiteValues.size > 0 else None,
+                "No Clearance Count": int(np.sum(~finiteMask)),
+            }
+
+        comparisonTable = pd.DataFrame([
+            buildEvolutionComparisonRow(evoResults["evolutionary"], "Evolutionary Search"),
+            buildEvolutionComparisonRow(evoResults["random"], "Random Spanning Tree Generation"),
+        ])
+
+        st.dataframe(
+            comparisonTable.round(4),
+            use_container_width=True,
+            hide_index=True,
+        )

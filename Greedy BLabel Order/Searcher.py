@@ -10,7 +10,7 @@ import copy
 import time
 
 
-def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles, distanceMap, alpha, cellpriors, D, maxTrees=None, populationSize=10, historyCallback=None):
+def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles, distanceMap, alpha, cellpriors, D, maxTrees=None, populationSize=10, historyCallback=None, searchMode="evolutionary"):
     #INPUT:
     # G: a Graph object repesenting the merged navigationgraph
     # availableTime: the available computation time budget in seconds (ignored if maxTrees is given)
@@ -606,71 +606,95 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
             return checkedTreesCounter >= maxTrees
         return time.monotonic() - startingTime >= availableTime
 
-    #------------------------------------------------------------
-    # INITALIZING THE STARTING POPULATION
-    #------------------------------------------------------------
-    for i in range(0, populationSize):
-        if counter != [1] * startNodes:
-            for i in range(0,len(counter)):
-                if counter[i] == 0:
-                    counter[i] = 1
-                    root = i
-                    T = computeGreedySpanningTree(G,root)
-                    currGen.append((T,root))
-                    break
-        else: 
-            root = random.randint(0,startNodes-1)
-            T = computeRandomSpanningTree(G,root)
-            currGen.append((T,root))
+    if searchMode == "random":
+
+        #------------------------------------------------------------
+        # PURE RANDOM SPANNING TREE GENERATION (baseline for comparison
+        # against the evolutionary steady-state search below)
+        #------------------------------------------------------------
+        while not shouldStop():
+
+            root = random.randint(0, startNodes - 1)
+            T = computeRandomSpanningTree(G, root)
+
+            strategy, clearance, visitedTimes = treeSearch(T, root, availableRobots, G)
+            checkedTreesCounter += 1
+            if clearance: fitness = computeExpTime(visitedTimes, G)
+            else: fitness = np.inf
+            if fitness < bestFitness:
+                bestFitness = fitness
+                bestTree = T
+                bestStrategy = strategy
+            if historyCallback is not None:
+                historyCallback(checkedTreesCounter, fitness, bestFitness)
+
+    else:
+
+        #------------------------------------------------------------
+        # INITALIZING THE STARTING POPULATION
+        #------------------------------------------------------------
+        for i in range(0, populationSize):
+            if counter != [1] * startNodes:
+                for i in range(0,len(counter)):
+                    if counter[i] == 0:
+                        counter[i] = 1
+                        root = i
+                        T = computeGreedySpanningTree(G,root)
+                        currGen.append((T,root))
+                        break
+            else: 
+                root = random.randint(0,startNodes-1)
+                T = computeRandomSpanningTree(G,root)
+                currGen.append((T,root))
 
 
-    #------------------------------------------------------------
-    # ANYTIME ALGORITHIM (STEADY STATE EVALUATION)
-    #------------------------------------------------------------
-    #NOTE: If the available Robots is greater or equal than the amount of nodes the result will always be the trivial strategy that immidiatly sends a robot to every node
+        #------------------------------------------------------------
+        # ANYTIME ALGORITHIM (STEADY STATE EVALUATION)
+        #------------------------------------------------------------
+        #NOTE: If the available Robots is greater or equal than the amount of nodes the result will always be the trivial strategy that immidiatly sends a robot to every node
 
-    # Evaluating the starting population once
-    fitnesses = []
-    for indivium in currGen:
-        if shouldStop():
-            break
+        # Evaluating the starting population once
+        fitnesses = []
+        for indivium in currGen:
+            if shouldStop():
+                break
 
-        strategy, clearance, visitedTimes = treeSearch(indivium[0], indivium[1], availableRobots, G)
-        checkedTreesCounter += 1
-        if clearance: fitness = computeExpTime(visitedTimes, G)
-        else: fitness = np.inf
-        fitnesses.append(fitness)
-        if fitness < bestFitness:
-            bestFitness = fitness
-            bestTree = indivium[0]
-            bestStrategy = strategy
-        if historyCallback is not None:
-            historyCallback(checkedTreesCounter, fitness, bestFitness)
+            strategy, clearance, visitedTimes = treeSearch(indivium[0], indivium[1], availableRobots, G)
+            checkedTreesCounter += 1
+            if clearance: fitness = computeExpTime(visitedTimes, G)
+            else: fitness = np.inf
+            fitnesses.append(fitness)
+            if fitness < bestFitness:
+                bestFitness = fitness
+                bestTree = indivium[0]
+                bestStrategy = strategy
+            if historyCallback is not None:
+                historyCallback(checkedTreesCounter, fitness, bestFitness)
 
-    # Steady state reproduction: always select parents via weighted selection,
-    # add one evaluated child to the population and remove its worst member
-    while not shouldStop():
+        # Steady state reproduction: always select parents via weighted selection,
+        # add one evaluated child to the population and remove its worst member
+        while not shouldStop():
 
-        ParentA, ParentB = selectParents(currGen, fitnesses)
-        child = crossOver(ParentA, ParentB, G)
+            ParentA, ParentB = selectParents(currGen, fitnesses)
+            child = crossOver(ParentA, ParentB, G)
 
-        strategy, clearance, visitedTimes = treeSearch(child[0], child[1], availableRobots, G)
-        checkedTreesCounter += 1
-        if clearance: fitness = computeExpTime(visitedTimes, G)
-        else: fitness = np.inf
-        if fitness < bestFitness:
-            bestFitness = fitness
-            bestTree = child[0]
-            bestStrategy = strategy
-        if historyCallback is not None:
-            historyCallback(checkedTreesCounter, fitness, bestFitness)
+            strategy, clearance, visitedTimes = treeSearch(child[0], child[1], availableRobots, G)
+            checkedTreesCounter += 1
+            if clearance: fitness = computeExpTime(visitedTimes, G)
+            else: fitness = np.inf
+            if fitness < bestFitness:
+                bestFitness = fitness
+                bestTree = child[0]
+                bestStrategy = strategy
+            if historyCallback is not None:
+                historyCallback(checkedTreesCounter, fitness, bestFitness)
 
-        currGen.append(child)
-        fitnesses.append(fitness)
+            currGen.append(child)
+            fitnesses.append(fitness)
 
-        worstIdx = max(range(len(fitnesses)), key=lambda i: fitnesses[i])
-        del currGen[worstIdx]
-        del fitnesses[worstIdx]
+            worstIdx = max(range(len(fitnesses)), key=lambda i: fitnesses[i])
+            del currGen[worstIdx]
+            del fitnesses[worstIdx]
 
     if bestFitness == np.inf:
         bestStrategy = computeClosingExits(bestStrategy,G)
