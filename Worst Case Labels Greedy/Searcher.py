@@ -207,6 +207,9 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
             #no order can free up enough robots for it, so fail immediately
             #instead of wasting time on a doomed attempt.
             if len(strat) == 0:
+                if shouldStop():
+                    return False, [], enteringTime
+
                 neighbours = [neighbour for neighbour in T.adj[T.nodes[node]] if neighbour.idx != parent]
 
                 if len(neighbours) > 0:

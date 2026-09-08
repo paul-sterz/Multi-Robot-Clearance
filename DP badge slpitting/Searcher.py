@@ -327,14 +327,12 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
             nonlocal guards
             nonlocal flags
             nonlocal visitedTimes
-
+            
             strat = []
             minRobotsNeeded = BLabels[(parent, node)]
+            r = min(len(flags), maxUseableRobots)
 
-            for r in range(min(len(flags), maxUseableRobots),minRobotsNeeded - 1,-1):
-                if shouldStop():
-                    return False, [], enteringTime
-
+            if r >= minRobotsNeeded:
                 snap = {
                     "visitedTimes": copy.deepcopy(visitedTimes),
                     "guards": copy.deepcopy(guards),
@@ -360,15 +358,15 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
                     strat.extend(newMoves)
                     enteringTime = batchTime
 
-                if successful:
-                    break
-
             #Last Resort: run the child with the largest BLabel last, the rest
             #in efficiency order (efficiency at its own minimal robot budget,
             #i.e. robotTable at r = BLabel). If the largest BLabel occurs more
             #than once, no order can free up enough robots for it, so fail
             #immediately instead of wasting time on a doomed attempt.
             if len(strat) == 0:
+                if shouldStop():
+                    return False, [], enteringTime
+
                 neighbours = [neighbour for neighbour in T.adj[T.nodes[node]] if neighbour.idx != parent]
 
                 if len(neighbours) > 0:
