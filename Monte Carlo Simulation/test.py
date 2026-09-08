@@ -614,6 +614,9 @@ if results is not None:
     # time at the same rate).
     timeIsPrescribed = results["stopping_criterion"] == "Computation time"
 
+    numGraphNodes = len(results["G"].nodes)
+    numGraphEdges = len(results["G"].edges)
+
     def buildStatsTable(resultsArray):
 
         rows = []
@@ -636,6 +639,8 @@ if results is not None:
 
             rows.append({
                 "Approach Name": approachName,
+                "Nodes": numGraphNodes,
+                "Edges": numGraphEdges,
                 "Spanning Trees": spanningTrees,
                 "Used Time": usedTime,
                 "Available Robots": results["available_robots"],

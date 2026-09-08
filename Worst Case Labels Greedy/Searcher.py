@@ -31,9 +31,29 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
     #bestStrategy: A list containing the best strategy where each entry is in the form (source node,target node, amount of Robots)
 
     # ---------------------------------------------------
+    # PRECOMPUTING ALL-PAIRS FLAG DISTANCES
+    # obstacles/distanceMap/alpha and the node positions in G never change
+    # for the duration of this graphSearch() call, so the aStar step-count
+    # between any two node indices is the same for every spanning tree
+    # evaluated below. Computing it once here - instead of re-running aStar
+    # inside findNearestFlag() for every flag/node pair on every tree -
+    # turns the dominant cost of the search into a single upfront O(n^2)
+    # pass over a lookup table.
+    # ---------------------------------------------------
+    numGraphNodes = len(G.nodes)
+    flagDistance = [[0] * numGraphNodes for _ in range(numGraphNodes)]
+
+    for i in range(numGraphNodes):
+        for j in range(numGraphNodes):
+            if i == j:
+                continue
+            path = aStar(G.nodes[i].pos, G.nodes[j].pos, obstacles, distanceMap, alpha)
+            flagDistance[i][j] = len(path) - 1
+
+    # ---------------------------------------------------
     # COMPUTING EDGE LABLES FOR THE TREE SEARCH THAT REPRESENT THE AMOUNT OF NEEDED ROBOTS AND THE EFFICIENCY OF EACH SUBTREE
     # Remark: Lables represent the amount of robots needed for this path
-    # --------------------------------------------------- 
+    # ---------------------------------------------------
 
     def computeWorstCaseLabels(T : Graph, root, parent):
 
@@ -269,8 +289,7 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
             nearest = None
 
             for flag in flags:
-                path = aStar(T.nodes[flag[0]].pos, T.nodes[node].pos, obstacles, distanceMap, alpha)
-                durration = len(path) -1
+                durration = flagDistance[flag[0]][node]
 
                 if durration + flag[1] < minDurr:
                     minDurr = durration + flag[1]
