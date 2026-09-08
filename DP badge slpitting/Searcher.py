@@ -308,8 +308,8 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
         # OUTPUT:
         # 
 
-        # STEP 1: ALLOCATION 
-        BLabels , _, policyTable, _ ,_ = computeLabelsWithBudget(T, root, None, availableRobots)
+        # STEP 1: ALLOCATION
+        BLabels , robotTable, policyTable, _ ,_ = computeLabelsWithBudget(T, root, None, availableRobots)
 
         visitedTimes = [-1] * len(T.nodes)
         visitedTimes[root] = 0
@@ -363,21 +363,39 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
                 if successful:
                     break
 
-            #Last Resort: Try the BLabel Order if all other orders did not work
+            #Last Resort: run the child with the largest BLabel last, the rest
+            #in efficiency order (efficiency at its own minimal robot budget,
+            #i.e. robotTable at r = BLabel). If the largest BLabel occurs more
+            #than once, no order can free up enough robots for it, so fail
+            #immediately instead of wasting time on a doomed attempt.
             if len(strat) == 0:
                 neighbours = [neighbour for neighbour in T.adj[T.nodes[node]] if neighbour.idx != parent]
-                neighbours.sort(key=lambda neighbour: BLabels[(node, neighbour.idx)])
 
-                for neighbour in neighbours:
-                    singleBatch = {"children": [neighbour.idx], "robots": {neighbour.idx: BLabels[(node, neighbour.idx)]}}
+                if len(neighbours) > 0:
+                    maxBLabel = max(BLabels[(node, neighbour.idx)] for neighbour in neighbours)
+                    maxBLabelNeighbours = [neighbour for neighbour in neighbours if BLabels[(node, neighbour.idx)] == maxBLabel]
 
-                    successful, newMoves, batchTime = executeBatch(singleBatch, enteringTime, node)
-
-                    if not successful:
+                    if len(maxBLabelNeighbours) >= 2:
                         return False, [], enteringTime
 
-                    strat.extend(newMoves)
-                    enteringTime = batchTime
+                    largestNeighbour = maxBLabelNeighbours[0]
+                    orderedNeighbours = sorted(
+                        (neighbour for neighbour in neighbours if neighbour.idx != largestNeighbour.idx),
+                        key=lambda neighbour: robotTable[(node, neighbour.idx)][BLabels[(node, neighbour.idx)]][1],
+                        reverse=True
+                    )
+                    orderedNeighbours.append(largestNeighbour)
+
+                    for neighbour in orderedNeighbours:
+                        singleBatch = {"children": [neighbour.idx], "robots": {neighbour.idx: BLabels[(node, neighbour.idx)]}}
+
+                        successful, newMoves, batchTime = executeBatch(singleBatch, enteringTime, node)
+
+                        if not successful:
+                            return False, [], enteringTime
+
+                        strat.extend(newMoves)
+                        enteringTime = batchTime
 
             return True, strat, enteringTime
 

@@ -202,21 +202,38 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
                 strat.extend(newMoves)
                 enteringTime = batchTime
 
-            #Last Resort: Try the BLabel Order if all other orders did not work
+            #Last Resort: run the child with the largest BLabel last, the rest
+            #in efficiency order. If the largest BLabel occurs more than once,
+            #no order can free up enough robots for it, so fail immediately
+            #instead of wasting time on a doomed attempt.
             if len(strat) == 0:
                 neighbours = [neighbour for neighbour in T.adj[T.nodes[node]] if neighbour.idx != parent]
-                neighbours.sort(key=lambda neighbour: BLabels[(node, neighbour.idx)])
 
-                for neighbour in neighbours:
-                    singleBatch = {"children": [neighbour.idx]}
+                if len(neighbours) > 0:
+                    maxBLabel = max(BLabels[(node, neighbour.idx)] for neighbour in neighbours)
+                    maxBLabelNeighbours = [neighbour for neighbour in neighbours if BLabels[(node, neighbour.idx)] == maxBLabel]
 
-                    successful, newMoves, batchTime = executeBatch(singleBatch, enteringTime, node)
-
-                    if not successful:
+                    if len(maxBLabelNeighbours) >= 2:
                         return False, [], enteringTime
 
-                    strat.extend(newMoves)
-                    enteringTime = batchTime
+                    largestNeighbour = maxBLabelNeighbours[0]
+                    orderedNeighbours = sorted(
+                        (neighbour for neighbour in neighbours if neighbour.idx != largestNeighbour.idx),
+                        key=lambda neighbour: effLables[(node, neighbour.idx)],
+                        reverse=True
+                    )
+                    orderedNeighbours.append(largestNeighbour)
+
+                    for neighbour in orderedNeighbours:
+                        singleBatch = {"children": [neighbour.idx]}
+
+                        successful, newMoves, batchTime = executeBatch(singleBatch, enteringTime, node)
+
+                        if not successful:
+                            return False, [], enteringTime
+
+                        strat.extend(newMoves)
+                        enteringTime = batchTime
 
             return True, strat, enteringTime
 
