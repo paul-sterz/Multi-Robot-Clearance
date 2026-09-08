@@ -31,6 +31,26 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
     #bestStrategy: A list containing the best strategy where each entry is in the form (source node,target node, amount of Robots)
 
     # ---------------------------------------------------
+    # PRECOMPUTING ALL-PAIRS FLAG DISTANCES
+    # obstacles/distanceMap/alpha and the node positions in G never change
+    # for the duration of this graphSearch() call, so the aStar step-count
+    # between any two node indices is the same for every spanning tree
+    # evaluated below. Computing it once here - instead of re-running aStar
+    # inside findNearestFlag() for every flag/node pair on every tree -
+    # turns the dominant cost of the search into a single upfront O(n^2)
+    # pass over a lookup table.
+    # ---------------------------------------------------
+    numGraphNodes = len(G.nodes)
+    flagDistance = [[0] * numGraphNodes for _ in range(numGraphNodes)]
+
+    for i in range(numGraphNodes):
+        for j in range(numGraphNodes):
+            if i == j:
+                continue
+            path = aStar(G.nodes[i].pos, G.nodes[j].pos, obstacles, distanceMap, alpha)
+            flagDistance[i][j] = len(path) - 1
+
+    # ---------------------------------------------------
     # COMPUTING B-LABELS and efficiency labels depending on available robots
     # ---------------------------------------------------
     def computeLabelsWithBudget(T: Graph, root, parent, maxRobots: int):
@@ -288,8 +308,8 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
         # OUTPUT:
         # 
 
-        # STEP 1: ALLOCATION 
-        BLabels , _, policyTable, _ ,_ = computeLabelsWithBudget(T, root, None, availableRobots)
+        # STEP 1: ALLOCATION
+        BLabels , robotTable, policyTable, _ ,_ = computeLabelsWithBudget(T, root, None, availableRobots)
 
         visitedTimes = [-1] * len(T.nodes)
         visitedTimes[root] = 0
@@ -302,16 +322,17 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
 
         flags = [(root,0)] * (availableRobots -1) # flag format: (node index, flag begin)
 
-        def explorePath(node,enteringTime, parent):
+        def explorePath(node,enteringTime, parent, maxUseableRobots):
             #Safestades, so that if something goes wrong we can backtrack to the old states
             nonlocal guards
             nonlocal flags
             nonlocal visitedTimes
-
+            
             strat = []
             minRobotsNeeded = BLabels[(parent, node)]
+            r = min(len(flags), maxUseableRobots)
 
-            for r in range(len(flags),minRobotsNeeded - 1,-1):
+            if r >= minRobotsNeeded:
                 snap = {
                     "visitedTimes": copy.deepcopy(visitedTimes),
                     "guards": copy.deepcopy(guards),
@@ -337,24 +358,42 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
                     strat.extend(newMoves)
                     enteringTime = batchTime
 
-                if successful:
-                    break
-
-            #Last Resort: Try the BLabel Order if all other orders did not work
+            #Last Resort: run the child with the largest BLabel last, the rest
+            #in efficiency order (efficiency at its own minimal robot budget,
+            #i.e. robotTable at r = BLabel). If the largest BLabel occurs more
+            #than once, no order can free up enough robots for it, so fail
+            #immediately instead of wasting time on a doomed attempt.
             if len(strat) == 0:
+                if shouldStop():
+                    return False, [], enteringTime
+
                 neighbours = [neighbour for neighbour in T.adj[T.nodes[node]] if neighbour.idx != parent]
-                neighbours.sort(key=lambda neighbour: BLabels[(node, neighbour.idx)])
 
-                for neighbour in neighbours:
-                    singleBatch = {"children": [neighbour.idx]}
+                if len(neighbours) > 0:
+                    maxBLabel = max(BLabels[(node, neighbour.idx)] for neighbour in neighbours)
+                    maxBLabelNeighbours = [neighbour for neighbour in neighbours if BLabels[(node, neighbour.idx)] == maxBLabel]
 
-                    successful, newMoves, batchTime = executeBatch(singleBatch, enteringTime, node)
-
-                    if not successful:
+                    if len(maxBLabelNeighbours) >= 2:
                         return False, [], enteringTime
 
-                    strat.extend(newMoves)
-                    enteringTime = batchTime
+                    largestNeighbour = maxBLabelNeighbours[0]
+                    orderedNeighbours = sorted(
+                        (neighbour for neighbour in neighbours if neighbour.idx != largestNeighbour.idx),
+                        key=lambda neighbour: robotTable[(node, neighbour.idx)][BLabels[(node, neighbour.idx)]][1],
+                        reverse=True
+                    )
+                    orderedNeighbours.append(largestNeighbour)
+
+                    for neighbour in orderedNeighbours:
+                        singleBatch = {"children": [neighbour.idx], "robots": {neighbour.idx: BLabels[(node, neighbour.idx)]}}
+
+                        successful, newMoves, batchTime = executeBatch(singleBatch, enteringTime, node)
+
+                        if not successful:
+                            return False, [], enteringTime
+
+                        strat.extend(newMoves)
+                        enteringTime = batchTime
 
             return True, strat, enteringTime
 
@@ -402,7 +441,7 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
                 else:
                     guards.append([node, enemys, minGuardTime])
 
-                successful, newMoves, subtreeFinishTime = explorePath(node, max(enteringTime, arrTime), currNode)
+                successful, newMoves, subtreeFinishTime = explorePath(node, max(enteringTime, arrTime), currNode , batch["robots"][node])
 
                 if not successful:
                     return False, None, None
@@ -427,8 +466,7 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
             nearest = None
 
             for flag in flags:
-                path = aStar(T.nodes[flag[0]].pos, T.nodes[node].pos, obstacles, distanceMap, alpha)
-                durration = len(path) -1
+                durration = flagDistance[flag[0]][node]
 
                 if durration + flag[1] < minDurr:
                     minDurr = durration + flag[1]
@@ -440,7 +478,7 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
             flags.remove(nearest)
             return True, (nearest[0], node, 1, nearest[1], minDurr), minDurr
 
-        successful, strat, _ = explorePath(root, 0, None)
+        successful, strat, _ = explorePath(root, 0, None, availableRobots)
         strat.insert(0,(None, root, availableRobots))
         return strat, successful, visitedTimes
 

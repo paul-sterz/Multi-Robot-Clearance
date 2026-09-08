@@ -51,249 +51,84 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
             flagDistance[i][j] = len(path) - 1
 
     # ---------------------------------------------------
-    # COMPUTING B-LABELS and efficiency labels depending on available robots
+    # COMPUTING EDGE LABLES FOR THE TREE SEARCH THAT REPRESENT THE AMOUNT OF NEEDED ROBOTS AND THE EFFICIENCY OF EACH SUBTREE
+    # Remark: Lables represent the amount of robots needed for this path
     # ---------------------------------------------------
-    def computeLabelsWithBudget(T: Graph, root, parent, maxRobots: int):
 
-        bLabels = {}
-        robotTable = {}
-        policyTable = {}
-
-        children = [y.idx for y in T.adj[T.nodes[root]] if y.idx != parent]
-
-        # ---------------- LEAF ----------------
-        if len(children) == 0:
-            bLabels[(parent, root)] = 1
-
-            edgeTime = T.edges[(parent, root)].time if parent is not None else 1
-            prior = T.nodes[root].prior
-
-            robotTable[(parent, root)] = {
-                r: (edgeTime, prior / edgeTime)
-                for r in range(1, maxRobots + 1)
-            }
-
-            policyTable[(parent, root)] = {
-                r: [] for r in range(1, maxRobots + 1)
-            }
-
-            return bLabels, robotTable, policyTable, prior, edgeTime
-
-        # ---------------- INNER NODE ----------------
-        childBLabel = {}
-        childPrior = {}
-        childTimeTable = {}
-
-        totalPrior = T.nodes[root].prior
-
-        for child in children:
-            subB, subTable, subPolicy, subPrior, _ = computeLabelsWithBudget(
-                T, child, root, maxRobots
-            )
-
-            bLabels.update(subB)
-            robotTable.update(subTable)
-            policyTable.update(subPolicy)
-
-            childBLabel[child] = subB[(root, child)]
-            childPrior[child] = subPrior
-            childTimeTable[child] = {
-                r: t for r, (t, _eff) in subTable[(root, child)].items()
-            }
-
-            totalPrior += subPrior
-
-        # ---------------- B-LABEL ----------------
-        childLabelsSorted = sorted(childBLabel.values(), reverse=True)
-
-        p1 = childLabelsSorted[0]
-        p2 = childLabelsSorted[1] if len(childLabelsSorted) > 1 else 0
-
-        bLabelRoot = p1 + 1 if p1 == 1 else max(p1, p2 + 1)
-        bLabels[(parent, root)] = bLabelRoot
-
-        # ---------------- FEASIBILITY ----------------
-        if maxRobots < bLabelRoot:
-            robotTable[(parent, root)] = {}
-            policyTable[(parent, root)] = {}
-
-            return bLabels, robotTable, policyTable, totalPrior, float('inf')
-
-        edgeTime = T.edges[(parent, root)].time if parent is not None else 1
-
-        # ---------------- BEST POLICY FOR EACH ROBOT BUDGET ----------------
-        table = {}
-        policies = {}
-
-        for r in range(bLabelRoot, maxRobots + 1):
-            bestChildrenTime, bestSchedule = _bestChildrenSchedule(
-                children, childBLabel, childTimeTable, childPrior, r
-            )
-
-            time_r = edgeTime + bestChildrenTime
-
-            table[r] = (time_r, totalPrior / time_r)
-            policies[r] = bestSchedule
-
-        robotTable[(parent, root)] = table
-        policyTable[(parent, root)] = policies
-
-        return bLabels, robotTable, policyTable, totalPrior, table[maxRobots][0]
-
-
-    def _bestChildrenSchedule(children, childBLabel, childTimeTable, childPrior, r):
-        """
-        Returns:
-            bestTime:
-                Minimal total clearance time of all child subtrees.
-
-            schedule:
-                Ordered list of sequential batches.
-                Children inside one batch run in parallel.
-
-                [
-                    {
-                        "children": [...],
-                        "robots": {child: robots, ...},
-                        "time": batchTime,
-                        "prior": batchPrior,
-                        "efficiency": batchPrior / batchTime
-                    },
-                    ...
-                ]
-        """
-
-        k = len(children)
-
-        if k == 0:
-            return 0.0, []
-
-        fullMask = (1 << k) - 1
-
-        # ---------------- COST OF EVERY POSSIBLE PARALLEL BATCH ----------------
-        costOfSubset = [float('inf')] * (1 << k)
-        allocationOfSubset = [None] * (1 << k)
-
-        costOfSubset[0] = 0.0
-        allocationOfSubset[0] = {}
-
-        for mask in range(1, 1 << k):
-            subset = [children[i] for i in range(k) if mask & (1 << i)]
-
-            if sum(childBLabel[c] for c in subset) > r:
-                continue
-
-            batchTime, allocation = _parallelBatchCost(
-                subset, childTimeTable, r
-            )
-
-            costOfSubset[mask] = batchTime
-            allocationOfSubset[mask] = allocation
-
-        # ---------------- DP OVER PARTITIONS ----------------
-        dp = [float('inf')] * (1 << k)
-        choice = [None] * (1 << k)
-
-        dp[0] = 0.0
-
-        for mask in range(1, 1 << k):
-            low = mask & (-mask)
-            sub = mask
-
-            while sub > 0:
-                if sub & low:
-                    candidate = costOfSubset[sub] + dp[mask ^ sub]
-
-                    if candidate < dp[mask]:
-                        dp[mask] = candidate
-                        choice[mask] = sub
-
-                sub = (sub - 1) & mask
-
-        if dp[fullMask] == float('inf'):
-            return float('inf'), []
-
-        # ---------------- RECONSTRUCT OPTIMAL PARTITION ----------------
-        schedule = []
-        mask = fullMask
-
-        while mask != 0:
-            chosenMask = choice[mask]
-
-            if chosenMask is None:
-                return float('inf'), []
-
-            subset = [
-                children[i]
-                for i in range(k)
-                if chosenMask & (1 << i)
-            ]
-
-            batchTime = costOfSubset[chosenMask]
-            batchPrior = sum(childPrior[c] for c in subset)
-            batchEfficiency = batchPrior / batchTime
-
-            schedule.append({
-                "children": subset,
-                "robots": allocationOfSubset[chosenMask],
-                "time": batchTime,
-                "prior": batchPrior,
-                "efficiency": batchEfficiency
-            })
-
-            mask ^= chosenMask
-
-        # ---------------- ORDER BATCHES BY PRIOR PER TIME ----------------
-        schedule.sort(key=lambda batch: batch["efficiency"], reverse=True)
-
-        return dp[fullMask], schedule
-
-
-    def _parallelBatchCost(subset, childTimeTable, r):
-        """
-        Returns:
-            batchTime:
-                Minimal time in which all children of the subset can be
-                cleared in parallel.
-
-            allocation:
-                child -> required number of robots
-        """
-
-        if len(subset) == 0:
-            return 0.0, {}
-
-        candidateTimes = set()
-
-        for c in subset:
-            candidateTimes.update(childTimeTable[c].values())
-
-        for T in sorted(candidateTimes):
-            allocation = {}
-            totalRobots = 0
-            feasible = True
-
-            for c in subset:
-                minRi = None
-
-                for ri in sorted(childTimeTable[c]):
-                    if childTimeTable[c][ri] <= T:
-                        minRi = ri
-                        break
-
-                if minRi is None:
-                    feasible = False
-                    break
-
-                allocation[c] = minRi
-                totalRobots += minRi
-
-            if feasible and totalRobots <= r:
-                return T, allocation
-
-        return float('inf'), None
+    def computeWorstCaseLabels(T : Graph, root, parent):
+
+        #Saving labels in a dictionary of the form: ((x,y) | lambda((x,y))
+        edgeLabelsRobotCost = {} 
+        edgeLabelsEfficiency = {}
+
+
+        # Keep track of total prior and time in subtree
+        totalTime = 0
+        totalPrior = 0
+
+        #Saving pi meaning all children of the root
+        childLabels = [] 
+        children = []
+        subTreePriors = {} #in form (child | subTreePrior)
+        subTreeTimes = {} #in form (child | subTreeTime)
+
+        # Calculating lables recursive for children
+        for y in T.adj[T.nodes[root]]:
+            if y.idx != parent:
+                subLabelsRobotCost, subLablesEfficiency, sumTime, sumPrior = computeWorstCaseLabels(T, y.idx, root)
+                totalTime += sumTime
+                totalPrior += sumPrior
+
+                subTreePriors[y.idx] = sumPrior
+                subTreeTimes[y.idx] =  sumTime
+
+                edgeLabelsEfficiency.update(subLablesEfficiency)
+                edgeLabelsRobotCost.update(subLabelsRobotCost)
+                childLabels.append(subLabelsRobotCost[(root, y.idx)])
+                children.append(y.idx)
+  
+        # Check if leaf
+        if len(childLabels) == 0:
+            edgeLabelsRobotCost[(parent, root)] = 1
+            
+            if parent != None:
+                totalPrior += T.nodes[root].prior 
+                totalTime +=  T.edges[(parent,root)].time
+            else:
+                totalPrior += T.nodes[root].prior 
+                totalTime +=  1
+
+            edgeLabelsEfficiency[(parent, root)] = totalPrior / totalTime
+        else:
+
+            #formula from the paper for robot cost
+            childLabels.sort(reverse=True)
+
+            p1 = childLabels[0]
+            if len(childLabels) > 1:  
+                p2 = childLabels[1]
+            else: p2 = 0
     
-    # ---------------------------------------------------
+            if p1 == 1:
+                currentLabel = p1 + 1
+            else:
+                currentLabel = max(p1, p2 + 1)
+
+            edgeLabelsRobotCost[(parent, root)] = currentLabel
+
+            #setting the efficiency edgelable
+            totalPrior += T.nodes[root].prior 
+            if parent != None:
+                totalTime = T.edges[(parent,root)].time + totalTime
+            else:
+                totalTime = 1
+            edgeLabelsEfficiency[(parent, root)] = totalPrior / totalTime
+
+
+        return edgeLabelsRobotCost, edgeLabelsEfficiency, totalTime, totalPrior
+
+    
+     # ---------------------------------------------------
     # CALCULATING A STRATEGY FOR TREES AND TRANSFORMING IT TO THE GRAPH
     # Note: A Strategy is safed in the format [(source node idx,target node idx, amount of robots, time_Depature, time_Arrival),...]
     # ---------------------------------------------------
@@ -308,8 +143,8 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
         # OUTPUT:
         # 
 
-        # STEP 1: ALLOCATION
-        BLabels , robotTable, policyTable, _ ,_ = computeLabelsWithBudget(T, root, None, availableRobots)
+        # STEP 1: ALLOCATION ‚
+        BLabels , effLables,  _ ,_ = computeWorstCaseLabels(T, root, None)
 
         visitedTimes = [-1] * len(T.nodes)
         visitedTimes[root] = 0
@@ -322,78 +157,54 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
 
         flags = [(root,0)] * (availableRobots -1) # flag format: (node index, flag begin)
 
-        def explorePath(node,enteringTime, parent, maxUseableRobots):
+        def explorePath(node,enteringTime, parent):
             #Safestades, so that if something goes wrong we can backtrack to the old states
             nonlocal guards
             nonlocal flags
             nonlocal visitedTimes
-            
+
             strat = []
             minRobotsNeeded = BLabels[(parent, node)]
-            r = min(len(flags), maxUseableRobots)
 
-            if r >= minRobotsNeeded:
-                snap = {
-                    "visitedTimes": copy.deepcopy(visitedTimes),
-                    "guards": copy.deepcopy(guards),
-                    "flags": copy.deepcopy(flags),
-                    "strat": copy.deepcopy(strat),
-                    "enteringTime": enteringTime
-                }
+            
+            candidateLabels = []
 
-                schedule = policyTable[(parent, node)][r]
+            for neighbour in T.adj[T.nodes[node]]:
+                if neighbour.idx == parent:
+                    continue
 
-                successful = True
-                for batch in schedule:
-                    successful, newMoves, batchTime = executeBatch(batch , enteringTime, node)
+                candidateLabels.append((effLables[(node,neighbour.idx)] , neighbour.idx))
+
+            candidateLabels.sort(key =lambda x: x[0], reverse=True)
+
+           
+            neighbours = [neighbour for neighbour in T.adj[T.nodes[node]] if neighbour.idx != parent]
+
+            if len(neighbours) > 0:
+                maxBLabel = max(BLabels[(node, neighbour.idx)] for neighbour in neighbours)
+                maxBLabelNeighbours = [neighbour for neighbour in neighbours if BLabels[(node, neighbour.idx)] == maxBLabel]
+
+                if len(maxBLabelNeighbours) >= 2:
+                    return False, [], enteringTime
+
+                largestNeighbour = maxBLabelNeighbours[0]
+                orderedNeighbours = sorted(
+                    (neighbour for neighbour in neighbours if neighbour.idx != largestNeighbour.idx),
+                    key=lambda neighbour: effLables[(node, neighbour.idx)],
+                    reverse=True
+                )
+                orderedNeighbours.append(largestNeighbour)
+
+                for neighbour in orderedNeighbours:
+                    singleBatch = {"children": [neighbour.idx]}
+
+                    successful, newMoves, batchTime = executeBatch(singleBatch, enteringTime, node)
 
                     if not successful:
-                        visitedTimes = snap["visitedTimes"]
-                        guards = snap["guards"]
-                        flags = snap["flags"]
-                        strat = snap["strat"]
-                        enteringTime = snap["enteringTime"]
-                        break
+                        return False, [], enteringTime
 
                     strat.extend(newMoves)
                     enteringTime = batchTime
-
-            #Last Resort: run the child with the largest BLabel last, the rest
-            #in efficiency order (efficiency at its own minimal robot budget,
-            #i.e. robotTable at r = BLabel). If the largest BLabel occurs more
-            #than once, no order can free up enough robots for it, so fail
-            #immediately instead of wasting time on a doomed attempt.
-            if len(strat) == 0:
-                if shouldStop():
-                    return False, [], enteringTime
-
-                neighbours = [neighbour for neighbour in T.adj[T.nodes[node]] if neighbour.idx != parent]
-
-                if len(neighbours) > 0:
-                    maxBLabel = max(BLabels[(node, neighbour.idx)] for neighbour in neighbours)
-                    maxBLabelNeighbours = [neighbour for neighbour in neighbours if BLabels[(node, neighbour.idx)] == maxBLabel]
-
-                    if len(maxBLabelNeighbours) >= 2:
-                        return False, [], enteringTime
-
-                    largestNeighbour = maxBLabelNeighbours[0]
-                    orderedNeighbours = sorted(
-                        (neighbour for neighbour in neighbours if neighbour.idx != largestNeighbour.idx),
-                        key=lambda neighbour: robotTable[(node, neighbour.idx)][BLabels[(node, neighbour.idx)]][1],
-                        reverse=True
-                    )
-                    orderedNeighbours.append(largestNeighbour)
-
-                    for neighbour in orderedNeighbours:
-                        singleBatch = {"children": [neighbour.idx], "robots": {neighbour.idx: BLabels[(node, neighbour.idx)]}}
-
-                        successful, newMoves, batchTime = executeBatch(singleBatch, enteringTime, node)
-
-                        if not successful:
-                            return False, [], enteringTime
-
-                        strat.extend(newMoves)
-                        enteringTime = batchTime
 
             return True, strat, enteringTime
 
@@ -441,7 +252,7 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
                 else:
                     guards.append([node, enemys, minGuardTime])
 
-                successful, newMoves, subtreeFinishTime = explorePath(node, max(enteringTime, arrTime), currNode , batch["robots"][node])
+                successful, newMoves, subtreeFinishTime = explorePath(node, max(enteringTime, arrTime), currNode)
 
                 if not successful:
                     return False, None, None
@@ -478,7 +289,7 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
             flags.remove(nearest)
             return True, (nearest[0], node, 1, nearest[1], minDurr), minDurr
 
-        successful, strat, _ = explorePath(root, 0, None, availableRobots)
+        successful, strat, _ = explorePath(root, 0, None)
         strat.insert(0,(None, root, availableRobots))
         return strat, successful, visitedTimes
 

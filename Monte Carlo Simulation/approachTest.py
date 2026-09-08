@@ -7,26 +7,29 @@ import numpy as np
 
 
 # ==================================================
-# LOADING THE 2 APPROACHES
+# LOADING THE 4 APPROACHES
 # ==================================================
-# The approach folders ("DP badge slpitting", "Worst Case Labels Greedy")
-# are not Python packages (their names contain spaces) and each one defines
-# its own Graph.py / GraphBuilder.py / TrajectoryPlanning.py / Searcher.py
-# using plain, unqualified imports (e.g. "from Graph import Graph").
-# Graph.py, GraphBuilder.py and TrajectoryPlanning.py are identical across
-# all approaches, only Searcher.py differs. So the shared modules are
-# loaded once (from the DP folder) and only Searcher.py is loaded
-# separately - and under a unique module name - for every approach.
+# The approach folders ("DP", "DP BLabel Order", "Greedy", "Greedy BLabel
+# Order") are not Python packages (some names contain spaces) and each one
+# defines its own Graph.py / GraphBuilder.py / TrajectoryPlanning.py /
+# Searcher.py using plain, unqualified imports (e.g. "from Graph import
+# Graph"). Graph.py, GraphBuilder.py and TrajectoryPlanning.py are
+# identical across all approaches, only Searcher.py differs. So the shared
+# modules are loaded once (from the DP folder) and only Searcher.py is
+# loaded separately - and under a unique module name - for every approach.
 
 REPO_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 APPROACH_DIRS = {
-    "DP Badge Splitting": os.path.join(REPO_DIR, "DP badge slpitting"),
-    "Worst Case Labels Greedy": os.path.join(REPO_DIR, "Worst Case Labels Greedy"),
+    "DP": os.path.join(REPO_DIR, "DP"),
+    "DP BLabel Order": os.path.join(REPO_DIR, "DP BLabel Order"),
+    "Greedy": os.path.join(REPO_DIR, "Greedy"),
+    "Greedy BLabel Order": os.path.join(REPO_DIR, "Greedy BLabel Order"),
 }
 
-# Shared modules are still loaded from the DP folder since it is not part
-# of the compared approaches anymore.
+# Shared modules (Graph.py, GraphBuilder.py, TrajectoryPlanning.py) are
+# loaded once from the DP folder; DP's own Searcher.py is still loaded
+# separately below, alongside the other approaches.
 _SHARED_MODULES_DIR = os.path.join(REPO_DIR, "DP")
 
 
@@ -56,17 +59,11 @@ Graph = _graphModule.Graph
 Node = _graphModule.Node
 Edge = _graphModule.Edge
 
-# Approach specific search methods
-graphSearchDPBadgeSplitting = _loadGraphSearch(APPROACH_DIRS["DP Badge Splitting"])
-graphSearchWorstCaseLabels = _loadGraphSearch(APPROACH_DIRS["Worst Case Labels Greedy"])
-
 # Fixed column order used throughout the Monte Carlo comparison (Step 2/3)
-APPROACHES = [
-    graphSearchDPBadgeSplitting,
-    graphSearchWorstCaseLabels,
-]
-
 APPROACH_NAMES = list(APPROACH_DIRS.keys())
+
+# Approach specific search methods, loaded in the same fixed order
+APPROACHES = [_loadGraphSearch(APPROACH_DIRS[name]) for name in APPROACH_NAMES]
 
 
 # ==================================================
