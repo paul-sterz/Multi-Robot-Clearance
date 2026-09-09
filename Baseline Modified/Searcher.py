@@ -8,11 +8,16 @@ import copy
 def graphSearch(G : Graph, availableTime, startNodes, obstacles, distanceMap, alpha, maxTrees=None):
     #INPUT:
     # G: a Graph object repesenting the given Graph
-    # edges_shady:a list containing all shady edges in the form (i,j)
-    # numOfTrees: an integer which represents the number of evaluated trees
+    # availableTime: the available computation time budget in seconds (ignored if maxTrees is given)
+    # startNodes: an integer representing that all nodes from 0 to startNodes-1 are valid roots
+    # maxTrees: if given (not None), stop after evaluating exactly this many spanning trees instead of using availableTime
 
     #OUTPUT:
-    #bestStrategy: A list containing the best strategy where each entry is in the form (source node,target node, amount of Robots)
+    #bestStrategy: list of moves. First entry is (None, root, totalRobots), all following
+    #              entries are (source, target, robots, t_departure, t_arrival)
+    #bestTree: the spanning tree (as a Graph) that produced bestStrategy
+    #checkedTreesCounter: how many random spanning trees were evaluated
+    #minCost: the number of robots needed by bestStrategy
 
 
     #Calculating the distance matrix for all nodes
@@ -75,10 +80,9 @@ def graphSearch(G : Graph, availableTime, startNodes, obstacles, distanceMap, al
         return edgeLabels     
     
     # ---------------------------------------------------
-    # CALCULATING A STRATEGY FOR TREES 
-    # TO-DO: Add Timestamps to the strategy and allow moves at the same time if amount of robots is not reached. 
-    #        Note that this will only work if I merge this with the Transform to Graph method.
-    # Note: A Strategy is safed in the format [(source node,target node, amount of Robots),...]
+    # CALCULATING A STRATEGY FOR TREES
+    # Note: A strategy is the order in which nodes are visited, following
+    #       the B-labels ascending (cheapest subtree first).
     # ---------------------------------------------------
                     
     def treeSearch(T : Graph, root):
@@ -111,7 +115,7 @@ def graphSearch(G : Graph, availableTime, startNodes, obstacles, distanceMap, al
             return strategy
 
 
-        strategy = explorePath(root)
+        strategy = explorePath(root, None)
         strategy.insert(0, root)
         robotCost = labels[(None, root)]
 
@@ -159,17 +163,20 @@ def graphSearch(G : Graph, availableTime, startNodes, obstacles, distanceMap, al
                 flags.remove(nearest)
                 return True, (nearest[0], node, 1, nearest[1], minDurr), minDurr
 
-        for node in strategy:
-        
+        # strategy[0] is always root itself, which is already placed and
+        # guarded above - only the nodes it still needs to reach are
+        # processed here (otherwise root would be guarded twice).
+        for node in strategy[1:]:
+
             succesful, move, arrTime = findNearestFlag(node)
 
             if succesful == False:
-                additionalRobots += 1 
-                flags.append(root, 0)
+                additionalRobots += 1
+                flags.append((root, 0))
 
                 succesful, move, arrTime = findNearestFlag(node)
 
-            executionPlan.extend(move)
+            executionPlan.append(move)
             visitedTimes[node] = arrTime
 
             #Remove visited node from guard lists and update minGuardTime if neicessary
@@ -194,9 +201,11 @@ def graphSearch(G : Graph, availableTime, startNodes, obstacles, distanceMap, al
                 flags.append((node, minGuardTime))
             else:
                 guards.append([node, enemys, minGuardTime])
-            
 
-        return executionPlan, additionalRobots + minRobots
+        totalRobots = additionalRobots + minRobots
+        executionPlan.insert(0, (None, root, totalRobots))
+
+        return executionPlan, totalRobots
 
 
 
@@ -257,5 +266,5 @@ def graphSearch(G : Graph, availableTime, startNodes, obstacles, distanceMap, al
             bestStrategy = strat
             bestTree = T
 
-    return bestStrategy, bestTree
+    return bestStrategy, bestTree, checkedTreesCounter, minCost
 
