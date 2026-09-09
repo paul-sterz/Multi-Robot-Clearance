@@ -1,8 +1,11 @@
 import numpy as np
 import random
 from Graph import Graph, Node, Edge
+from TrajectoryPlanning import aStar
+import time
+import copy
 
-def graphSearch(G : Graph, shadyEdges, numOfTrees, startNodes):
+def graphSearch(G : Graph, availableTime, startNodes, obstacles, distanceMap, alpha, maxTrees=None):
     #INPUT:
     # G: a Graph object repesenting the given Graph
     # edges_shady:a list containing all shady edges in the form (i,j)
@@ -10,6 +13,20 @@ def graphSearch(G : Graph, shadyEdges, numOfTrees, startNodes):
 
     #OUTPUT:
     #bestStrategy: A list containing the best strategy where each entry is in the form (source node,target node, amount of Robots)
+
+
+    #Calculating the distance matrix for all nodes
+    numGraphNodes = len(G.nodes)
+    flagDistance = [[0] * numGraphNodes for _ in range(numGraphNodes)]
+
+    for i in range(numGraphNodes):
+        for j in range(numGraphNodes):
+            if i == j:
+                continue
+            path = aStar(G.nodes[i].pos, G.nodes[j].pos, obstacles, distanceMap, alpha)
+            flagDistance[i][j] = len(path) - 1
+
+
 
     # ---------------------------------------------------
     # COMPUTING EDGE LABLES FOR THE TREE SEARCH 
@@ -67,112 +84,121 @@ def graphSearch(G : Graph, shadyEdges, numOfTrees, startNodes):
     def treeSearch(T : Graph, root):
 
         labels = computeLabels(T,root, None)
-
         visited = [0] * len(T.nodes)
         visited[root] = 1
 
-        def explorePath(node):
-            
+
+        def explorePath(node, parent):
             strategy = []
-            currentLables = []
-    
-            for y in T.adj[T.nodes[node]]:
-                currentLables.append((labels[(node,y.idx)], y.idx))
 
-            if len(currentLables) > 0:
-                currentLables.sort(key=lambda x: x[0]) #Sorting the lables ascending
+                      
+            candidateLabels = []
 
-                # Check if max edge robot costs appear twice, than no slide moves have to be prevented
-                twice = False
-                if len(currentLables) > 1: #Is there more than one children
-                    if currentLables[0][0] == currentLables[1][0]:
-                        twice = True
+            for neighbour in T.adj[T.nodes[node]]:
+                if neighbour.idx == parent:
+                    continue
 
-                counter = 1
-                for (robotsNeeded, y) in currentLables:
-                    if counter == len(currentLables) and robotsNeeded != 1: #Don't allow slide moves! Note that they can only be neicessary in the last move
-                        if twice: # If same robot cose appears twice we need a spare robot hence no slide move prevention is neicessary
-                            strategy.append((node,y,robotsNeeded))
-                        else:
-                            strategy.append((node,y,robotsNeeded-1))
-                            strategy.append((node,y,1))
+                candidateLabels.append((labels[(node,neighbour.idx)] , neighbour.idx))
 
-                        visited[y] = 1
-                        strategy.extend(explorePath(y))
-                        # Check if there is need for backtracking or if everything is visited so we are finished
-                        if visited != [1] * len(visited):
-                            strategy.append((y,node,robotsNeeded))
-                    else:
-                        strategy.append((node,y,robotsNeeded))
-                        visited[y] = 1
-                        strategy.extend(explorePath(y))
-                        # Check if there is need for backtracking or if everything is visited so we are finished
-                        if visited != [1] * len(visited):
-                            strategy.append((y,node,robotsNeeded))    
-                        counter = counter + 1        
-            
+            if len(candidateLabels) > 0:
+                #Sorting the B-Labels ascending
+                candidateLabels.sort(key =lambda x: x[0], reverse=False)    
+
+                for candidate in candidateLabels:
+                    strategy.append(candidate[1])
+                    strategy.extend(explorePath(candidate[1], node))
+
             return strategy
 
-        strategy = explorePath(root)
 
+        strategy = explorePath(root)
+        strategy.insert(0, root)
         robotCost = labels[(None, root)]
 
-        strategy.insert(0, (None,root,robotCost))
-
-        return strategy
+        return transformStrategy(strategy, labels, robotCost, root)
         
+            
+
+    def transformStrategy(strategy, labels, minRobots, root):
+        #NOTE: Since we do not now how many robots we have in the beginning some flag retracing won't be loacally optimal since at a later point a robot is added that could have been used earlier. 
+        #      We will see what impact this has.
+
+        visitedTimes = [-1] * len(T.nodes)
+        visitedTimes[root] = 0
+
+        guards = [] # guard format: (node index, list of enemys, min guarding time)
+        rootEnemys = []
+        for node in  G.adj[G.nodes[root]]:
+            rootEnemys.append(node.idx)
+        guards.append([root,rootEnemys, 0])
+
+        flags = [(root,0)] * (minRobots -1) # flag format: (node index, flag begin)
+
+        #Executionplan Format:[(source node idx,target node idx, time_Depature, time_Arrival),...]
+        executionPlan = [] 
+        additionalRobots = 0
+
+        def findNearestFlag(node):
+                nonlocal guards
+                nonlocal flags
+                nonlocal visitedTimes
     
-    # -------------------------------------------------------------------------------------
-    # TRANSFORMING THE STRATEGY FROM TREE TO GRAPH
-    # Approach from paper "The Graph Clear Problem..." by Kolling used since the baseline is to unspecific about this
-    # -------------------------------------------------------------------------------------
+                minDurr = np.inf
+                nearest = None
+    
+                for flag in flags:
+                    durration = flagDistance[flag[0]][node]
+    
+                    if durration + flag[1] < minDurr:
+                        minDurr = durration + flag[1]
+                        nearest = flag
+    
+                if nearest == None:
+                    return False, None, None
+    
+                flags.remove(nearest)
+                return True, (nearest[0], node, 1, nearest[1], minDurr), minDurr
 
+        for node in strategy:
+        
+            succesful, move, arrTime = findNearestFlag(node)
 
-    def transformStrategy(G : Graph, shadyEdges, strategy):
+            if succesful == False:
+                additionalRobots += 1 
+                flags.append(root, 0)
 
-        contaminationArea = set()
-        for i in range(len(G.nodes)):
-            contaminationArea.add(i)
+                succesful, move, arrTime = findNearestFlag(node)
 
-        rCounter = [0] * len(G.nodes)
+            executionPlan.extend(move)
+            visitedTimes[node] = arrTime
 
-        i = 0
+            #Remove visited node from guard lists and update minGuardTime if neicessary
+            for guard in guards[:]:   # Iterate over a copy of the guard list so that when removing an item nothing is skipped
+                if node in guard[1]:
+                    guard[1].remove(node) #alters the real guard list
+                    guard[2] = max(guard[2], arrTime) #alters the real guard list
+                    if len(guard[1]) == 0:
+                        flags.append((guard[0], guard[2]))
+                        guards.remove(guard) #Removes from the real guard list
 
-        while i < len(strategy):
+            enemys = []
+            minGuardTime = arrTime
+            for neighbour in G.adj[G.nodes[node]]:
+                if visitedTimes[neighbour.idx] == -1:
+                    enemys.append(neighbour.idx)
 
-            if strategy[i][1] in contaminationArea:
-                contaminationArea.remove(strategy[i][1])
-                
-            if strategy[i][0] != None:
-                rCounter[strategy[i][0]] = rCounter[strategy[i][0]] - strategy[i][2]
+                #Guard at least until this node is visited
+                minGuardTime = max(minGuardTime,visitedTimes[neighbour.idx])
+
+            if len(enemys) == 0:
+                flags.append((node, minGuardTime))
+            else:
+                guards.append([node, enemys, minGuardTime])
             
-            rCounter[strategy[i][1]] = rCounter[strategy[i][1]] + strategy[i][2]
-            
 
-            if strategy[i][0] != None and rCounter[strategy[i][0]] == 0: #Are there still any robots left on the last node?
+        return executionPlan, additionalRobots + minRobots
 
-                for (u,v) in G.edges.keys(): #Note that only regular edges have to be checked since shady ones are included in an regular edge
-                    if u in contaminationArea and v == strategy[i][0]: #Is there an edge that leads to recontamination?
 
-                        currNode = None
-                        for j in range(i):
-                            u, v, k = strategy[j]
-                            if u == currNode:
-                                strategy[j] = (u, v, k + 1)
-                                currNode = v
-                            if v == strategy[i][0]:
-                                break
-
-                        if strategy[i][2] == 1 and strategy[i-1][0] == strategy[i][0] and strategy[i-1][1] == strategy[i][1]: #Check if there is a slide move which now gets unnecessary
-                            strategy.pop(i) #delete the slide move
-                            strategy[i-1] = (strategy[i-1][0],strategy[i-1][1] ,strategy[i-1][2] + 1)
-                            i -= 1
-                        rCounter[strategy[i][0]] = 1
-                        break
-            i += 1
-
-        return strategy
-            
 
     # ---------------------------------------------------
     # COMPUTING A RANDOM SPANNING TREE WITH DFS
@@ -207,24 +233,28 @@ def graphSearch(G : Graph, shadyEdges, numOfTrees, startNodes):
         return T
 
 
-
+    def shouldStop():
+        if maxTrees is not None:
+            return checkedTreesCounter >= maxTrees
+        return time.monotonic() - startingTime >= availableTime
 
     # ------------------------------------------------------------
     # THE REAL GRAPH SEARCH ALGORITHIM USING EVERYTHING FROM ABOVE
     # ------------------------------------------------------------
-
+    startingTime = time.monotonic()
     minCost = np.inf
     bestStrategy = None
     bestTree = None
+    checkedTreesCounter = 0
 
-    for i in range(numOfTrees):
+    while not shouldStop():
+        checkedTreesCounter += 1
         root = random.randint(0,startNodes-1)
         T = computeRandomSpanningTree(G,root)
-        treeStrategy = treeSearch(T,root)
-        graphStrategy = transformStrategy(G,shadyEdges, treeStrategy)
-        if graphStrategy[0][2] < minCost:
-            minCost = graphStrategy[0][2]
-            bestStrategy = graphStrategy
+        strat, neededRobots = treeSearch(T,root)
+        if neededRobots < minCost:
+            minCost = neededRobots
+            bestStrategy = strat
             bestTree = T
 
     return bestStrategy, bestTree

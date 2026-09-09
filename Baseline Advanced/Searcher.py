@@ -82,7 +82,7 @@ def graphSearch(G : Graph, shadyEdges, numOfTrees, startNodes, obstacles, distan
     # ---------------------------------------------------
                     
     def treeSearch(T : Graph, root):
-        #TODO Implement naiv following Tree labels and guarding
+
         labels = computeLabels(T,root, None)
         visited = [0] * len(T.nodes)
         visited[root] = 1
@@ -121,10 +121,9 @@ def graphSearch(G : Graph, shadyEdges, numOfTrees, startNodes, obstacles, distan
         
             
 
-    def transformStrategy(strategy, labels, T: Graph, G: Graph):
-        #NOTE Maybe not neicessary in this implementation
+    def transformStrategy():
 
-       
+        #TODO Compute execution Schedule after Kollings Paper
 
 
 
