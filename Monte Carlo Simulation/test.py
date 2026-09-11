@@ -16,7 +16,7 @@ from approachTest import (
     GRAPH_ALPHA,
 )
 
-from baselineTest import baselineTest
+from baselineTest import baselineTest, BASELINE_METHOD_NAMES
 
 from treeTest import runSpanningTreeEvolution
 
@@ -787,8 +787,10 @@ elif app_mode == "Baseline Test":
 
         baseline_computation_time = None
 
+    baselineMethodsLabel = ", ".join(BASELINE_METHOD_NAMES)
+
     baseline_third_approach = st.selectbox(
-        "3rd Approach (compared against Baseline and Baseline Modified)",
+        f"3rd Approach (compared against {baselineMethodsLabel})",
         APPROACH_NAMES,
         index=APPROACH_NAMES.index(st.session_state.baseline_third_approach),
         key="baseline_third_approach_select",
@@ -798,7 +800,7 @@ elif app_mode == "Baseline Test":
 
     baseline_robot_increase_percent = st.slider(
         "Extra robots for the 3rd approach, relative to what "
-        "Baseline/Baseline Modified need (%)",
+        f"{baselineMethodsLabel} need (%)",
         0,
         200,
         st.session_state.baseline_robot_increase_percent,
@@ -809,10 +811,10 @@ elif app_mode == "Baseline Test":
     st.session_state.baseline_robot_increase_percent = baseline_robot_increase_percent
 
     st.caption(
-        "Baseline and Baseline Modified always use the minimum number of "
+        f"{baselineMethodsLabel} always use the minimum number of "
         "robots their own strategy needs. The 3rd approach is given "
-        f"max(Baseline, Baseline Modified) robots, scaled by "
-        f"+{baseline_robot_increase_percent}% (e.g. baselines need 4 "
+        f"max({baselineMethodsLabel}) robots, scaled by "
+        f"+{baseline_robot_increase_percent}% (e.g. the baselines need 4 "
         f"robots, slider at +100% → 3rd approach gets 8 robots)."
     )
 
@@ -833,7 +835,7 @@ elif app_mode == "Baseline Test":
 
         with st.spinner(
             f"Running {baseline_num_of_runs} runs × "
-            f"(Baseline, Baseline Modified, {baseline_third_approach})..."
+            f"({baselineMethodsLabel}, {baseline_third_approach})..."
         ):
 
             baselineResults = baselineTest(
@@ -874,9 +876,9 @@ elif app_mode == "Baseline Test":
         st.markdown("### Environment with Navigation Graph")
 
         st.caption(
-            "Baseline, Baseline Modified and the 3rd approach all run on "
-            "this exact same navigation graph, built once and reused for "
-            "every run."
+            f"{baselineMethodsLabel} and the 3rd approach all run on this "
+            "exact same navigation graph, built once and reused for every "
+            "run."
         )
 
         st.plotly_chart(
@@ -896,13 +898,13 @@ elif app_mode == "Baseline Test":
         #
         # Runs without clearance (objective value == inf) are excluded from
         # min/max/mean/variance - they only increase the "No clearance
-        # possible" counter. All three methods share the same graph (so
+        # possible" counter. All 5 methods share the same graph (so
         # Nodes/Edges is one shared value, like in Approach Test), but
-        # unlike Approach Test, Available Robots varies per method (Baseline
-        # / Baseline Modified always use their own computed minimum robot
-        # count; the 3rd approach gets a budget derived from the baselines,
-        # which also varies run to run) - so it is averaged per method
-        # instead of shown as one shared value.
+        # unlike Approach Test, Available Robots varies per method (the 4
+        # baseline methods always use their own computed minimum robot
+        # count; the 3rd approach gets a budget derived from them, which
+        # also varies run to run) - so it is averaged per method instead of
+        # shown as one shared value.
         # --------------------------------------------------
 
         baselineTimeIsPrescribed = (

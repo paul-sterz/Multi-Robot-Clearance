@@ -22,46 +22,54 @@ from approachTest import (
 
 
 # ==================================================
-# LOADING THE BASELINE / BASELINE MODIFIED APPROACHES
+# LOADING THE 4 BASELINE METHODS
 # ==================================================
-# Like the 4 approaches loaded in approachTest.py, "Baseline" and "Baseline
-# Modified" are not Python packages and define their own Graph.py /
-# TrajectoryPlanning.py / Searcher.py using plain, unqualified imports (e.g.
-# "from Graph import Graph"). Their Graph.py and TrajectoryPlanning.py are
-# identical between the two folders, so the shared modules are loaded once
-# (from the "Baseline" folder) and only Searcher.py is loaded separately for
-# each of the two methods - same pattern as approachTest.py.
+# "Baseline", "Baseline Modified", "Baseline2" and "Baseline2 Modified" are
+# not Python packages and define their own Graph.py / TrajectoryPlanning.py
+# / Searcher.py using plain, unqualified imports (e.g. "from Graph import
+# Graph"). Their Graph.py and TrajectoryPlanning.py are identical across all
+# four folders, so the shared modules are loaded once (from the "Baseline"
+# folder) and only Searcher.py is loaded separately for each method - same
+# pattern as approachTest.py.
 #
-# IMPORTANT: Baseline's own GraphBuilderV2.py is intentionally never loaded
+# IMPORTANT: none of these folders' own GraphBuilderV2.py is ever loaded
 # here. It builds its own graph via a random free-space partitioning that is
 # independent of (and structurally different from - different node/edge
 # count) the one approachTest.py's graphBuilder() builds for the 4
-# DP/Greedy-style approaches. Comparing Baseline/Baseline Modified against
-# the 3rd approach on two different graphs would be meaningless, so instead
-# all three methods run on the exact same graph (built once via
-# approachTest.py's graphBuilder(), see baselineTest() below). This works
-# because Baseline's Searcher.py never reads anything graph-specific beyond
-# G.nodes[i].pos / G.adj[...] (checked directly in Searcher.py: it never
-# touches a node's .prior or an edge's .time/.robotType, and internally
+# DP/Greedy-style approaches. Comparing the baseline methods against the 3rd
+# approach on different graphs would be meaningless, so instead all methods
+# run on the exact same graph (built once via approachTest.py's
+# graphBuilder(), see baselineTest() below). This works because none of the
+# baseline Searcher.py files read anything graph-specific beyond
+# G.nodes[i].pos / G.adj[...] (checked directly in Searcher.py: none of them
+# touch a node's .prior or an edge's .time/.robotType, and each internally
 # rebuilds its own spanning-tree copy using its own bound Graph() class
-# regardless of what G it was given) - it only needs a Graph object shaped
-# like Baseline's own, not literally built by GraphBuilderV2.
+# regardless of what G it was given) - they only need a Graph object shaped
+# like their own, not literally built by GraphBuilderV2.
 #
 # Because approachTest.py has already registered its own "Graph" and
 # "TrajectoryPlanning" modules under those exact names in sys.modules (so
 # that DP/Searcher.py's "from Graph import Graph" resolves correctly), those
 # names are temporarily overridden with the Baseline versions while loading
-# Baseline's own Searcher.py files, and restored again immediately
-# afterwards - so nothing outside this loading block ever observes the swap.
+# these Searcher.py files, and restored again immediately afterwards - so
+# nothing outside this loading block ever observes the swap.
 
 BASELINE_SHARED_DIR = os.path.join(REPO_DIR, "Baseline")
 
 BASELINE_METHOD_DIRS = {
     "Baseline": os.path.join(REPO_DIR, "Baseline"),
     "Baseline Modified": os.path.join(REPO_DIR, "Baseline Modified"),
+    "Baseline2": os.path.join(REPO_DIR, "Baseline2"),
+    "Baseline2 Modified": os.path.join(REPO_DIR, "Baseline2 Modified"),
 }
 
 BASELINE_METHOD_NAMES = list(BASELINE_METHOD_DIRS.keys())
+
+# The "Modified" variants' graphSearch() additionally accepts cellpriors/D
+# to break ties (same neededRobots) by cell-prior objective instead of
+# keeping whichever tree was found first - see the "TEST" comments in their
+# Searcher.py files. "Baseline" and "Baseline2" don't accept these kwargs.
+METHODS_WITH_CELL_PRIOR_TIEBREAK = {"Baseline Modified", "Baseline2 Modified"}
 
 
 def _loadModule(name, path):
@@ -89,8 +97,8 @@ def _loadWithTemporarySysModules(overrides, name, path):
                 del sys.modules[overrideName]
 
 
-# Shared modules (identical for "Baseline" and "Baseline Modified") - loaded
-# once from "Baseline", only so that Searcher.py's own "from Graph import
+# Shared modules (identical across all 4 baseline folders) - loaded once
+# from "Baseline", only so that each Searcher.py's own "from Graph import
 # Graph" / "from TrajectoryPlanning import aStar" resolve correctly.
 _baselineGraphModule = _loadModule(
     "Graph_Baseline", os.path.join(BASELINE_SHARED_DIR, "Graph.py")
@@ -112,7 +120,7 @@ def _loadBaselineSearcher(methodDir, uniqueSuffix):
     return module.graphSearch
 
 
-# Baseline/Baseline Modified search methods, in the same fixed order as
+# The 4 baseline search methods, in the same fixed order as
 # BASELINE_METHOD_NAMES
 BASELINE_SEARCHERS = [
     _loadBaselineSearcher(BASELINE_METHOD_DIRS[name], name.replace(" ", "_"))
@@ -121,15 +129,15 @@ BASELINE_SEARCHERS = [
 
 
 # ==================================================
-# CELL PRIOR OBJECTIVE FOR BASELINE / BASELINE MODIFIED
+# CELL PRIOR OBJECTIVE FOR THE 4 BASELINE METHODS
 #
 # Unlike the 4 approaches loaded in approachTest.py (whose Searcher.py
 # already returns the cell-prior objective directly as bestFitness, computed
-# internally against the graph's priors/detection sets), Baseline's
-# Searcher.py only ever tracks/minimizes the number of robots needed and
-# knows nothing about priors - the cell-prior objective for its winning
-# strategy has to be computed here instead, by walking the strategy exactly
-# like DP's internal computeExpTime()/approachTest.py's
+# internally against the graph's priors/detection sets), none of the 4
+# baseline Searcher.py files know anything about priors - they only ever
+# track/minimize the number of robots needed - so the cell-prior objective
+# for a winning strategy has to be computed here instead, by walking the
+# strategy exactly like DP's internal computeExpTime()/approachTest.py's
 # computeNodePriorObjective(): every node's first-visit time is determined
 # from the strategy's moves, nodes are processed in ascending visit-time
 # order, and each detected cell only ever contributes its prior once - to
@@ -191,9 +199,9 @@ def baselineTest(
     obstacles, hotspots = buildEnvironment()
 
     # ONLY ONE GRAPH: built once (DP-style, with priors) and reused for every
-    # run and every one of the three methods below - Baseline and Baseline
-    # Modified run on it exactly like the 4 approaches in approachTest.py
-    # do, see the module-level comment above for why that is safe.
+    # run and every one of the 5 compared methods below - the 4 baseline
+    # methods run on it exactly like the 4 approaches in approachTest.py do,
+    # see the module-level comment above for why that is safe.
     G, edges_shady, D, startNodes, priors = graphBuilder(
         obstacles,
         hotspots,
@@ -225,11 +233,17 @@ def baselineTest(
 
         runRobotCounts = {}
 
-        # ---- Baseline & Baseline Modified: always use their own minimum
-        # ---- number of robots, computed internally.
+        # ---- All 4 baseline methods: always use their own minimum number
+        # ---- of robots, computed internally.
         for methodIdx, methodName in enumerate(BASELINE_METHOD_NAMES):
 
             searchFn = BASELINE_SEARCHERS[methodIdx]
+
+            tiebreakKwargs = (
+                {"cellpriors": priors, "D": D}
+                if methodName in METHODS_WITH_CELL_PRIOR_TIEBREAK
+                else {}
+            )
 
             startTime = time.time()
 
@@ -241,6 +255,7 @@ def baselineTest(
                 distanceMap,
                 GRAPH_ALPHA,
                 maxTrees=maxTrees,
+                **tiebreakKwargs,
             )
 
             resultsTime[i, methodIdx] = time.time() - startTime

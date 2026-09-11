@@ -5,7 +5,7 @@ from TrajectoryPlanning import aStar
 import time
 import copy
 
-def graphSearch(G : Graph, availableTime, startNodes, obstacles, distanceMap, alpha, maxTrees=None):
+def graphSearch(G : Graph, availableTime, startNodes, obstacles, distanceMap, alpha, maxTrees=None, cellpriors=None, D=None):
     #INPUT:
     # G: a Graph object repesenting the given Graph
     # availableTime: the available computation time budget in seconds (ignored if maxTrees is given)
@@ -83,6 +83,7 @@ def graphSearch(G : Graph, availableTime, startNodes, obstacles, distanceMap, al
     # CALCULATING A STRATEGY FOR TREES
     # Note: A strategy is the order in which nodes are visited, following
     #       the B-labels ascending (cheapest subtree first).
+    # Strategy Foramt: [(nextTargetNode, strategy Index when the guard can leave this node agains), ...]
     # ---------------------------------------------------
                     
     def treeSearch(T : Graph, root):
@@ -91,11 +92,36 @@ def graphSearch(G : Graph, availableTime, startNodes, obstacles, distanceMap, al
         visited = [0] * len(T.nodes)
         visited[root] = 1
 
+        # Strategy is built in-place, in true final traversal order, so
+        # that a "releaseIndex" resolved to len(strategy) always matches
+        # the index that entry will actually end up at.
+        strategy = []
+
+        def addEntry(node):
+            # enemys = graph-neighbours of node not yet reached by the
+            # search strategy at this point -> node's guard must stay
+            # until all of them have been visited.
+            enemys = [
+                neighbour.idx
+                for neighbour in G.adj[G.nodes[node]]
+                if visited[neighbour.idx] == 0
+            ]
+
+            if len(enemys) > 0:
+                # While under construction: track which enemy NODES are
+                # still unscheduled ("pending"), and which STRATEGY
+                # INDICES this guard already depends on ("deps") - a
+                # guard may have to wait on several of these, not just
+                # whichever happened to be scheduled last.
+                strategy.append([node, {"pending": set(enemys), "deps": []}])
+            else:
+                # No dependency: releases as soon as its own task runs.
+                strategy.append([node, [len(strategy)]])
+
+        addEntry(root)
 
         def explorePath(node, parent):
-            strategy = []
 
-                      
             candidateLabels = []
 
             for neighbour in T.adj[T.nodes[node]]:
@@ -106,106 +132,510 @@ def graphSearch(G : Graph, availableTime, startNodes, obstacles, distanceMap, al
 
             if len(candidateLabels) > 0:
                 #Sorting the B-Labels ascending
-                candidateLabels.sort(key =lambda x: x[0], reverse=False)    
+                candidateLabels.sort(key =lambda x: x[0], reverse=False)
 
                 for candidate in candidateLabels:
-                    strategy.append(candidate[1])
-                    strategy.extend(explorePath(candidate[1], node))
 
-            return strategy
+                    for entry in strategy:
+                        rel = entry[1]
+                        if isinstance(rel, dict) and candidate[1] in rel["pending"]:
+                            rel["pending"].discard(candidate[1])
+                            rel["deps"].append(len(strategy))
+                            if not rel["pending"]:
+                                # Fully resolved: from now on this is
+                                # the complete list of strategy indices
+                                # whose real completion time this guard
+                                # must wait for (not just the last one).
+                                entry[1] = rel["deps"]
+
+                    visited[candidate[1]] = 1
+
+                    addEntry(candidate[1])
+
+                    explorePath(candidate[1], node)
 
 
-        strategy = explorePath(root, None)
-        strategy.insert(0, root)
+        explorePath(root, None)
         robotCost = labels[(None, root)]
 
         return transformStrategy(strategy, labels, robotCost, root)
         
-            
 
     def transformStrategy(strategy, labels, minRobots, root):
-        #NOTE: Since we do not now how many robots we have in the beginning some flag retracing won't be loacally optimal since at a later point a robot is added that could have been used earlier. 
-        #      We will see what impact this has.
+        """
+        strategy:
+            [(node, releaseIndex), ...]
 
-        visitedTimes = [-1] * len(T.nodes)
-        visitedTimes[root] = 0
+            releaseIndex = letzter Strategy-Index, bis zu dem der
+            Roboter auf diesem Knoten als Guard benötigt wird.
 
-        guards = [] # guard format: (node index, list of enemys, min guarding time)
-        rootEnemys = []
-        for node in  G.adj[G.nodes[root]]:
-            rootEnemys.append(node.idx)
-        guards.append([root,rootEnemys, 0])
+        Assumption:
+            flagDistance[u][v] is available in the surrounding scope.
 
-        flags = [(root,0)] * (minRobots -1) # flag format: (node index, flag begin)
+        Returns:
+            executionPlan, robotsNeeded
 
-        #Executionplan Format:[(source node idx,target node idx, time_Depature, time_Arrival),...]
-        executionPlan = [] 
-        additionalRobots = 0
+        executionPlan format (same as Baseline Modified):
+            First entry is (None, root, robotsNeeded), all following
+            entries are (source, target, robots, t_departure, t_arrival).
+            Levels only decide which robot is assigned to which node
+            (via the LBAP); t_arrival is always that robot's own,
+            independent, as-fast-as-possible physical arrival time -
+            never delayed by other tasks in the same or an earlier level.
+        """
 
-        def findNearestFlag(node):
-                nonlocal guards
-                nonlocal flags
-                nonlocal visitedTimes
-    
-                minDurr = np.inf
-                nearest = None
-    
-                for flag in flags:
-                    durration = flagDistance[flag[0]][node]
-    
-                    if durration + flag[1] < minDurr:
-                        minDurr = durration + flag[1]
-                        nearest = flag
-    
-                if nearest == None:
-                    return False, None, None
-    
-                flags.remove(nearest)
-                return True, (nearest[0], node, 1, nearest[1], minDurr), minDurr
+        # ============================================================
+        # LBAP
+        # ============================================================
 
-        # strategy[0] is always root itself, which is already placed and
-        # guarded above - only the nodes it still needs to reach are
-        # processed here (otherwise root would be guarded twice).
-        for node in strategy[1:]:
+        def LBAPSolver(level, robots):
+            """
+            level:
+                [(taskIndex, node, releaseIndex), ...]
 
-            succesful, move, arrTime = findNearestFlag(node)
+            robots:
+                complete robot list.
 
-            if succesful == False:
-                additionalRobots += 1
-                flags.append((root, 0))
+            Only currently free robots are considered.
 
-                succesful, move, arrTime = findNearestFlag(node)
+            Cost:
+                robot["freeFrom"]
+                + flagDistance[robot["node"]][taskNode]
 
-            executionPlan.append(move)
-            visitedTimes[node] = arrTime
+            Returns:
+                assignment:
+                    taskIndex -> robotId
+            """
 
-            #Remove visited node from guard lists and update minGuardTime if neicessary
-            for guard in guards[:]:   # Iterate over a copy of the guard list so that when removing an item nothing is skipped
-                if node in guard[1]:
-                    guard[1].remove(node) #alters the real guard list
-                    guard[2] = max(guard[2], arrTime) #alters the real guard list
-                    if len(guard[1]) == 0:
-                        flags.append((guard[0], guard[2]))
-                        guards.remove(guard) #Removes from the real guard list
+            freeRobots = [
+                robot for robot in robots
+                if robot["guardUntil"] is None
+            ]
 
-            enemys = []
-            minGuardTime = arrTime
-            for neighbour in G.adj[G.nodes[node]]:
-                if visitedTimes[neighbour.idx] == -1:
-                    enemys.append(neighbour.idx)
+            if len(freeRobots) < len(level):
+                raise RuntimeError(
+                    f"LBAP impossible: {len(level)} tasks but only "
+                    f"{len(freeRobots)} free robots."
+                )
 
-                #Guard at least until this node is visited
-                minGuardTime = max(minGuardTime,visitedTimes[neighbour.idx])
+            # --------------------------------------------------------
+            # Cost matrix
+            #
+            # rows    = robots
+            # columns = tasks
+            # --------------------------------------------------------
 
-            if len(enemys) == 0:
-                flags.append((node, minGuardTime))
-            else:
-                guards.append([node, enemys, minGuardTime])
+            costs = []
 
-        totalRobots = additionalRobots + minRobots
-        executionPlan.insert(0, (None, root, totalRobots))
+            for robot in freeRobots:
 
-        return executionPlan, totalRobots
+                row = []
+
+                for taskIndex, node, releaseIndex in level:
+
+                    travelTime = flagDistance[robot["node"]][node]
+
+                    earliestArrival = (
+                        robot["freeFrom"] + travelTime
+                    )
+
+                    row.append(earliestArrival)
+
+                costs.append(row)
+
+            numRobots = len(freeRobots)
+            numTasks = len(level)
+
+            # --------------------------------------------------------
+            # Test whether matching with all edges <= threshold exists
+            # --------------------------------------------------------
+
+            def matchingForThreshold(threshold):
+
+                # taskToRobot[j] = robot-row currently assigned to task j
+                taskToRobot = [-1] * numTasks
+
+                def augment(robotIdx, visitedTasks):
+
+                    for taskIdx in range(numTasks):
+
+                        if visitedTasks[taskIdx]:
+                            continue
+
+                        if costs[robotIdx][taskIdx] > threshold:
+                            continue
+
+                        visitedTasks[taskIdx] = True
+
+                        # Task not yet assigned
+                        if taskToRobot[taskIdx] == -1:
+                            taskToRobot[taskIdx] = robotIdx
+                            return True
+
+                        # Try to move currently assigned robot elsewhere
+                        oldRobot = taskToRobot[taskIdx]
+
+                        if augment(oldRobot, visitedTasks):
+                            taskToRobot[taskIdx] = robotIdx
+                            return True
+
+                    return False
+
+                matched = 0
+
+                for robotIdx in range(numRobots):
+
+                    visitedTasks = [False] * numTasks
+
+                    if augment(robotIdx, visitedTasks):
+                        matched += 1
+
+                        if matched == numTasks:
+                            break
+
+                if matched != numTasks:
+                    return None
+
+                return taskToRobot
+
+            # --------------------------------------------------------
+            # Possible bottleneck values
+            # --------------------------------------------------------
+
+            thresholds = sorted({
+                costs[r][t]
+                for r in range(numRobots)
+                for t in range(numTasks)
+            })
+
+            # --------------------------------------------------------
+            # Binary search for smallest feasible bottleneck
+            # --------------------------------------------------------
+
+            left = 0
+            right = len(thresholds) - 1
+
+            bestMatching = None
+            bestThreshold = None
+
+            while left <= right:
+
+                mid = (left + right) // 2
+                threshold = thresholds[mid]
+
+                matching = matchingForThreshold(threshold)
+
+                if matching is not None:
+                    bestMatching = matching
+                    bestThreshold = threshold
+                    right = mid - 1
+                else:
+                    left = mid + 1
+
+            if bestMatching is None:
+                raise RuntimeError("No feasible LBAP assignment found.")
+
+            # --------------------------------------------------------
+            # Convert matching to taskIndex -> robotId
+            # --------------------------------------------------------
+
+            assignment = {}
+
+            for localTaskIdx, robotRow in enumerate(bestMatching):
+
+                globalTaskIndex = level[localTaskIdx][0]
+                robotId = freeRobots[robotRow]["id"]
+
+                assignment[globalTaskIndex] = robotId
+
+            return assignment, bestThreshold
+
+
+        # ============================================================
+        # LEVEL DISTRIBUTION
+        # ============================================================
+
+        def levelDistribution(strategy, minRobots):
+
+            levels = []
+            currentLevel = []
+
+            # Only release indices matter here.
+            # Concrete robot IDs are determined later by the LBAP.
+            activeGuards = []
+
+            levelCapacity = None
+
+            for i, (node, releaseIndex) in enumerate(strategy):
+
+                # releaseIndex is the full list of strategy indices this
+                # guard depends on; for capacity bookkeeping only the
+                # LAST one to occur (highest index) matters, since that
+                # is when the guard structurally becomes releasable.
+                maxRelease = max(releaseIndex)
+
+                # ----------------------------------------------------
+                # Start new level
+                # ----------------------------------------------------
+
+                if not currentLevel:
+
+                    levelCapacity = (
+                        minRobots - len(activeGuards)
+                    )
+
+                    if levelCapacity < 1:
+                        return levelDistribution(
+                            strategy,
+                            minRobots + 1
+                        )
+
+                # ----------------------------------------------------
+                # No more robots available inside this level
+                # ----------------------------------------------------
+
+                if len(currentLevel) >= levelCapacity:
+
+                    levels.append(currentLevel)
+                    currentLevel = []
+
+                    levelCapacity = (
+                        minRobots - len(activeGuards)
+                    )
+
+                    if levelCapacity < 1:
+                        return levelDistribution(
+                            strategy,
+                            minRobots + 1
+                        )
+
+                # Store global strategy index as well!
+                currentLevel.append(
+                    (i, node, releaseIndex)
+                )
+
+                # ----------------------------------------------------
+                # Old guards released by reaching task i
+                # ----------------------------------------------------
+
+                freedNow = [
+                    release
+                    for release in activeGuards
+                    if release == i
+                ]
+
+                if freedNow:
+
+                    activeGuards = [
+                        release
+                        for release in activeGuards
+                        if release != i
+                    ]
+
+                # ----------------------------------------------------
+                # Current task creates new guard
+                # ----------------------------------------------------
+
+                if maxRelease != i:
+                    activeGuards.append(maxRelease)
+
+                # ----------------------------------------------------
+                # Change in free robot set -> level ends
+                # ----------------------------------------------------
+
+                if freedNow or maxRelease == i:
+
+                    levels.append(currentLevel)
+
+                    currentLevel = []
+                    levelCapacity = None
+
+            if currentLevel:
+                levels.append(currentLevel)
+
+            return levels, minRobots
+
+
+        # ============================================================
+        # CREATE LEVELS
+        # ============================================================
+
+        # If labels[(None, root)] is your B-label / minimum robot count:
+        initialRobotNumber = minRobots
+
+        levels, robotsNeeded = levelDistribution(strategy, initialRobotNumber)
+
+
+        # ============================================================
+        # ROBOT STATE
+        # ============================================================
+
+        robots = [
+            {
+                "id": robotId,
+
+                # Current physical position
+                "node": root,
+
+                # Earliest time at which this robot may depart
+                "freeFrom": 0,
+
+                # None => currently free
+                # list  => guarding, still waiting on these strategy
+                #          indices (the guard's full dependency set)
+                "guardUntil": None,
+
+                # Time at which this robot started its current guard
+                # duty (its own physical arrival there) - a guard can
+                # never be released before that, no matter how fast
+                # the task(s) satisfying its dependency finish.
+                "guardSince": 0,
+
+                # Remaining dependency indices not yet reached, and the
+                # latest execution time seen among the ones that have.
+                "guardPending": set(),
+                "guardMaxDepTime": 0
+            }
+            for robotId in range(robotsNeeded)
+        ]
+
+
+        # Fast access by ID
+        robotById = {
+            robot["id"]: robot
+            for robot in robots
+        }
+
+
+        # ============================================================
+        # EXECUTION
+        # ============================================================
+
+        executionPlan = []
+
+        for level in levels:
+
+            # --------------------------------------------------------
+            # Solve LBAP using robots currently free
+            # --------------------------------------------------------
+
+            assignment, bottleneck = LBAPSolver(level, robots)
+
+            # --------------------------------------------------------
+            # Compute movement information BEFORE modifying robots
+            # --------------------------------------------------------
+
+            movementInfo = {}
+
+            for taskIndex, node, releaseIndex in level:
+
+                robotId = assignment[taskIndex]
+                robot = robotById[robotId]
+
+                source = robot["node"]
+
+                departure = robot["freeFrom"]
+
+                physicalArrival = (
+                    departure
+                    + flagDistance[source][node]
+                )
+
+                movementInfo[taskIndex] = {
+                    "robot": robotId,
+                    "source": source,
+                    "departure": departure,
+                    "arrival": physicalArrival
+                }
+
+            # --------------------------------------------------------
+            # Execute tasks in SEARCH STRATEGY order
+            # --------------------------------------------------------
+
+            for taskIndex, node, releaseIndex in level:
+
+                info = movementInfo[taskIndex]
+
+                robotId = info["robot"]
+                robot = robotById[robotId]
+
+                # Levels only decide which robot is assigned to which
+                # node - each task completes as soon as its own robot
+                # physically gets there, independent of other tasks.
+                executionTime = info["arrival"]
+
+                # taskIndex 0 is always the root itself: the assigned
+                # robot is already standing there at t=0, so there is
+                # no actual movement to record.
+                if info["source"] != node:
+
+                    executionPlan.append((
+                        info["source"],
+                        node,
+                        1,
+                        info["departure"],
+                        executionTime
+                    ))
+
+                # Robot is physically located at its assigned node.
+                robot["node"] = node
+
+                # ----------------------------------------------------
+                # Current robot becomes guard or immediately free
+                # ----------------------------------------------------
+
+                if max(releaseIndex) == taskIndex:
+
+                    robot["guardUntil"] = None
+                    robot["freeFrom"] = executionTime
+
+                else:
+
+                    robot["guardUntil"] = releaseIndex
+                    robot["guardSince"] = executionTime
+                    robot["guardPending"] = set(releaseIndex)
+                    robot["guardMaxDepTime"] = 0
+
+                    # Exact release time is not yet known.
+                    # It will be set once every dependency executes.
+                    robot["freeFrom"] = None
+
+
+                # ----------------------------------------------------
+                # Reaching taskIndex may satisfy one dependency of
+                # OTHER guards - a guard is only actually released once
+                # ALL of its dependencies have fired, using the LATEST
+                # of their real completion times (never just whichever
+                # one happens to be the highest strategy index).
+                # ----------------------------------------------------
+
+                for otherRobot in robots:
+
+                    if taskIndex in otherRobot["guardPending"]:
+
+                        otherRobot["guardPending"].discard(taskIndex)
+
+                        otherRobot["guardMaxDepTime"] = max(
+                            otherRobot["guardMaxDepTime"],
+                            executionTime
+                        )
+
+                        if not otherRobot["guardPending"]:
+
+                            otherRobot["guardUntil"] = None
+
+                            # The guard can't leave before it itself
+                            # got there, even if every dependency it
+                            # was waiting on cleared faster elsewhere.
+                            otherRobot["freeFrom"] = max(
+                                otherRobot["guardSince"],
+                                otherRobot["guardMaxDepTime"]
+                            )
+
+
+        executionPlan.insert(0, (None, root, robotsNeeded))
+
+        return executionPlan, robotsNeeded
 
 
 
@@ -247,13 +677,62 @@ def graphSearch(G : Graph, availableTime, startNodes, obstacles, distanceMap, al
             return checkedTreesCounter >= maxTrees
         return time.monotonic() - startingTime >= availableTime
 
+     # ---------------------------------------------------
+    # TEST: CELL PRIOR OBJECTIVE OF A STRATEGY
+    # Only used to break ties between trees that need the same (minimal so
+    # far) number of robots - walks the strategy's moves to get every
+    # node's first-visit time, then sums cellpriors[cell] * firstVisitTime
+    # over every cell, each cell counting only once (for whichever node
+    # reaches it first). Lower is better, same convention as DP's internal
+    # computeExpTime().
+    # ---------------------------------------------------
+
+    def computeCellPriorObjective(strategy):
+
+        targetedNodes = {move[1] for move in strategy if len(move) == 5}
+
+        nodeVisitedTime = {}
+
+        for i in range(startNodes):
+            if i not in targetedNodes:
+                nodeVisitedTime[i] = 0
+
+        for move in strategy:
+
+            if len(move) != 5:
+                continue
+
+            _, target, _, _, tArrival = move
+
+            if target not in nodeVisitedTime or tArrival < nodeVisitedTime[target]:
+                nodeVisitedTime[target] = tArrival
+
+        foundPriors = np.copy(cellpriors)
+
+        objective = 0.0
+
+        for nodeIdx in sorted(nodeVisitedTime, key=lambda idx: nodeVisitedTime[idx]):
+
+            for cell in D[nodeIdx]:
+
+                objective += foundPriors[cell[0], cell[1]] * nodeVisitedTime[nodeIdx]
+                foundPriors[cell[0], cell[1]] = 0.0
+
+        return objective
+
+
     # ------------------------------------------------------------
     # THE REAL GRAPH SEARCH ALGORITHIM USING EVERYTHING FROM ABOVE
     # ------------------------------------------------------------
+    
+    #Check if cell prior Tiebreaks are possible meaning are priors given?
+    useCellPriorTiebreak = cellpriors is not None and D is not None
+
     startingTime = time.monotonic()
     minCost = np.inf
     bestStrategy = None
     bestTree = None
+    bestCellPriorObjective = np.inf
     checkedTreesCounter = 0
 
     while not shouldStop():
@@ -261,10 +740,22 @@ def graphSearch(G : Graph, availableTime, startNodes, obstacles, distanceMap, al
         root = random.randint(0,startNodes-1)
         T = computeRandomSpanningTree(G,root)
         strat, neededRobots = treeSearch(T,root)
+
         if neededRobots < minCost:
             minCost = neededRobots
             bestStrategy = strat
             bestTree = T
 
-    return bestStrategy, bestTree, checkedTreesCounter, minCost
+            if useCellPriorTiebreak:
+                bestCellPriorObjective = computeCellPriorObjective(strat)
 
+        elif useCellPriorTiebreak and neededRobots == minCost:
+
+            candidateCellPriorObjective = computeCellPriorObjective(strat)
+
+            if candidateCellPriorObjective < bestCellPriorObjective:
+                bestCellPriorObjective = candidateCellPriorObjective
+                bestStrategy = strat
+                bestTree = T
+
+    return bestStrategy, bestTree, checkedTreesCounter, minCost
