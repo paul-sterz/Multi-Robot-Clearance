@@ -16,6 +16,8 @@ from approachTest import (
     GRAPH_ALPHA,
 )
 
+from baselineTest import baselineTest
+
 from treeTest import runSpanningTreeEvolution
 
 
@@ -41,6 +43,7 @@ app_mode = st.radio(
     "Mode",
     [
         "Approach Test",
+        "Baseline Test",
         "Spanning Tree Evolution",
     ],
     horizontal=True,
@@ -85,6 +88,20 @@ for key, default in [
     ("available_robots", 6),
 
     ("simulation_results", None),
+
+    ("baseline_num_of_runs", 100),
+
+    ("baseline_stopping_criterion", "Computation time"),
+
+    ("baseline_computation_time", 3),
+
+    ("baseline_max_trees", 100),
+
+    ("baseline_third_approach", APPROACH_NAMES[0]),
+
+    ("baseline_robot_increase_percent", 100),
+
+    ("baseline_simulation_results", None),
 
     ("evo_approach", APPROACH_NAMES[0]),
 
@@ -701,6 +718,246 @@ if app_mode == "Approach Test":
 
         st.dataframe(
             buildStatsTable(results["resultsNodePrior"]).round(4),
+            use_container_width=True,
+            hide_index=True,
+        )
+
+
+elif app_mode == "Baseline Test":
+
+    # ==================================================
+    # RUN PARAMETERS
+    # ==================================================
+
+
+    st.markdown("### Run Parameters")
+
+    baseline_num_of_runs = st.slider(
+        "Number of runs per graph",
+        1,
+        1000,
+        st.session_state.baseline_num_of_runs,
+        key="baseline_num_of_runs_slider",
+    )
+
+    st.session_state.baseline_num_of_runs = baseline_num_of_runs
+
+    baseline_stopping_criterion = st.radio(
+        "Stop after",
+        [
+            "Computation time",
+            "Number of spanning trees",
+        ],
+        horizontal=True,
+        index=[
+            "Computation time",
+            "Number of spanning trees",
+        ].index(st.session_state.baseline_stopping_criterion),
+        key="baseline_stopping_radio",
+    )
+
+    st.session_state.baseline_stopping_criterion = baseline_stopping_criterion
+
+    if baseline_stopping_criterion == "Computation time":
+
+        baseline_computation_time = st.slider(
+            "Computation Time (s)",
+            1,
+            60,
+            st.session_state.baseline_computation_time,
+            key="baseline_computation_time_slider",
+        )
+
+        st.session_state.baseline_computation_time = baseline_computation_time
+
+        baseline_max_trees = None
+
+    else:
+
+        baseline_max_trees = st.slider(
+            "Number of spanning trees",
+            100,
+            10000,
+            st.session_state.baseline_max_trees,
+            step=100,
+            key="baseline_max_trees_slider",
+        )
+
+        st.session_state.baseline_max_trees = baseline_max_trees
+
+        baseline_computation_time = None
+
+    baseline_third_approach = st.selectbox(
+        "3rd Approach (compared against Baseline and Baseline Modified)",
+        APPROACH_NAMES,
+        index=APPROACH_NAMES.index(st.session_state.baseline_third_approach),
+        key="baseline_third_approach_select",
+    )
+
+    st.session_state.baseline_third_approach = baseline_third_approach
+
+    baseline_robot_increase_percent = st.slider(
+        "Extra robots for the 3rd approach, relative to what "
+        "Baseline/Baseline Modified need (%)",
+        0,
+        200,
+        st.session_state.baseline_robot_increase_percent,
+        step=10,
+        key="baseline_robot_increase_percent_slider",
+    )
+
+    st.session_state.baseline_robot_increase_percent = baseline_robot_increase_percent
+
+    st.caption(
+        "Baseline and Baseline Modified always use the minimum number of "
+        "robots their own strategy needs. The 3rd approach is given "
+        f"max(Baseline, Baseline Modified) robots, scaled by "
+        f"+{baseline_robot_increase_percent}% (e.g. baselines need 4 "
+        f"robots, slider at +100% → 3rd approach gets 8 robots)."
+    )
+
+
+    # ==================================================
+    # SIMULATE
+    # ==================================================
+
+
+    st.markdown("---")
+
+    if st.button(
+        "Simulate Strategys",
+        type="primary",
+        use_container_width=True,
+        key="baseline_simulate_button",
+    ):
+
+        with st.spinner(
+            f"Running {baseline_num_of_runs} runs × "
+            f"(Baseline, Baseline Modified, {baseline_third_approach})..."
+        ):
+
+            baselineResults = baselineTest(
+                detecRad=detection_radius,
+                numOfRuns=baseline_num_of_runs,
+                robotIncreasePercent=baseline_robot_increase_percent,
+                thirdApproachName=baseline_third_approach,
+                availableTime=baseline_computation_time,
+                maxTrees=baseline_max_trees,
+            )
+
+        st.session_state.baseline_simulation_results = {
+            "G": baselineResults["G"],
+            "regularEdges": list(baselineResults["G"].edges.keys()),
+            "priors": baselineResults["priors"],
+            "methodNames": baselineResults["methodNames"],
+            "numGraphNodes": baselineResults["numGraphNodes"],
+            "numGraphEdges": baselineResults["numGraphEdges"],
+            "resultsCellPrior": baselineResults["resultsCellPrior"],
+            "resultsRobots": baselineResults["resultsRobots"],
+            "resultsTrees": baselineResults["resultsTrees"],
+            "resultsTime": baselineResults["resultsTime"],
+            "stopping_criterion": baseline_stopping_criterion,
+            "computation_time": baseline_computation_time,
+            "max_trees": baseline_max_trees,
+        }
+
+
+    #------------------------------------------------------------------
+    # PLOTS OF THE RESULTS
+    #------------------------------------------------------------------
+
+
+    baselineResultsState = st.session_state.baseline_simulation_results
+
+    if baselineResultsState is not None:
+
+        st.markdown("### Environment with Navigation Graph")
+
+        st.caption(
+            "Baseline, Baseline Modified and the 3rd approach all run on "
+            "this exact same navigation graph, built once and reused for "
+            "every run."
+        )
+
+        st.plotly_chart(
+            buildEnvironmentFigure(
+                obstacles,
+                baselineResultsState["priors"],
+                H,
+                W,
+                G=baselineResultsState["G"],
+                regularEdges=baselineResultsState["regularEdges"],
+            ),
+            use_container_width=True,
+        )
+
+        # --------------------------------------------------
+        # STATS TABLE
+        #
+        # Runs without clearance (objective value == inf) are excluded from
+        # min/max/mean/variance - they only increase the "No clearance
+        # possible" counter. All three methods share the same graph (so
+        # Nodes/Edges is one shared value, like in Approach Test), but
+        # unlike Approach Test, Available Robots varies per method (Baseline
+        # / Baseline Modified always use their own computed minimum robot
+        # count; the 3rd approach gets a budget derived from the baselines,
+        # which also varies run to run) - so it is averaged per method
+        # instead of shown as one shared value.
+        # --------------------------------------------------
+
+        baselineTimeIsPrescribed = (
+            baselineResultsState["stopping_criterion"] == "Computation time"
+        )
+
+        baselineNumGraphNodes = baselineResultsState["numGraphNodes"]
+        baselineNumGraphEdges = baselineResultsState["numGraphEdges"]
+
+        def buildBaselineStatsTable(resultsArray):
+
+            rows = []
+
+            for methodIdx, methodName in enumerate(baselineResultsState["methodNames"]):
+
+                column = resultsArray[:, methodIdx]
+
+                finiteMask = np.isfinite(column)
+                finiteValues = column[finiteMask]
+
+                noClearanceCount = int(np.sum(~finiteMask))
+
+                if baselineTimeIsPrescribed:
+                    usedTime = f"{baselineResultsState['computation_time']} s"
+                    spanningTrees = float(
+                        np.mean(baselineResultsState["resultsTrees"][:, methodIdx])
+                    )
+                else:
+                    usedTime = float(
+                        np.mean(baselineResultsState["resultsTime"][:, methodIdx])
+                    )
+                    spanningTrees = f"{baselineResultsState['max_trees']} trees"
+
+                rows.append({
+                    "Approach Name": methodName,
+                    "Nodes": baselineNumGraphNodes,
+                    "Edges": baselineNumGraphEdges,
+                    "Spanning Trees": spanningTrees,
+                    "Used Time": usedTime,
+                    "Available Robots": float(
+                        np.mean(baselineResultsState["resultsRobots"][:, methodIdx])
+                    ),
+                    "Min": float(np.min(finiteValues)) if finiteValues.size > 0 else None,
+                    "Max": float(np.max(finiteValues)) if finiteValues.size > 0 else None,
+                    "Mean": float(np.mean(finiteValues)) if finiteValues.size > 0 else None,
+                    "Variance": float(np.var(finiteValues)) if finiteValues.size > 0 else None,
+                    "No Clearance Count": noClearanceCount,
+                })
+
+            return pd.DataFrame(rows)
+
+        st.markdown("### Cell Prior Objective")
+
+        st.dataframe(
+            buildBaselineStatsTable(baselineResultsState["resultsCellPrior"]).round(4),
             use_container_width=True,
             hide_index=True,
         )
