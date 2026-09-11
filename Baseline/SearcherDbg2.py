@@ -622,6 +622,8 @@ def graphSearch(G : Graph, availableTime, startNodes, obstacles, distanceMap, al
 
                         if not otherRobot["guardPending"]:
 
+                            print(f"RELEASE robot {otherRobot['id']} at node {otherRobot['node']}: guardSince={otherRobot['guardSince']}, guardMaxDepTime={otherRobot['guardMaxDepTime']} -> freeFrom={max(otherRobot['guardSince'], otherRobot['guardMaxDepTime'])}")
+
                             otherRobot["guardUntil"] = None
 
                             # The guard can't leave before it itself
