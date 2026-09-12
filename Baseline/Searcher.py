@@ -96,27 +96,47 @@ def graphSearch(G : Graph, availableTime, startNodes, obstacles, distanceMap, al
         # that a "releaseIndex" resolved to len(strategy) always matches
         # the index that entry will actually end up at.
         strategy = []
+        nodeStrategyIndex = {}
 
         def addEntry(node):
             # enemys = graph-neighbours of node not yet reached by the
             # search strategy at this point -> node's guard must stay
             # until all of them have been visited.
-            enemys = [
-                neighbour.idx
-                for neighbour in G.adj[G.nodes[node]]
-                if visited[neighbour.idx] == 0
-            ]
+            #
+            # A neighbour already visited at this point is NOT
+            # automatically safe: the LBAP later assigns whichever robot
+            # is physically fastest to each task, so an
+            # earlier-scheduled ("already visited") neighbour can still
+            # end up with a LATER real arrival time than this node. Such
+            # neighbours go straight into "deps" as known strategy
+            # indices, to be resolved against their real execution time
+            # once it is known; still-unscheduled neighbours go into
+            # "pending", resolved once they are added later.
+            pendingEnemys = []
+            knownDeps = []
 
-            if len(enemys) > 0:
+            for neighbour in G.adj[G.nodes[node]]:
+                if visited[neighbour.idx] == 0:
+                    pendingEnemys.append(neighbour.idx)
+                else:
+                    knownDeps.append(nodeStrategyIndex[neighbour.idx])
+
+            myIndex = len(strategy)
+
+            if len(pendingEnemys) > 0:
                 # While under construction: track which enemy NODES are
                 # still unscheduled ("pending"), and which STRATEGY
                 # INDICES this guard already depends on ("deps") - a
                 # guard may have to wait on several of these, not just
                 # whichever happened to be scheduled last.
-                strategy.append([node, {"pending": set(enemys), "deps": []}])
+                strategy.append([node, {"pending": set(pendingEnemys), "deps": knownDeps}])
+            elif len(knownDeps) > 0:
+                strategy.append([node, knownDeps])
             else:
-                # No dependency: releases as soon as its own task runs.
-                strategy.append([node, [len(strategy)]])
+                # No dependency at all: releases as soon as its own task runs.
+                strategy.append([node, [myIndex]])
+
+            nodeStrategyIndex[node] = myIndex
 
         addEntry(root)
 
@@ -434,16 +454,22 @@ def graphSearch(G : Graph, availableTime, startNodes, obstacles, distanceMap, al
 
                 # ----------------------------------------------------
                 # Current task creates new guard
+                #
+                # With backward dependencies now possible (a neighbour
+                # visited earlier in strategy order, see addEntry above),
+                # maxRelease can legitimately be <= i - that still means
+                # no guard persists past this task, exactly like maxRelease
+                # == i used to.
                 # ----------------------------------------------------
 
-                if maxRelease != i:
+                if maxRelease > i:
                     activeGuards.append(maxRelease)
 
                 # ----------------------------------------------------
                 # Change in free robot set -> level ends
                 # ----------------------------------------------------
 
-                if freedNow or maxRelease == i:
+                if freedNow or maxRelease <= i:
 
                     levels.append(currentLevel)
 
@@ -513,6 +539,13 @@ def graphSearch(G : Graph, availableTime, startNodes, obstacles, distanceMap, al
 
         executionPlan = []
 
+        # Real execution time of every task, filled in as tasks run (in
+        # strict strategy-index order) - needed so a guard's dependency on
+        # an earlier-indexed (already executed) task can be resolved
+        # immediately against its real arrival time, instead of only ever
+        # waiting for later-indexed tasks via the broadcast below.
+        taskExecutionTime = {}
+
         for level in levels:
 
             # --------------------------------------------------------
@@ -580,24 +613,47 @@ def graphSearch(G : Graph, availableTime, startNodes, obstacles, distanceMap, al
                 # Robot is physically located at its assigned node.
                 robot["node"] = node
 
+                # This task's own real execution time is now fixed - make
+                # it available for any later dependency lookup.
+                taskExecutionTime[taskIndex] = executionTime
+
                 # ----------------------------------------------------
                 # Current robot becomes guard or immediately free
+                #
+                # releaseIndex may mix dependencies whose real time is
+                # already known (their taskIndex already executed -
+                # possibly even taskIndex itself, or an
+                # earlier-in-strategy-order neighbour whose LBAP
+                # assignment nonetheless made it arrive later than this
+                # node) with dependencies still ahead (resolved later via
+                # the broadcast below).
                 # ----------------------------------------------------
 
-                if max(releaseIndex) == taskIndex:
+                knownDepTimes = [
+                    taskExecutionTime[dep]
+                    for dep in releaseIndex
+                    if dep in taskExecutionTime
+                ]
+                pendingDeps = [
+                    dep for dep in releaseIndex
+                    if dep not in taskExecutionTime
+                ]
+                knownMaxDepTime = max(knownDepTimes) if knownDepTimes else 0
+
+                if not pendingDeps:
 
                     robot["guardUntil"] = None
-                    robot["freeFrom"] = executionTime
+                    robot["freeFrom"] = max(executionTime, knownMaxDepTime)
 
                 else:
 
-                    robot["guardUntil"] = releaseIndex
+                    robot["guardUntil"] = pendingDeps
                     robot["guardSince"] = executionTime
-                    robot["guardPending"] = set(releaseIndex)
-                    robot["guardMaxDepTime"] = 0
+                    robot["guardPending"] = set(pendingDeps)
+                    robot["guardMaxDepTime"] = knownMaxDepTime
 
                     # Exact release time is not yet known.
-                    # It will be set once every dependency executes.
+                    # It will be set once every remaining dependency executes.
                     robot["freeFrom"] = None
 
 
