@@ -129,36 +129,18 @@
       <button id="c-play">Play</button>
       <span id="c-time-label" class="hint"></span>
     </div>
-  </fieldset>
-
-  <fieldset id="playback">
-    <legend>Clearing strategy</legend>
-    <div id="strat-meta" class="hint"></div>
-    <label><input type="checkbox" id="show-strat"> Paint the strategy state</label>
-    <label><input type="checkbox" id="show-machines"> Show the machines, with their ids</label>
-    <input type="range" id="step" min="0" max="0" value="0">
-    <div class="row">
-      <button id="play">Play</button>
-      <span id="step-label" class="hint"></span>
-    </div>
+    <label class="field">
+      <span>Detection set of an occupied vertex</span>
+      <select id="c-inspect">
+        <option value="-1">&mdash; none &mdash;</option>
+      </select>
+    </label>
     <p class="hint">
       <span class="key k-clear"></span> cleared
-      <span class="key k-dirty"></span> contaminated
+      <span class="key k-dirty"></span> not yet cleared
       <span class="key k-seen"></span> watched now
-      &middot; <kbd>&larr;</kbd><kbd>&rarr;</kbd> step
+      <span class="key k-inspect"></span> inspected vertex
     </p>
-  </fieldset>
-
-  <fieldset id="fleet" style="display:none">
-    <legend>Fleet</legend>
-    <div id="fleet-meta" class="hint"></div>
-    <div id="fleet-list"></div>
-    <p class="hint">Click a machine &mdash; in the list or in the view &mdash; for
-      the surface it watches from where it stands and the ground it has walked.
-      Playing walks the team along the paths it really takes between two steps.</p>
-    <p class="hint">A searcher in transit is credited with nothing: a machine
-      watches nothing, and the guarantee is about the vertices a step holds, not
-      about the walking between them.</p>
   </fieldset>
 
   <p class="foot">

@@ -49,7 +49,15 @@ def _get_scene(name: str) -> "clearing.Scene":
 
 
 class Hotspot(BaseModel):
-    cell: int
+    # A clicked point on the viewer's surface, in absolute Scene coordinates
+    # (the viewer's own render points are a differently-indexed, decimated
+    # cloud -- see adapter.viewer_surface_cell_map -- so a raw point index
+    # from the browser is not a valid Scene cell id; the browser sends the
+    # 3D position it actually clicked, and the nearest real cell is looked
+    # up here instead).
+    x: float
+    y: float
+    z: float
     category: Literal[0, 1, 2]
 
 
@@ -89,22 +97,15 @@ def _sigma_from_radius(radius_m: float) -> float:
     return radius_m / np.sqrt(2 * np.log(50))
 
 
-def _validate_hotspots(scene, hotspots: list[Hotspot]) -> None:
-    n_cells = scene.n_cells
-    for h in hotspots:
-        if not (0 <= h.cell < n_cells):
-            raise HTTPException(400, f"hotspot cell {h.cell} out of range [0, {n_cells})")
-
-
 def _compute_priors(scene, req: PriorsRequest) -> np.ndarray:
-    _validate_hotspots(scene, req.hotspots)
+    hotspot_cells = [
+        (adapter.nearest_cell(scene, (h.x, h.y, h.z)), h.category) for h in req.hotspots
+    ]
     sigma = _sigma_from_radius(req.prior_radius_m)
-    return adapter.compute_priors(
-        scene, [(h.cell, h.category) for h in req.hotspots], req.prior_l, sigma, req.epsilon,
-    )
+    return adapter.compute_priors(scene, hotspot_cells, req.prior_l, sigma, req.epsilon)
 
 
-def _quantize_priors(priors: np.ndarray) -> dict:
+def _quantize_priors(priors: np.ndarray, remap: np.ndarray | None = None) -> dict:
     """Priors as a base64-packed uint16 array -- a heatmap only needs relative
     intensity, and packing keeps a quarter-million-cell scene's worth of
     priors a few hundred KB instead of a multi-MB JSON float array.
@@ -136,6 +137,13 @@ def _quantize_priors(priors: np.ndarray) -> dict:
         q = np.round(t * 65535).astype("<u2")
     else:
         q = np.zeros(priors.shape[0], dtype="<u2")
+    # The viewer's own surface point cloud is a differently-sized,
+    # differently-indexed decimation of the real cells (see
+    # adapter.viewer_surface_cell_map) -- reindex onto it here so the caller
+    # can drop `q[i]` straight onto its `S.surf` point `i` with no mapping of
+    # its own to do.
+    if remap is not None:
+        q = q[remap]
     return {
         "q": base64.b64encode(q.tobytes()).decode("ascii"),
         "min": float(priors.min()),
@@ -143,11 +151,15 @@ def _quantize_priors(priors: np.ndarray) -> dict:
     }
 
 
+def _viewer_remap(scene, scene_name: str) -> np.ndarray:
+    return adapter.viewer_surface_cell_map(scene, scene_name, os.path.join(VIEWER_DIR, "data"))
+
+
 @app.post("/api/priors")
 def preview_priors(req: PriorsRequest):
     scene = _get_scene(req.scene)
     priors = _compute_priors(scene, req)
-    return {"priors": _quantize_priors(priors)}
+    return {"priors": _quantize_priors(priors, _viewer_remap(scene, req.scene))}
 
 
 @app.post("/api/run")
@@ -195,7 +207,7 @@ def run_strategy(req: RunRequest):
         "root": root,
         "moves": moves,
         "visit_time": {str(v): t for v, t in visit_time.items()},
-        "priors": _quantize_priors(priors),
+        "priors": _quantize_priors(priors, _viewer_remap(scene, req.scene)),
         "metrics": {
             "checked_trees": checked_trees,
             "fitness": None if not np.isfinite(fitness) else fitness,

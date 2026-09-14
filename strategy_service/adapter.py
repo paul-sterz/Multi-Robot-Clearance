@@ -20,12 +20,16 @@ adaptation (see the approved plan's "Key technical findings" for the why):
 
 from __future__ import annotations
 
+import base64
+import json
 import os
+import re
 import sys
 
 import numpy as np
 import scipy.sparse
 from scipy.sparse.csgraph import dijkstra as sparse_dijkstra
+from scipy.spatial import cKDTree
 
 _CLEARING_SCENES_DIR = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "clearing-scenes"
@@ -37,12 +41,105 @@ from clearing import roster as clearing_roster  # noqa: E402
 
 from strategy_service.approaches import Graph  # noqa: E402
 
+# The scene's cell lattice (topology + edge lengths) never changes once
+# loaded, only the hotspot source cells do -- so the sparse adjacency matrix
+# is built once per scene and reused, rather than re-assembled from
+# `evader_edges` on every /api/priors preview call. Keyed by id(scene) since
+# server.py already caches one Scene object per name for the process
+# lifetime; nothing here needs to survive past that.
+_adjacency_cache: dict[int, "scipy.sparse.csr_matrix"] = {}
+
+
+def _cell_adjacency(scene) -> "scipy.sparse.csr_matrix | None":
+    key = id(scene)
+    if key not in _adjacency_cache:
+        a, b = scene.evader_edges
+        if a.size:
+            w = np.linalg.norm(scene.cell_xyz[a] - scene.cell_xyz[b], axis=1)
+            _adjacency_cache[key] = scipy.sparse.coo_matrix(
+                (np.concatenate([w, w]), (np.concatenate([a, b]), np.concatenate([b, a]))),
+                shape=(scene.n_cells, scene.n_cells),
+            ).tocsr()
+        else:
+            _adjacency_cache[key] = None
+    return _adjacency_cache[key]
+
+
+# The viewer's shipped per-scene JS (viewer/data/<scene>.js) renders a
+# DECIMATED point cloud for the walkable surface -- its point count and
+# indexing do not match `Scene.cell_xyz` at all (confirmed empirically:
+# same scene, different point count, and index i is a different physical
+# location in each). A click in the viewer can only be turned into a real
+# Scene cell id via its 3D position, not by reusing whatever index the
+# viewer's own raycast happened to hit. One KD-tree per scene, cached like
+# the adjacency matrix above.
+_kdtree_cache: dict[int, cKDTree] = {}
+
+
+def _cell_kdtree(scene) -> cKDTree:
+    key = id(scene)
+    if key not in _kdtree_cache:
+        _kdtree_cache[key] = cKDTree(scene.cell_xyz)
+    return _kdtree_cache[key]
+
+
+def nearest_cell(scene, xyz) -> int:
+    """The Scene cell id whose `cell_xyz` is closest to a clicked point."""
+    _dist, idx = _cell_kdtree(scene).query(xyz)
+    return int(idx)
+
+
+# The same decimation/reindexing problem, the other direction: a value
+# computed per real Scene cell (like the prior heatmap) has to be shown on
+# the viewer's own differently-sized, differently-ordered surface point
+# cloud. Reads the exact same viewer/data/<scene>.js the browser loads,
+# decodes its "surface" points with the same convention app.js's own
+# dequantise() uses, and maps each one to its nearest real cell -- once per
+# scene, cached, so a heatmap response can be reindexed to line up with
+# `S.surf` with no changes needed on the JS side.
+_viewer_cell_map_cache: dict[str, np.ndarray] = {}
+
+
+def viewer_surface_cell_map(scene, scene_name: str, viewer_data_dir: str) -> np.ndarray:
+    if scene_name in _viewer_cell_map_cache:
+        return _viewer_cell_map_cache[scene_name]
+
+    path = os.path.join(viewer_data_dir, f"{scene_name}.js")
+    with open(path, "r", encoding="utf-8") as f:
+        content = f.read()
+    pattern = r"window\.SCENES\[" + re.escape(json.dumps(scene_name)) + r"\]\s*=\s*(\{.*\});?\s*$"
+    m = re.search(pattern, content, re.S)
+    if not m:
+        raise ValueError(f"could not find viewer data for scene {scene_name!r} in {path}")
+    payload = json.loads(m.group(1))
+
+    centre = np.array(payload["centre"], dtype=np.float64)
+    surf = payload["surface"]
+    q = np.frombuffer(base64.b64decode(surf["q"]), dtype="<u2").astype(np.float64).reshape(-1, 3)
+    points = q * np.array(surf["scale"]) + np.array(surf["offset"]) + centre
+
+    _dist, idx = _cell_kdtree(scene).query(points)
+    mapping = idx.astype(np.int64)
+    _viewer_cell_map_cache[scene_name] = mapping
+    return mapping
+
 
 def compute_priors(scene, hotspots, l, sigma, epsilon=0.05) -> np.ndarray:
     """The same math as GraphBuilder.py's PART 1 (per-category weights, a
     Gaussian mixture by shortest-path distance, normalize, blend with a
     uniform background), over the scene's own cell adjacency instead of a
     grid.
+
+    This has to be a per-CELL field, not a per-VERTEX one: a hotspot can sit
+    on any of a scene's ~30k-290k walkable cells (wherever it was clicked),
+    not only on one of its ~30-150 graph vertices, and the heatmap needs a
+    value everywhere on the surface, not just at those vertices. The scene's
+    own precomputed `travel_seconds` is a vertex-to-vertex table and has no
+    notion of an arbitrary cell at all, so it cannot stand in here -- the
+    single-source Dijkstra below (one call per hotspot, over the cached
+    lattice from `_cell_adjacency`) is what actually produces that field.
+    `Node.prior` (used by the search itself) is then just this field summed
+    over each node's detection set, in `build_graph` below.
 
     hotspots: list of (cell_id: int, category: 0/1/2).
     Returns an (n_cells,) array of per-cell prior mass.
@@ -53,13 +150,8 @@ def compute_priors(scene, hotspots, l, sigma, epsilon=0.05) -> np.ndarray:
     sigma = max(float(sigma), 1e-6)
 
     if hotspots and n:
-        a, b = scene.evader_edges
-        if a.size:
-            w = np.linalg.norm(scene.cell_xyz[a] - scene.cell_xyz[b], axis=1)
-            adj = scipy.sparse.coo_matrix(
-                (np.concatenate([w, w]), (np.concatenate([a, b]), np.concatenate([b, a]))),
-                shape=(n, n),
-            ).tocsr()
+        adj = _cell_adjacency(scene)
+        if adj is not None:
             sources = [int(cell) for cell, _ in hotspots]
             dist = sparse_dijkstra(adj, directed=False, indices=sources)
             for (_, category), d in zip(hotspots, dist):
