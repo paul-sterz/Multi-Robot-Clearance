@@ -14,6 +14,7 @@ Searcher.py's `travelTime=None` default for how that is kept intact.
 from __future__ import annotations
 
 import base64
+import json
 import os
 import sys
 import time
@@ -27,6 +28,12 @@ from pydantic import BaseModel, Field
 REPO_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CLEARING_SCENES_DIR = os.path.join(REPO_DIR, "clearing-scenes")
 VIEWER_DIR = os.path.join(CLEARING_SCENES_DIR, "viewer")
+
+# One small JSON file per scene, holding whatever hotspot layout was last
+# saved for it from the viewer -- the "meaningful, hand-placed priors per
+# scene" 3DTest.py's Monte Carlo comparisons read instead of an arbitrary
+# placeholder layout (see 3DTest.py's default3DHotspots()).
+SCENE_PRIORS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "scene_priors")
 
 if CLEARING_SCENES_DIR not in sys.path:
     sys.path.insert(0, CLEARING_SCENES_DIR)
@@ -79,6 +86,10 @@ class RunRequest(PriorsRequest):
     start_vertices: list[int] = []
     available_robots: int = Field(gt=0)
     stopping: Stopping
+
+
+class HotspotConfig(PriorsRequest):
+    start_vertices: list[int] = []
 
 
 @app.get("/api/scenes")
@@ -160,6 +171,39 @@ def preview_priors(req: PriorsRequest):
     scene = _get_scene(req.scene)
     priors = _compute_priors(scene, req)
     return {"priors": _quantize_priors(priors, _viewer_remap(scene, req.scene))}
+
+
+def _hotspot_config_path(scene_name: str) -> str:
+    # scene names are already a closed, known set (validated by _get_scene
+    # against clearing.available()), so this never sees attacker-controlled
+    # path segments in practice -- still resolved through _get_scene first
+    # in both endpoints below rather than trusted blindly.
+    return os.path.join(SCENE_PRIORS_DIR, f"{scene_name}.json")
+
+
+@app.get("/api/hotspots/{scene_name}")
+def load_hotspot_config(scene_name: str):
+    _get_scene(scene_name)  # 404s on an unknown scene name
+    path = _hotspot_config_path(scene_name)
+    if not os.path.isfile(path):
+        return {"hotspots": [], "start_vertices": [], "prior_l": None, "prior_radius_m": None}
+    with open(path, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+@app.post("/api/hotspots/{scene_name}")
+def save_hotspot_config(scene_name: str, req: HotspotConfig):
+    _get_scene(scene_name)
+    os.makedirs(SCENE_PRIORS_DIR, exist_ok=True)
+    payload = {
+        "hotspots": [h.model_dump() for h in req.hotspots],
+        "start_vertices": req.start_vertices,
+        "prior_l": req.prior_l,
+        "prior_radius_m": req.prior_radius_m,
+    }
+    with open(_hotspot_config_path(scene_name), "w", encoding="utf-8") as f:
+        json.dump(payload, f, indent=2)
+    return {"saved": True}
 
 
 @app.post("/api/run")

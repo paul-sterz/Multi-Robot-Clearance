@@ -190,6 +190,7 @@ function init() {
     const i = parseInt(btn.dataset.rm.slice(1), 10);
     if (btn.dataset.rm[0] === "h") removeHotspot(i); else removeStart(i);
   };
+  $("#c-save-hotspots").onclick = saveHotspots;
   $("#c-run").onclick = runStrategy;
   $("#c-play").onclick = toggleCompPlay;
   $("#c-time").oninput = () => {
@@ -392,6 +393,8 @@ function build(data) {
   fillMarkerList();
   $("#c-playback").style.display = "none";
   $("#c-status").textContent = "";
+  $("#c-save-status").textContent = "";
+  loadSavedHotspots();
   applyLayers();
   const want = hashState();
   if (want.vertex !== null) $("#vertex").value = want.vertex;
@@ -799,6 +802,75 @@ function hotspotsPayload() {
   return hotspots.map((h) => ({
     x: h.xyz[0] + cx, y: h.xyz[1] + cy, z: h.xyz[2] + cz, category: h.category,
   }));
+}
+
+/** Save the currently-placed hotspots/start vertices/prior settings for this
+ *  scene, so they come back next time it's opened -- and so the Monte Carlo
+ *  3D tests (Monte Carlo Simulation/3DTest.py) use a deliberately-placed
+ *  layout instead of the arbitrary placeholder one. */
+async function saveHotspots() {
+  $("#c-save-hotspots").disabled = true;
+  $("#c-save-status").textContent = "saving…";
+  try {
+    const res = await fetch(`/api/hotspots/${encodeURIComponent(S.name)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        scene: S.name,
+        hotspots: hotspotsPayload(),
+        start_vertices: startVertices.map((s) => s.vertex),
+        prior_l: parseFloat($("#c-prior-l").value),
+        prior_radius_m: parseFloat($("#c-prior-radius").value),
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || res.statusText);
+    $("#c-save-status").textContent =
+      `saved ${hotspots.length} hotspot${hotspots.length === 1 ? "" : "s"}`
+      + (startVertices.length
+        ? `, ${startVertices.length} start ${startVertices.length === 1 ? "vertex" : "vertices"}`
+        : "") + ".";
+  } catch (err) {
+    $("#c-save-status").textContent = "error: " + err.message;
+  } finally {
+    $("#c-save-hotspots").disabled = false;
+  }
+}
+
+/** The counterpart to saveHotspots(), called once per scene load: restores
+ *  whatever was last saved for it, if anything. */
+async function loadSavedHotspots() {
+  const sceneAtRequest = S.name;
+  try {
+    const res = await fetch(`/api/hotspots/${encodeURIComponent(sceneAtRequest)}`);
+    if (!res.ok) return;
+    const data = await res.json();
+    if (S.name !== sceneAtRequest) return;  // the scene changed again while this was in flight
+
+    const [cx, cy, cz] = S.centre;
+    for (const h of data.hotspots || []) {
+      hotspots.push({ category: h.category, xyz: [h.x - cx, h.y - cy, h.z - cz] });
+    }
+    for (const v of data.start_vertices || []) {
+      if (v >= 0 && v < S.stats.vertices && !startVertices.some((s) => s.vertex === v)) {
+        startVertices.push({
+          vertex: v,
+          xyz: [S.vertices[3 * v], S.vertices[3 * v + 1], S.vertices[3 * v + 2]],
+        });
+      }
+    }
+    if (data.prior_l != null) $("#c-prior-l").value = data.prior_l;
+    if (data.prior_radius_m != null) $("#c-prior-radius").value = data.prior_radius_m;
+
+    if (hotspots.length || startVertices.length) {
+      rebuildMarkers();
+      fillMarkerList();
+      if ($("#c-show-priors").checked) refreshPriorsPreview();
+    }
+  } catch {
+    // No saved config yet (or offline) -- markers just stay empty, same as
+    // any other fresh scene.
+  }
 }
 
 async function runStrategy() {

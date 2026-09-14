@@ -17,6 +17,7 @@ classes regardless of what built G - baselineTest.py's own module docstring
 about mixing Graph instances explains this in more detail.
 """
 
+import json
 import math
 import os
 import sys
@@ -49,13 +50,21 @@ from strategy_service import adapter as scene_adapter  # noqa: E402
 
 SCENE_NAMES = clearing.available(scenes_dir=SCENES_DIR)
 
-# Fixed hotspot weight/spread, the 3D-scene equivalent of approachTest.py's
+# Fallback hotspot weight/spread, the 3D-scene equivalent of approachTest.py's
 # GRAPH_PRIOR_L/GRAPH_PRIOR_SIGMA constants - not exposed as sliders there
 # either, so not added here (the request was to carry over the *existing*
 # sliders, not add new ones; only the environment itself becomes selectable).
+# Used only for a scene with no saved hotspot config (see loadHotspotConfig
+# below) - once one is saved from the viewer, its own prior_l/prior_radius_m
+# take over.
 PRIOR_L_3D = 3.0
 PRIOR_RADIUS_M_3D = 8.0
 PRIOR_EPSILON_3D = 0.05
+
+# strategy_service/server.py's POST/GET /api/hotspots/<scene> read and write
+# exactly this directory - saving a hotspot layout from the viewer is what
+# fills it in.
+SCENE_PRIORS_DIR = os.path.join(REPO_DIR, "strategy_service", "scene_priors")
 
 _scene_cache: dict[str, "clearing.Scene"] = {}
 
@@ -67,23 +76,51 @@ def loadScene3D(sceneName: str) -> "clearing.Scene":
 
 
 def default3DHotspots(scene) -> list[tuple[int, int]]:
-    """A small, fixed, deterministic hotspot layout for a scene, the 3D
-    equivalent of buildEnvironment()'s hardcoded 2D hotspot list - so a
-    scene's Monte Carlo comparison is reproducible without requiring the
-    user to click anything (this dashboard is about comparing search
-    methods on a fixed environment, not about exploring hotspot placement -
-    that is what the standalone 3D viewer is for).
-
-    Picked at fixed fractions of the vertex list (vertices already cover the
-    walkable area by construction, so their host cells are always valid,
-    on-surface hotspot locations) rather than fixed cell ids, since cell
-    counts vary a lot between scenes.
+    """A small, fixed, deterministic hotspot layout for a scene - the
+    fallback used only when nothing has been saved for it yet from the
+    viewer (see loadHotspotConfig below). Picked at fixed fractions of the
+    vertex list (vertices already cover the walkable area by construction,
+    so their host cells are always valid, on-surface hotspot locations)
+    rather than fixed cell ids, since cell counts vary a lot between scenes.
     """
     n = scene.n_vertices
     picks = sorted({0, n // 3, (2 * n) // 3, n - 1})
     categories = [2, 1, 1, 0]
     return [(int(scene.vertex_cell[v]), categories[i % len(categories)])
             for i, v in enumerate(picks)]
+
+
+def loadHotspotConfig(scene, sceneName: str):
+    """Whatever was last saved for this scene from the viewer's "Save
+    hotspots for this scene" button (strategy_service/server.py's
+    POST /api/hotspots/<scene>, written to SCENE_PRIORS_DIR), converted from
+    the clicked 3D positions it was saved as into real cell ids via the same
+    nearest-cell lookup the live viewer uses - or None if nothing has been
+    saved for this scene yet, so the caller can fall back to
+    default3DHotspots().
+
+    Returns (hotspots, startVertices, priorL, priorRadiusM) or None.
+    """
+    path = os.path.join(SCENE_PRIORS_DIR, f"{sceneName}.json")
+    if not os.path.isfile(path):
+        return None
+
+    with open(path, "r", encoding="utf-8") as f:
+        config = json.load(f)
+
+    savedHotspots = config.get("hotspots") or []
+    if not savedHotspots:
+        return None
+
+    hotspots = [
+        (scene_adapter.nearest_cell(scene, (h["x"], h["y"], h["z"])), h["category"])
+        for h in savedHotspots
+    ]
+    startVertices = config.get("start_vertices") or [0]
+    priorL = config.get("prior_l") or PRIOR_L_3D
+    priorRadiusM = config.get("prior_radius_m") or PRIOR_RADIUS_M_3D
+
+    return hotspots, startVertices, priorL, priorRadiusM
 
 
 def build3DEnvironment(sceneName: str, startVertices=None):
@@ -95,13 +132,21 @@ def build3DEnvironment(sceneName: str, startVertices=None):
     Returns (scene, G, D, startNodes, cellpriors, travelTime).
     """
     scene = loadScene3D(sceneName)
-    hotspots = default3DHotspots(scene)
-    if startVertices is None:
-        startVertices = [0]
 
-    sigma = PRIOR_RADIUS_M_3D / math.sqrt(2 * math.log(50))
+    saved = loadHotspotConfig(scene, sceneName)
+    if saved is not None:
+        hotspots, savedStartVertices, priorL, priorRadiusM = saved
+        if startVertices is None:
+            startVertices = savedStartVertices
+    else:
+        hotspots = default3DHotspots(scene)
+        priorL, priorRadiusM = PRIOR_L_3D, PRIOR_RADIUS_M_3D
+        if startVertices is None:
+            startVertices = [0]
+
+    sigma = priorRadiusM / math.sqrt(2 * math.log(50))
     priors = scene_adapter.compute_priors(
-        scene, hotspots, PRIOR_L_3D, sigma, PRIOR_EPSILON_3D
+        scene, hotspots, priorL, sigma, PRIOR_EPSILON_3D
     )
     G, D, startNodes, idxToVertex = scene_adapter.build_graph(scene, startVertices, priors)
     travelTime = scene_adapter.travel_time_matrix(scene, idxToVertex)
