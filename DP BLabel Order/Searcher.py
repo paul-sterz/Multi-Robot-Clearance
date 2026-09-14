@@ -10,7 +10,7 @@ import copy
 import time
 
 
-def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles, distanceMap, alpha, cellpriors, D, maxTrees=None, populationSize=10, historyCallback=None, searchMode="evolutionary"):
+def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles, distanceMap, alpha, cellpriors, D, maxTrees=None, populationSize=10, historyCallback=None, searchMode="evolutionary", travelTime=None):
     #INPUT:
     # G: a Graph object repesenting the merged navigationgraph
     # availableTime: the available computation time budget in seconds (ignored if maxTrees is given)
@@ -41,14 +41,22 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
     # pass over a lookup table.
     # ---------------------------------------------------
     numGraphNodes = len(G.nodes)
-    flagDistance = [[0] * numGraphNodes for _ in range(numGraphNodes)]
 
-    for i in range(numGraphNodes):
-        for j in range(numGraphNodes):
-            if i == j:
-                continue
-            path = aStar(G.nodes[i].pos, G.nodes[j].pos, obstacles, distanceMap, alpha)
-            flagDistance[i][j] = len(path) - 1
+    # A caller that already has an all-pairs travel-time table (e.g. a real
+    # scene's shortest-path matrix) can pass it in directly and skip the aStar
+    # sweep below entirely -- it depends only on the node positions and never
+    # changes during this call either way.
+    if travelTime is not None:
+        flagDistance = travelTime
+    else:
+        flagDistance = [[0] * numGraphNodes for _ in range(numGraphNodes)]
+
+        for i in range(numGraphNodes):
+            for j in range(numGraphNodes):
+                if i == j:
+                    continue
+                path = aStar(G.nodes[i].pos, G.nodes[j].pos, obstacles, distanceMap, alpha)
+                flagDistance[i][j] = len(path) - 1
 
     # ---------------------------------------------------
     # COMPUTING B-LABELS and efficiency labels depending on available robots

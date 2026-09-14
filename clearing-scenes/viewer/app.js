@@ -122,6 +122,29 @@ const TRANSIT = 0.75;        // of a play interval spent walking, the rest held
 const STEP_MS = 550;         // one step, in the plain strategy playback
 const WALK_MS = 1500;        // one step, when the walking is being animated
 
+/* ---------------------------------------------------------- computed strategy
+ *
+ * A strategy computed here (DP/Greedy/... over /api/run) is a continuous-time
+ * move list, not the discrete "steps: sets of held vertices" shape the shipped
+ * strategy above uses -- see strategy_service/adapter.py. So it gets its own
+ * small playback model: a scrubber over mission seconds instead of step index,
+ * "packs" of robots (a move's `robots` travel and arrive together, and the
+ * algorithms never give them individual identity) drawn at nodes or in transit
+ * along a move's path, and cleared/dirty painted from each vertex's first-visit
+ * time against the detection sets already loaded for this scene.
+ */
+const HOTSPOT_COLOR = [0xffe066, 0xff9d3d, 0xff3d3d];   // low / medium / high
+const START_COLOR = 0x3dff9d;
+const PACK_COLOR = 0x8fd4ff;
+const MARKER_LIFT = 0.55;
+const PACK_LIFT = 0.9;
+// dark blue -> violet -> red -> amber -> pale yellow: same "cool to hot" read
+// as the 2D grid tool's prior heatmap, over the same ramp() helper `paint()`
+// uses for height/cloud colouring.
+const HEAT = [[0, [0.06, 0.06, 0.28]], [0.35, [0.32, 0.08, 0.42]],
+              [0.6, [0.77, 0.15, 0.18]], [0.85, [0.98, 0.55, 0.12]],
+              [1, [1.0, 0.96, 0.35]]];
+
 /* ------------------------------------------------------------------- scene */
 
 let renderer, camera, world, raycaster;
@@ -130,6 +153,16 @@ let G = {};                 // the THREE objects of the current scene
 let labels = [];            // one id sprite per machine of the current scene
 let selMachine = -1;
 let playing = false, phase = 0, lastMs = 0;
+
+// hotspot/start-vertex placement, and the strategy /api/run last computed --
+// all scene-specific, reset in build()
+let hotspots = [];          // { cell, category, xyz: [x,y,z] }
+let startVertices = [];     // { vertex, xyz: [x,y,z] }
+let computed = null;        // the /api/run response, or null
+let compLabelPool = new Map();  // pack key -> id sprite, reused while stable
+let compPlaying = false, compLastMs = 0, compSpeed = 1;
+let priorsView = null;      // { codes: Uint16Array, min, max } -- last computed/previewed priors
+let priorsPreviewTimer = null;
 
 function init() {
   renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -166,6 +199,30 @@ function init() {
     if (row) selectRobot(+row.dataset.r === selMachine ? -1 : +row.dataset.r);
   };
   $("#play").onclick = togglePlay;
+
+  $("#c-stop-mode").onchange = () => {
+    $("#c-stop-label").textContent = $("#c-stop-mode").value === "time" ? "Seconds" : "Trees";
+  };
+  $("#c-markers").onclick = (e) => {
+    const btn = e.target.closest("[data-rm]");
+    if (!btn) return;
+    const i = parseInt(btn.dataset.rm.slice(1), 10);
+    if (btn.dataset.rm[0] === "h") removeHotspot(i); else removeStart(i);
+  };
+  $("#c-run").onclick = runStrategy;
+  $("#c-play").onclick = toggleCompPlay;
+  $("#c-time").oninput = () => {
+    compPlaying = false;
+    $("#c-play").textContent = "Play";
+    paintComputed(parseFloat($("#c-time").value));
+  };
+  $("#c-show-priors").onchange = () => {
+    if ($("#c-show-priors").checked && !priorsView) refreshPriorsPreview();
+    else updateSurfaceView();
+  };
+  $("#c-prior-l").oninput = schedulePriorsPreview;
+  $("#c-prior-radius").oninput = schedulePriorsPreview;
+
   addEventListener("keydown", (e) => {
     if (e.key === "r" || e.key === "R") frame();
     if (e.key === "ArrowLeft") stepBy(-1);
@@ -192,6 +249,18 @@ function init() {
       if (phase >= 1) { phase = 0; stepBy(1); }
       else if (robotMode()) placeRobots(phase);
     } else lastMs = 0;
+
+    if (compPlaying && computed) {
+      const dt = compLastMs ? Math.min(ms - compLastMs, 250) : 0;
+      compLastMs = ms;
+      const el = $("#c-time");
+      let t = parseFloat(el.value) + (dt / 1000) * compSpeed;
+      const max = +el.max;
+      if (t >= max) { t = max; compPlaying = false; $("#c-play").textContent = "Play"; }
+      el.value = t;
+      paintComputed(t);
+    } else compLastMs = 0;
+
     renderer.render(world, camera);
   })();
 }
@@ -222,6 +291,16 @@ function build(data) {
   stopPlay();
   selMachine = -1;
   for (const sp of labels) {
+    world.remove(sp);
+    sp.material.map.dispose();
+    sp.material.dispose();
+  }
+  // The computed-strategy pack labels are keyed and reused across frames
+  // (see placeComputedPacks), so they are never swept up by the generic
+  // Object.keys(G) cleanup below -- without this they survive a scene
+  // switch as orphaned sprites still sitting at the OLD scene's coordinates,
+  // which is exactly why they seemed to "float outside" a newly loaded scene.
+  for (const sp of compLabelPool.values()) {
     world.remove(sp);
     sp.material.map.dispose();
     sp.material.dispose();
@@ -308,6 +387,19 @@ function build(data) {
 
   G.held = points(new Float32Array(0), null, 4.2, 0xff6a3d);
 
+  // hotspot / start-vertex markers, and the packs of a strategy computed here
+  hotspots = [];
+  startVertices = [];
+  computed = null;
+  compPlaying = false;
+  compPaintKey = null;
+  compLabelPool = new Map();
+  priorsView = null;
+  clearTimeout(priorsPreviewTimer);
+  G.hotspots = points(new Float32Array(0), new Float32Array(0), 3.6);
+  G.starts = points(new Float32Array(0), new Float32Array(0), 3.6);
+  G.compPacks = points(new Float32Array(0), new Float32Array(0), 3.2);
+
   // the fleet: a marker per machine, the legs of the current step in the machines'
   // own colours, and the selected machine's walked track
   S.roster = data.strategy ? data.strategy.roster : null;
@@ -345,6 +437,10 @@ function build(data) {
   if (S.roster) makeLabels(S.roster.nMachines);
 
   fillPanel();
+  rebuildMarkers();
+  fillMarkerList();
+  $("#c-playback").style.display = "none";
+  $("#c-status").textContent = "";
   applyLayers();
   const want = hashState();
   if (want.vertex !== null) $("#vertex").value = want.vertex;
@@ -1063,6 +1159,19 @@ function pick(ev) {
     ((ev.clientX - r.left) / r.width) * 2 - 1,
     -((ev.clientY - r.top) / r.height) * 2 + 1);
   raycaster.setFromCamera(m, camera);
+
+  const mode = $("#c-mode").value;
+  if (mode !== "off") {
+    if (mode === "start") {
+      const hit = raycaster.intersectObject(G.vertices, false)[0];
+      if (hit) addStartVertex(hit.index);
+    } else {
+      const hit = raycaster.intersectObject(G.surface, false)[0];
+      if (hit) addHotspot(hit.index, parseInt(mode.split("-")[1], 10));
+    }
+    return;
+  }
+
   if (robotMode()) {
     const who = raycaster.intersectObject(G.machines, false)[0];
     if (who) {
@@ -1078,6 +1187,390 @@ function pick(ev) {
   selMachine = -1;
   stopPlay();
   paint();
+}
+
+/* ----------------------------------------------------- compute a strategy */
+
+function hexToRgb01(hex) {
+  return [((hex >> 16) & 255) / 255, ((hex >> 8) & 255) / 255, (hex & 255) / 255];
+}
+
+function addHotspot(cellIndex, category) {
+  if (hotspots.some((h) => h.cell === cellIndex)) return;
+  const xyz = [S.surf[3 * cellIndex], S.surf[3 * cellIndex + 1], S.surf[3 * cellIndex + 2]];
+  hotspots.push({ cell: cellIndex, category, xyz });
+  rebuildMarkers();
+  fillMarkerList();
+  schedulePriorsPreview();
+}
+
+function addStartVertex(vertexIndex) {
+  if (startVertices.some((s) => s.vertex === vertexIndex)) return;
+  const xyz = [S.vertices[3 * vertexIndex], S.vertices[3 * vertexIndex + 1],
+              S.vertices[3 * vertexIndex + 2]];
+  startVertices.push({ vertex: vertexIndex, xyz });
+  rebuildMarkers();
+  fillMarkerList();
+}
+
+function removeHotspot(i) {
+  hotspots.splice(i, 1);
+  rebuildMarkers();
+  fillMarkerList();
+  schedulePriorsPreview();
+}
+function removeStart(i) { startVertices.splice(i, 1); rebuildMarkers(); fillMarkerList(); }
+
+function rebuildMarkers() {
+  const hp = [], hc = [];
+  for (const h of hotspots) {
+    hp.push(h.xyz[0], h.xyz[1], h.xyz[2] + MARKER_LIFT);
+    hc.push(...hexToRgb01(HOTSPOT_COLOR[h.category]));
+  }
+  setGeom(G.hotspots, hp, hc);
+
+  const sp = [], sc = [];
+  for (const s of startVertices) {
+    sp.push(s.xyz[0], s.xyz[1], s.xyz[2] + MARKER_LIFT);
+    sc.push(...hexToRgb01(START_COLOR));
+  }
+  setGeom(G.starts, sp, sc);
+}
+
+/** The hotspot/start-vertex list under the placement picker. */
+function fillMarkerList() {
+  const rows = [];
+  const cat = ["low", "medium", "high"];
+  hotspots.forEach((h, i) => {
+    rows.push(`<div class="marker-row">`
+      + `<i style="background:#${HOTSPOT_COLOR[h.category].toString(16).padStart(6, "0")}"></i>`
+      + `<span>hotspot (${cat[h.category]}) &mdash; cell ${h.cell}</span>`
+      + `<button data-rm="h${i}" title="remove">&times;</button></div>`);
+  });
+  startVertices.forEach((s, i) => {
+    rows.push(`<div class="marker-row">`
+      + `<i style="background:#${START_COLOR.toString(16).padStart(6, "0")}"></i>`
+      + `<span>start &mdash; vertex ${s.vertex}</span>`
+      + `<button data-rm="s${i}" title="remove">&times;</button></div>`);
+  });
+  $("#c-markers").innerHTML = rows.join("")
+    || '<p class="hint">No markers placed yet.</p>';
+}
+
+async function runStrategy() {
+  const body = {
+    scene: S.name,
+    approach: $("#c-approach").value,
+    hotspots: hotspots.map((h) => ({ cell: h.cell, category: h.category })),
+    start_vertices: startVertices.map((s) => s.vertex),
+    available_robots: parseInt($("#c-robots").value, 10),
+    stopping: {
+      mode: $("#c-stop-mode").value,
+      value: parseFloat($("#c-stop-value").value),
+    },
+    prior_l: parseFloat($("#c-prior-l").value),
+    prior_radius_m: parseFloat($("#c-prior-radius").value),
+  };
+
+  $("#c-run").disabled = true;
+  $("#c-status").textContent = "running…";
+  try {
+    const res = await fetch("/api/run", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || res.statusText);
+    setComputed(data);
+    const m = data.metrics;
+    $("#c-status").textContent = `done — ${m.checked_trees} trees checked, `
+      + `${fmtTime(m.mission_seconds)} mission, ${m.vertices_visited}/${m.n_vertices} `
+      + `vertices reached${m.fitness == null ? "" : `, fitness ${m.fitness.toFixed(2)}`}.`;
+  } catch (err) {
+    $("#c-status").textContent = "error: " + err.message;
+  } finally {
+    $("#c-run").disabled = false;
+  }
+}
+
+function setComputed(data) {
+  compPlaying = false;
+  $("#c-play").textContent = "Play";
+  for (const sp of compLabelPool.values()) {
+    world.remove(sp);
+    sp.material.map.dispose();
+    sp.material.dispose();
+  }
+  compLabelPool = new Map();
+
+  // Every coordinate already in S (vertices, surface, routes, ...) is stored
+  // relative to S.centre -- that is what keeps float32/quantised precision
+  // tight over a survey given in large absolute (real-world) coordinates. The
+  // backend has no notion of that packing convention and rightly returns
+  // plain absolute Scene coordinates, so a move's path has to be shifted into
+  // the same centred frame here, once, before anything renders it -- this is
+  // exactly the "packs floating outside the scene" bug: a move's in-transit
+  // marker used to sit at raw-minus-nothing, offset from every other layer by
+  // the full `centre` vector (tens of metres).
+  const [cx, cy, cz] = S.centre;
+  for (const mv of data.moves) {
+    mv.path = mv.path.map((p) => [p[0] - cx, p[1] - cy, p[2] - cz]);
+  }
+
+  computed = data;
+  compPaintKey = null;
+  compSpeed = Math.max(1, data.metrics.mission_seconds / 20);
+  if (data.priors) priorsView = decodedPriors(data.priors);
+
+  const m = data.metrics;
+  $("#c-meta").textContent = `${data.approach}: ${data.moves.length} moves, `
+    + `${m.available_robots} robots, ${m.vertices_visited}/${m.n_vertices} `
+    + `vertices reached, ${fmtTime(m.mission_seconds)} mission.`;
+
+  const el = $("#c-time");
+  el.max = String(Math.max(0, Math.ceil(data.metrics.mission_seconds)));
+  el.value = "0";
+  $("#c-playback").style.display = "";
+  paintComputed(0);
+}
+
+/** How many robots are standing at each vertex at time `t`: a departed move's
+ *  robots leave the source count and are in neither count until they arrive,
+ *  exactly mirroring TrajectoryPlanning.computeRobotCounts. */
+function robotCountsAt(t) {
+  const counts = new Map();
+  const add = (v, n) => counts.set(v, (counts.get(v) || 0) + n);
+  if (computed.root) add(computed.root.vertex, computed.root.robots);
+  for (const mv of computed.moves) {
+    if (mv.t_departure <= t) add(mv.source, -mv.robots);
+    if (mv.t_arrival <= t) add(mv.target, mv.robots);
+  }
+  return counts;
+}
+
+/** `f` (0..1) of the way along a [x,y,z][] polyline, by walked distance. */
+function pointAlongPath(path, f) {
+  f = Math.max(0, Math.min(1, f));
+  if (path.length === 1) return path[0];
+  const segLen = [];
+  let total = 0;
+  for (let i = 0; i + 1 < path.length; i++) {
+    const a = path[i], b = path[i + 1];
+    const d = Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]);
+    segLen.push(d);
+    total += d;
+  }
+  if (!total) return path[0];
+  let want = f * total, acc = 0;
+  for (let i = 0; i < segLen.length; i++) {
+    if (acc + segLen[i] >= want || i === segLen.length - 1) {
+      const u = segLen[i] ? (want - acc) / segLen[i] : 0;
+      const a = path[i], b = path[i + 1];
+      return [a[0] + (b[0] - a[0]) * u, a[1] + (b[1] - a[1]) * u, a[2] + (b[2] - a[2]) * u];
+    }
+    acc += segLen[i];
+  }
+  return path[path.length - 1];
+}
+
+/** Every "pack" of robots to draw at time `t`: one per occupied vertex (idle,
+ *  by node position) and one per move currently in transit (by path
+ *  position), each carrying the robot count it represents. */
+function packPositionsAt(t) {
+  const packs = [];
+  for (const [v, n] of robotCountsAt(t)) {
+    if (n > 0) packs.push({ pos: nodePoint(v), count: n, key: "v" + v });
+  }
+  for (const mv of computed.moves) {
+    if (t < mv.t_departure || t >= mv.t_arrival) continue;
+    const key = "m" + mv.source + "-" + mv.target + "-" + mv.t_departure;
+    if (!mv.path || mv.path.length < 2) {
+      packs.push({ pos: nodePoint(mv.target), count: mv.robots, key });
+      continue;
+    }
+    const f = (t - mv.t_departure) / Math.max(mv.t_arrival - mv.t_departure, 1e-9);
+    packs.push({ pos: pointAlongPath(mv.path, f), count: mv.robots, key });
+  }
+  return packs;
+}
+
+function placeComputedPacks(t) {
+  const packs = packPositionsAt(t);
+  const pos = [], col = [];
+  const seen = new Set();
+  const c = new THREE.Color(PACK_COLOR);
+  for (const p of packs) {
+    seen.add(p.key);
+    pos.push(p.pos[0], p.pos[1], p.pos[2] + PACK_LIFT);
+    col.push(c.r, c.g, c.b);
+
+    const text = "×" + p.count;
+    let sp = compLabelPool.get(p.key);
+    if (!sp || sp.userData.text !== text) {
+      if (sp) { world.remove(sp); sp.material.map.dispose(); sp.material.dispose(); }
+      sp = labelSprite(text, c);
+      sp.userData.text = text;
+      compLabelPool.set(p.key, sp);
+      world.add(sp);
+    }
+    sp.visible = true;
+    sp.position.set(p.pos[0], p.pos[1], p.pos[2] + PACK_LIFT + S.labelSize * 1.1);
+    const size = S.labelSize;
+    sp.scale.set(size * sp.userData.aspect, size, 1);
+  }
+  for (const [key, sp] of compLabelPool) if (!seen.has(key)) sp.visible = false;
+  setGeom(G.compPacks, pos, col);
+}
+
+/** Paint the surface for the strategy computed here: cleared (ever seen by a
+ *  visited vertex), watched now (seen by a currently-occupied one), or still
+ *  dirty -- the same three colours `paint()` uses for the shipped strategy,
+ *  driven by `visit_time` instead of the shipped `contaminated[]` mask.
+ *
+ * The per-cell scan below is O(nCells) per held vertex, so it is skipped
+ * unless the qualifying vertex sets actually changed since the last call --
+ * which, at 30-60 calls/second while playing, is most of them: a scene's
+ * cell count is in the hundreds of thousands and the held/watched sets only
+ * change at the (far rarer) departure/arrival events. Only the pack markers
+ * (`placeComputedPacks`, cheap: O(moves)) move every frame regardless.
+ */
+let compPaintKey = null;
+
+function paintComputed(t) {
+  if (!computed) return;
+
+  const held = [];
+  for (const [vStr, vt] of Object.entries(computed.visit_time)) {
+    if (vt <= t) held.push(+vStr);
+  }
+  const heldNow = [];
+  for (const [v, n] of robotCountsAt(t)) if (n > 0) heldNow.push(v);
+
+  const showPriors = $("#c-show-priors").checked && priorsView;
+  // Prefixed with the view kind, so toggling the heatmap on/off always
+  // invalidates the cache even when the held/watched sets themselves didn't
+  // change between the two calls.
+  const key = (showPriors ? "H|" : "C|") + held.join(",") + "|"
+    + heldNow.sort((a, b) => a - b).join(",");
+  if (key !== compPaintKey) {
+    compPaintKey = key;
+
+    if (showPriors) {
+      paintPriorHeatmap();
+    } else {
+      const col = G.surface.geometry.attributes.color.array;
+      col.set(S.surfBase);
+
+      const cleared = new Uint8Array(S.nCells);
+      for (const v of held) {
+        const m = dset(v);
+        for (let i = 0; i < S.nCells; i++) if (m[i]) cleared[i] = 1;
+      }
+      const watchedNow = new Uint8Array(S.nCells);
+      for (const v of heldNow) {
+        const m = dset(v);
+        for (let i = 0; i < S.nCells; i++) if (m[i]) watchedNow[i] = 1;
+      }
+      for (let i = 0; i < S.nCells; i++) {
+        const c = watchedNow[i] ? WATCHED : (cleared[i] ? CLEARED : DIRTY);
+        col[3 * i] = c[0]; col[3 * i + 1] = c[1]; col[3 * i + 2] = c[2];
+      }
+      G.surface.geometry.attributes.color.needsUpdate = true;
+    }
+
+    const hp = new Float32Array(held.length * 3);
+    held.forEach((q, k) => {
+      hp[3 * k] = S.nodeDraw[3 * q]; hp[3 * k + 1] = S.nodeDraw[3 * q + 1];
+      hp[3 * k + 2] = S.nodeDraw[3 * q + 2];
+    });
+    setGeom(G.held, hp);
+  }
+
+  placeComputedPacks(t);
+
+  $("#c-time-label").textContent =
+    `${fmtTime(t)} of ${fmtTime(computed.metrics.mission_seconds)}`;
+}
+
+/* -------------------------------------------------------- prior heatmap */
+
+function decodedPriors(packed) {
+  return { codes: decode(packed.q, Uint16Array), min: packed.min, max: packed.max };
+}
+
+function paintPriorHeatmap() {
+  const col = G.surface.geometry.attributes.color.array;
+  const codes = priorsView.codes;
+  for (let i = 0; i < S.nCells; i++) {
+    const c = ramp(codes[i] / 65535, HEAT);
+    col[3 * i] = c[0]; col[3 * i + 1] = c[1]; col[3 * i + 2] = c[2];
+  }
+  G.surface.geometry.attributes.color.needsUpdate = true;
+}
+
+/** Repaint the surface from whatever is currently available: a computed
+ *  strategy (cleared/dirty or, if toggled, the heatmap), the heatmap alone
+ *  (placed hotspots but no run yet), or the plain height ramp. */
+function updateSurfaceView() {
+  if (computed) {
+    paintComputed(parseFloat($("#c-time").value));
+    return;
+  }
+  if ($("#c-show-priors").checked && priorsView) {
+    paintPriorHeatmap();
+  } else {
+    const col = G.surface.geometry.attributes.color.array;
+    col.set(S.surfBase);
+    G.surface.geometry.attributes.color.needsUpdate = true;
+  }
+}
+
+/** Debounced live preview: refetches priors shortly after the last hotspot
+ *  edit or l/radius change, the same reactivity the 2D grid tool gets for
+ *  free from Streamlit rerunning on every widget change. Cheap on its own
+ *  (no graph search) -- separate from /api/run so placing a hotspot doesn't
+ *  have to wait for a full strategy computation. */
+function schedulePriorsPreview() {
+  if (!$("#c-show-priors").checked) return;
+  clearTimeout(priorsPreviewTimer);
+  priorsPreviewTimer = setTimeout(refreshPriorsPreview, 250);
+}
+
+async function refreshPriorsPreview() {
+  const body = {
+    scene: S.name,
+    hotspots: hotspots.map((h) => ({ cell: h.cell, category: h.category })),
+    prior_l: parseFloat($("#c-prior-l").value),
+    prior_radius_m: parseFloat($("#c-prior-radius").value),
+  };
+  try {
+    const res = await fetch("/api/priors", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    if (!res.ok) return;
+    priorsView = decodedPriors(data.priors);
+    updateSurfaceView();
+  } catch {
+    // A stale preview is not worth surfacing as an error -- the next edit,
+    // or Run itself, will refresh it.
+  }
+}
+
+function toggleCompPlay() {
+  if (!computed) return;
+  if (compPlaying) {
+    compPlaying = false;
+    $("#c-play").textContent = "Play";
+    return;
+  }
+  if (parseFloat($("#c-time").value) >= +$("#c-time").max) $("#c-time").value = "0";
+  compPlaying = true;
+  compLastMs = 0;
+  $("#c-play").textContent = "Pause";
 }
 
 /* -------------------------------------------------------------- camera */
