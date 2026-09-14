@@ -5,7 +5,7 @@ from TrajectoryPlanning import aStar
 import time
 import copy
 
-def graphSearch(G : Graph, availableTime, startNodes, obstacles, distanceMap, alpha, maxTrees=None, cellpriors=None, D=None):
+def graphSearch(G : Graph, availableTime, startNodes, obstacles, distanceMap, alpha, maxTrees=None, cellpriors=None, D=None, travelTime=None):
     #INPUT:
     # G: a Graph object repesenting the given Graph
     # availableTime: the available computation time budget in seconds (ignored if maxTrees is given)
@@ -27,14 +27,22 @@ def graphSearch(G : Graph, availableTime, startNodes, obstacles, distanceMap, al
 
     #Calculating the distance matrix for all nodes
     numGraphNodes = len(G.nodes)
-    flagDistance = [[0] * numGraphNodes for _ in range(numGraphNodes)]
 
-    for i in range(numGraphNodes):
-        for j in range(numGraphNodes):
-            if i == j:
-                continue
-            path = aStar(G.nodes[i].pos, G.nodes[j].pos, obstacles, distanceMap, alpha)
-            flagDistance[i][j] = len(path) - 1
+    # A caller that already has an all-pairs travel-time table (e.g. a real
+    # scene's shortest-path matrix) can pass it in directly and skip the aStar
+    # sweep below entirely -- it depends only on the node positions and never
+    # changes during this call either way.
+    if travelTime is not None:
+        flagDistance = travelTime
+    else:
+        flagDistance = [[0] * numGraphNodes for _ in range(numGraphNodes)]
+
+        for i in range(numGraphNodes):
+            for j in range(numGraphNodes):
+                if i == j:
+                    continue
+                path = aStar(G.nodes[i].pos, G.nodes[j].pos, obstacles, distanceMap, alpha)
+                flagDistance[i][j] = len(path) - 1
 
 
 

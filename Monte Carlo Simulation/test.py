@@ -1,3 +1,6 @@
+import importlib.util
+import os
+
 import numpy as np
 import pandas as pd
 import streamlit as st
@@ -19,6 +22,44 @@ from approachTest import (
 from baselineTest import baselineTest, BASELINE_METHOD_NAMES
 
 from treeTest import runSpanningTreeEvolution
+
+# 3DTest.py can't be `import`ed by that name (a module name can't start with
+# a digit) - loaded the same way approachTest.py loads each approach's
+# Searcher.py.
+_spec = importlib.util.spec_from_file_location(
+    "threeDTest", os.path.join(os.path.dirname(os.path.abspath(__file__)), "3DTest.py")
+)
+threeDTest = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(threeDTest)
+
+
+# ==================================================
+# 3D SCENE SCREENSHOTS
+#
+# There is no in-app 3D preview (see the "no preview plot" caption below) -
+# drop a manually-taken screenshot in scene_screenshots/<scene name>.png
+# (e.g. scene_screenshots/christ-church.png) and it is picked up here
+# automatically. Take one from the standalone 3D viewer
+# (python -m strategy_service.server, http://localhost:8000): pick the
+# scene, orbit/zoom to a good angle, then a normal OS screenshot
+# (Cmd+Shift+4 on macOS) of the view - no in-app export needed.
+# ==================================================
+
+SCENE_SCREENSHOTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "scene_screenshots")
+
+
+def renderSceneScreenshot(sceneName: str):
+
+    for ext in (".png", ".jpg", ".jpeg"):
+        path = os.path.join(SCENE_SCREENSHOTS_DIR, sceneName + ext)
+        if os.path.isfile(path):
+            st.image(path, caption=sceneName, use_container_width=True)
+            return
+
+    st.caption(
+        f"No screenshot yet for **{sceneName}** - drop one at "
+        f"`scene_screenshots/{sceneName}.png` to show it here."
+    )
 
 
 # ==================================================
@@ -49,6 +90,35 @@ app_mode = st.radio(
     horizontal=True,
     key="app_mode",
 )
+
+# ==================================================
+# ENVIRONMENT SOURCE: 2D synthetic grid (as before) or one of the six real
+# clearing-scenes 3D scenes (christ-church, keble-college, ...), loaded via
+# 3DTest.py. Every slider below this point is unchanged either way - only
+# the graph/priors these three modes run their comparisons on differs.
+# ==================================================
+
+env_source = st.radio(
+    "Environment",
+    ["2D (synthetic grid)", "3D (real scene)"],
+    horizontal=True,
+    key="env_source",
+)
+is3D = env_source.startswith("3D")
+
+if is3D:
+    scene_name = st.selectbox(
+        "Scene",
+        threeDTest.SCENE_NAMES,
+        key="scene_name",
+    )
+    st.caption(
+        "The 4 approaches / 4 baseline methods run on this scene's real "
+        "graph and detection sets, exactly as they would on the 2D grid - "
+        "hotspots are a small fixed layout (see 3DTest.py's "
+        "default3DHotspots()), not interactively placed, so runs stay "
+        "comparable across the many repeats these tests do."
+    )
 
 st.markdown("---")
 
@@ -469,44 +539,53 @@ def buildEnvironmentFigure(obstacles, cellpriors, H, W, G=None, regularEdges=Non
     return fig
 
 
-st.plotly_chart(
-    buildEnvironmentFigure(obstacles, cellpriors, H, W),
-    use_container_width=True,
-)
+if not is3D:
 
+    st.plotly_chart(
+        buildEnvironmentFigure(obstacles, cellpriors, H, W),
+        use_container_width=True,
+    )
 
-# ==================================================
-# ENVIRONMENT SIZE SELECTION
-# ==================================================
+    # ==================================================
+    # ENVIRONMENT SIZE SELECTION
+    # ==================================================
 
+    st.markdown("### Environment Size")
 
-st.markdown("### Environment Size")
+    size_cols = st.columns(3)
 
-size_cols = st.columns(3)
+    for col, size_name in zip(size_cols, ENVIRONMENT_SIZES):
 
-for col, size_name in zip(size_cols, ENVIRONMENT_SIZES):
+        with col:
 
-    with col:
+            is_selected = (
+                st.session_state.environment_size == size_name
+            )
 
-        is_selected = (
-            st.session_state.environment_size == size_name
-        )
+            if st.button(
+                size_name,
+                key=f"size_{size_name}",
+                type="primary" if is_selected else "secondary",
+                use_container_width=True,
+            ):
 
-        if st.button(
-            size_name,
-            key=f"size_{size_name}",
-            type="primary" if is_selected else "secondary",
-            use_container_width=True,
-        ):
+                st.session_state.environment_size = size_name
 
-            st.session_state.environment_size = size_name
+                st.rerun()
 
-            st.rerun()
+    st.caption(
+        f"Selected: **{st.session_state.environment_size}** "
+        f"(detection radius = {detection_radius})"
+    )
 
-st.caption(
-    f"Selected: **{st.session_state.environment_size}** "
-    f"(detection radius = {detection_radius})"
-)
+else:
+
+    _sceneStats = threeDTest.loadScene3D(scene_name)
+    st.caption(
+        f"**{scene_name}** — {_sceneStats.n_vertices} vertices, "
+        f"{_sceneStats.n_cells:,} cells."
+    )
+    renderSceneScreenshot(scene_name)
 
 
 if app_mode == "Approach Test":
@@ -596,25 +675,42 @@ if app_mode == "Approach Test":
             f"Running {num_of_runs} runs × {len(APPROACH_NAMES)} approaches..."
         ):
 
-            (
-                simG,
-                simEdgesShady,
-                simD,
-                simStartNodes,
-                simPriors,
-                resultsCellPrior,
-                resultsNodePrior,
-                resultsTrees,
-                resultsTime,
-            ) = approachTest(
-                detecRad=detection_radius,
-                numOfRuns=num_of_runs,
-                availableRobots=available_robots,
-                availableTime=computation_time,
-                maxTrees=max_trees,
-            )
+            if is3D:
+                simResult = threeDTest.approachTest3D(
+                    sceneName=scene_name,
+                    numOfRuns=num_of_runs,
+                    availableRobots=available_robots,
+                    availableTime=computation_time,
+                    maxTrees=max_trees,
+                )
+                simG = simResult["G"]
+                simPriors = simResult["priors"]
+                resultsCellPrior = simResult["resultsCellPrior"]
+                resultsNodePrior = simResult["resultsNodePrior"]
+                resultsTrees = simResult["resultsTrees"]
+                resultsTime = simResult["resultsTime"]
+            else:
+                (
+                    simG,
+                    simEdgesShady,
+                    simD,
+                    simStartNodes,
+                    simPriors,
+                    resultsCellPrior,
+                    resultsNodePrior,
+                    resultsTrees,
+                    resultsTime,
+                ) = approachTest(
+                    detecRad=detection_radius,
+                    numOfRuns=num_of_runs,
+                    availableRobots=available_robots,
+                    availableTime=computation_time,
+                    maxTrees=max_trees,
+                )
 
         st.session_state.simulation_results = {
+            "is3D": is3D,
+            "sceneName": scene_name if is3D else None,
             "G": simG,
             "regularEdges": list(simG.edges.keys()),
             "priors": simPriors,
@@ -638,19 +734,23 @@ if app_mode == "Approach Test":
 
     if results is not None:
 
-        st.markdown("### Environment with Navigation Graph")
+        st.markdown("### Environment")
 
-        st.plotly_chart(
-            buildEnvironmentFigure(
-                obstacles,
-                results["priors"],
-                H,
-                W,
-                G=results["G"],
-                regularEdges=results["regularEdges"],
-            ),
-            use_container_width=True,
-        )
+        if results.get("is3D"):
+            st.caption(f"Scene: **{results['sceneName']}**")
+            renderSceneScreenshot(results["sceneName"])
+        else:
+            st.plotly_chart(
+                buildEnvironmentFigure(
+                    obstacles,
+                    results["priors"],
+                    H,
+                    W,
+                    G=results["G"],
+                    regularEdges=results["regularEdges"],
+                ),
+                use_container_width=True,
+            )
 
         # --------------------------------------------------
         # STATS TABLES
@@ -838,16 +938,28 @@ elif app_mode == "Baseline Test":
             f"({baselineMethodsLabel}, {baseline_third_approach})..."
         ):
 
-            baselineResults = baselineTest(
-                detecRad=detection_radius,
-                numOfRuns=baseline_num_of_runs,
-                robotIncreasePercent=baseline_robot_increase_percent,
-                thirdApproachName=baseline_third_approach,
-                availableTime=baseline_computation_time,
-                maxTrees=baseline_max_trees,
-            )
+            if is3D:
+                baselineResults = threeDTest.baselineTest3D(
+                    sceneName=scene_name,
+                    numOfRuns=baseline_num_of_runs,
+                    robotIncreasePercent=baseline_robot_increase_percent,
+                    thirdApproachName=baseline_third_approach,
+                    availableTime=baseline_computation_time,
+                    maxTrees=baseline_max_trees,
+                )
+            else:
+                baselineResults = baselineTest(
+                    detecRad=detection_radius,
+                    numOfRuns=baseline_num_of_runs,
+                    robotIncreasePercent=baseline_robot_increase_percent,
+                    thirdApproachName=baseline_third_approach,
+                    availableTime=baseline_computation_time,
+                    maxTrees=baseline_max_trees,
+                )
 
         st.session_state.baseline_simulation_results = {
+            "is3D": is3D,
+            "sceneName": scene_name if is3D else None,
             "G": baselineResults["G"],
             "regularEdges": list(baselineResults["G"].edges.keys()),
             "priors": baselineResults["priors"],
@@ -873,25 +985,29 @@ elif app_mode == "Baseline Test":
 
     if baselineResultsState is not None:
 
-        st.markdown("### Environment with Navigation Graph")
+        st.markdown("### Environment")
 
         st.caption(
             f"{baselineMethodsLabel} and the 3rd approach all run on this "
             "exact same navigation graph, built once and reused for every "
             "run."
+            + (f" Scene: **{baselineResultsState['sceneName']}**." if baselineResultsState.get("is3D") else "")
         )
 
-        st.plotly_chart(
-            buildEnvironmentFigure(
-                obstacles,
-                baselineResultsState["priors"],
-                H,
-                W,
-                G=baselineResultsState["G"],
-                regularEdges=baselineResultsState["regularEdges"],
-            ),
-            use_container_width=True,
-        )
+        if baselineResultsState.get("is3D"):
+            renderSceneScreenshot(baselineResultsState["sceneName"])
+        else:
+            st.plotly_chart(
+                buildEnvironmentFigure(
+                    obstacles,
+                    baselineResultsState["priors"],
+                    H,
+                    W,
+                    G=baselineResultsState["G"],
+                    regularEdges=baselineResultsState["regularEdges"],
+                ),
+                use_container_width=True,
+            )
 
         # --------------------------------------------------
         # STATS TABLE
@@ -1071,16 +1187,28 @@ else:
             f"(evolutionary search + random spanning tree baseline)..."
         ):
 
-            evolution = runSpanningTreeEvolution(
-                approachName=evo_approach,
-                detecRad=detection_radius,
-                availableRobots=evo_available_robots,
-                availableTime=evo_computation_time,
-                maxTrees=evo_max_trees,
-                populationSize=evo_population_size,
-            )
+            if is3D:
+                evolution = threeDTest.runSpanningTreeEvolution3D(
+                    sceneName=scene_name,
+                    approachName=evo_approach,
+                    availableRobots=evo_available_robots,
+                    availableTime=evo_computation_time,
+                    maxTrees=evo_max_trees,
+                    populationSize=evo_population_size,
+                )
+            else:
+                evolution = runSpanningTreeEvolution(
+                    approachName=evo_approach,
+                    detecRad=detection_radius,
+                    availableRobots=evo_available_robots,
+                    availableTime=evo_computation_time,
+                    maxTrees=evo_max_trees,
+                    populationSize=evo_population_size,
+                )
 
         st.session_state.evolution_results = {
+            "is3D": is3D,
+            "sceneName": scene_name if is3D else None,
             "approach": evo_approach,
             "G": evolution["G"],
             "regularEdges": list(evolution["G"].edges.keys()),
@@ -1099,19 +1227,23 @@ else:
 
     if evoResults is not None:
 
-        st.markdown("### Environment with Navigation Graph")
+        st.markdown("### Environment")
 
-        st.plotly_chart(
-            buildEnvironmentFigure(
-                obstacles,
-                evoResults["priors"],
-                H,
-                W,
-                G=evoResults["G"],
-                regularEdges=evoResults["regularEdges"],
-            ),
-            use_container_width=True,
-        )
+        if evoResults.get("is3D"):
+            st.caption(f"Scene: **{evoResults['sceneName']}**")
+            renderSceneScreenshot(evoResults["sceneName"])
+        else:
+            st.plotly_chart(
+                buildEnvironmentFigure(
+                    obstacles,
+                    evoResults["priors"],
+                    H,
+                    W,
+                    G=evoResults["G"],
+                    regularEdges=evoResults["regularEdges"],
+                ),
+                use_container_width=True,
+            )
 
         def renderRunCaption(runResult, methodLabel):
 
