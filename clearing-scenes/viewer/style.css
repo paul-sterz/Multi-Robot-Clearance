@@ -85,7 +85,6 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 .k-dirty { background: #6b3550; }
 .k-seen  { background: #fab04a; }
 .k-route { background: #ff5fbf; }
-.k-inspect { background: #fa8c38; }
 
 .marker-list {
   margin: 8px 0 2px;

@@ -129,18 +129,14 @@
       <button id="c-play">Play</button>
       <span id="c-time-label" class="hint"></span>
     </div>
-    <label class="field">
-      <span>Detection set of an occupied vertex</span>
-      <select id="c-inspect">
-        <option value="-1">&mdash; none &mdash;</option>
-      </select>
-    </label>
+    <label><input type="checkbox" id="c-show-detection"> Show detection sets</label>
     <p class="hint">
       <span class="key k-clear"></span> cleared
       <span class="key k-dirty"></span> not yet cleared
-      <span class="key k-seen"></span> watched now
-      <span class="key k-inspect"></span> inspected vertex
+      <span class="key k-seen"></span> watched now (a robot parked there)
     </p>
+    <p class="hint">Every vertex currently holding a robot, watched together --
+      a robot in transit watches nothing.</p>
   </fieldset>
 
   <p class="foot">

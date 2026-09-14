@@ -150,7 +150,7 @@ let hotspots = [];          // { cell, category, xyz: [x,y,z] }
 let startVertices = [];     // { vertex, xyz: [x,y,z] }
 let computed = null;        // the /api/run response, or null
 let compLabelPool = new Map();  // pack key -> id sprite, reused while stable
-let compPlaying = false, compLastMs = 0, compSpeed = 1;
+let compPlaying = false, compLastMs = 0, compSpeed = 1, compTime = 0;
 let priorsView = null;      // { codes: Uint16Array, min, max } -- last computed/previewed priors
 let priorsPreviewTimer = null;
 
@@ -195,9 +195,10 @@ function init() {
   $("#c-time").oninput = () => {
     compPlaying = false;
     $("#c-play").textContent = "Play";
-    paintComputed(parseFloat($("#c-time").value));
+    compTime = parseFloat($("#c-time").value);
+    paintComputed(compTime);
   };
-  $("#c-inspect").onchange = () => paintComputed(parseFloat($("#c-time").value));
+  $("#c-show-detection").onchange = () => paintComputed(compTime);
   $("#c-show-priors").onchange = () => {
     if ($("#c-show-priors").checked && !priorsView) refreshPriorsPreview();
     else updateSurfaceView();
@@ -220,17 +221,25 @@ function init() {
   // The loop is a clock, not just a repaint: playing a computed strategy
   // walks its packs along their paths, and that has to be told how much time
   // went by rather than how many frames.
+  //
+  // compTime -- not the #c-time slider's own .value -- is the actual clock.
+  // A range input snaps whatever it's assigned to the nearest `step` (every
+  // browser, confirmed for both Chromium and WebKit): at 60fps each frame's
+  // advance is a fraction of a second, so reading .value back as the running
+  // total silently discarded it below the step every single frame and the
+  // clock never moved -- "the robots move a little, then nothing happens"
+  // was this rounding, not a stall. The slider still gets that value on
+  // every frame, but only to *display* it; nothing reads it back.
   (function loop(ms) {
     requestAnimationFrame(loop);
     if (compPlaying && computed) {
       const dt = compLastMs ? Math.min(ms - compLastMs, 250) : 0;
       compLastMs = ms;
-      const el = $("#c-time");
-      let t = parseFloat(el.value) + (dt / 1000) * compSpeed;
-      const max = +el.max;
-      if (t >= max) { t = max; compPlaying = false; $("#c-play").textContent = "Play"; }
-      el.value = t;
-      paintComputed(t);
+      compTime += (dt / 1000) * compSpeed;
+      const max = +$("#c-time").max;
+      if (compTime >= max) { compTime = max; compPlaying = false; $("#c-play").textContent = "Play"; }
+      $("#c-time").value = compTime;
+      paintComputed(compTime);
     } else compLastMs = 0;
 
     renderer.render(world, camera);
@@ -363,13 +372,11 @@ function build(data) {
   clearTimeout(priorsPreviewTimer);
   G.hotspots = points(new Float32Array(0), new Float32Array(0), 3.6);
   G.starts = points(new Float32Array(0), new Float32Array(0), 3.6);
-  G.compPacks = points(new Float32Array(0), new Float32Array(0), 3.2);
 
   for (const k of Object.keys(G)) world.add(G[k]);
 
   // detection sets, decoded lazily -- most are never looked at
   S.dsetCache = new Map();
-  S.dsetIdxCache = new Map();
 
   // How big an id sprite has to be to read at the framing `frame()` picks: the
   // camera sits about one site-span away, so a label of a fortieth of the span
@@ -489,18 +496,6 @@ function dset(v) {
   return S.dsetCache.get(v);
 }
 
-/** `dset(v)`, as the list of cell indices it contains rather than a dense
- *  mask -- cheap to scan for an overlay (see paintComputed's inspector),
- *  where a dense O(nCells) pass every frame would not be. */
-function dsetIndices(v) {
-  if (!S.dsetIdxCache.has(v)) {
-    const m = dset(v), idx = [];
-    for (let i = 0; i < m.length; i++) if (m[i]) idx.push(i);
-    S.dsetIdxCache.set(v, idx);
-  }
-  return S.dsetIdxCache.get(v);
-}
-
 /** The generic "pick any vertex, see what it sees" view -- independent of
  *  any strategy, computed or otherwise. */
 function paint() {
@@ -531,30 +526,38 @@ function paint() {
   G.held.geometry.attributes.position.needsUpdate = true;
 }
 
-function labelSprite(text, colour) {
-  const c = document.createElement("canvas");
-  const g = c.getContext("2d");
-  const font = "600 44px ui-sans-serif, system-ui, -apple-system, sans-serif";
-  g.font = font;
-  c.width = Math.ceil(g.measureText(text).width) + 28;   // resets the context
-  c.height = 64;
-  g.font = font;
-  g.textAlign = "center";
-  g.textBaseline = "middle";
-  g.lineWidth = 7;
-  g.strokeStyle = "rgba(7,11,16,0.9)";   // an id crossing pale stone still reads
-  g.strokeText(text, c.width / 2, 34);
-  g.fillStyle = "#" + colour.getHexString();
-  g.fillText(text, c.width / 2, 34);
-  const sp = new THREE.Sprite(new THREE.SpriteMaterial({
-    map: new THREE.CanvasTexture(c), transparent: true, depthTest: false }));
-  sp.renderOrder = 10;                       // ids are never hidden by geometry
-  sp.userData.aspect = c.width / c.height;
-  return sp;
-}
-
 function nodePoint(v) {
   return [S.nodeDraw[3 * v], S.nodeDraw[3 * v + 1], S.nodeDraw[3 * v + 2]];
+}
+
+/** A robot pack's marker: a filled disc, with the count inside only when
+ *  more than one robot travels together -- most moves here carry exactly
+ *  one, and a lone disc reads as "a robot" far better than a bare "×1" ever
+ *  did floating over a node. */
+function packSprite(count) {
+  const c = document.createElement("canvas");
+  const size = 64;
+  c.width = c.height = size;
+  const g = c.getContext("2d");
+  const r = size / 2 - 5;
+  g.beginPath();
+  g.arc(size / 2, size / 2, r, 0, 2 * Math.PI);
+  g.fillStyle = "#" + new THREE.Color(PACK_COLOR).getHexString();
+  g.fill();
+  g.lineWidth = 4;
+  g.strokeStyle = "rgba(7,11,16,0.85)";
+  g.stroke();
+  if (count > 1) {
+    g.font = "700 30px ui-sans-serif, system-ui, -apple-system, sans-serif";
+    g.textAlign = "center";
+    g.textBaseline = "middle";
+    g.fillStyle = "#0b0f14";
+    g.fillText(String(count), size / 2, size / 2 + 1);
+  }
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: new THREE.CanvasTexture(c), transparent: true, depthTest: false }));
+  sp.renderOrder = 10;
+  return sp;
 }
 
 /* ----------------------------------------------------------------- panel */
@@ -866,11 +869,11 @@ function setComputed(data) {
     + `${m.available_robots} robots, ${m.vertices_visited}/${m.n_vertices} `
     + `vertices reached, ${fmtTime(m.mission_seconds)} mission.`;
 
+  compTime = 0;
   const el = $("#c-time");
   el.max = String(Math.max(0, Math.ceil(data.metrics.mission_seconds)));
   el.value = "0";
   $("#c-playback").style.display = "";
-  $("#c-inspect").value = "-1";
   paintComputed(0);
 }
 
@@ -936,56 +939,36 @@ function packPositionsAt(t) {
 
 function placeComputedPacks(t) {
   const packs = packPositionsAt(t);
-  const pos = [], col = [];
   const seen = new Set();
-  const c = new THREE.Color(PACK_COLOR);
   for (const p of packs) {
     seen.add(p.key);
-    pos.push(p.pos[0], p.pos[1], p.pos[2] + PACK_LIFT);
-    col.push(c.r, c.g, c.b);
 
-    const text = "×" + p.count;
     let sp = compLabelPool.get(p.key);
-    if (!sp || sp.userData.text !== text) {
+    if (!sp || sp.userData.count !== p.count) {
       if (sp) { world.remove(sp); sp.material.map.dispose(); sp.material.dispose(); }
-      sp = labelSprite(text, c);
-      sp.userData.text = text;
+      sp = packSprite(p.count);
+      sp.userData.count = p.count;
       compLabelPool.set(p.key, sp);
       world.add(sp);
     }
     sp.visible = true;
-    sp.position.set(p.pos[0], p.pos[1], p.pos[2] + PACK_LIFT + S.labelSize * 1.1);
-    const size = S.labelSize;
-    sp.scale.set(size * sp.userData.aspect, size, 1);
+    sp.position.set(p.pos[0], p.pos[1], p.pos[2] + PACK_LIFT);
+    const size = S.labelSize * (p.count > 1 ? 1.3 : 1);
+    sp.scale.set(size, size, 1);
   }
   for (const [key, sp] of compLabelPool) if (!seen.has(key)) sp.visible = false;
-  setGeom(G.compPacks, pos, col);
-}
-
-/** The "detection set of an occupied vertex" picker: repopulated only when
- *  the set of currently-occupied vertices actually changes, keeping the
- *  previous pick selected if it is still valid. */
-function updateInspectSelect(heldNow, counts) {
-  const sel = $("#c-inspect");
-  const prev = sel.value;
-  const opts = ['<option value="-1">— none —</option>'];
-  for (const v of heldNow) {
-    opts.push(`<option value="${v}">vertex ${v} (${counts.get(v)} robot${counts.get(v) === 1 ? "" : "s"})</option>`);
-  }
-  sel.innerHTML = opts.join("");
-  sel.value = heldNow.includes(+prev) ? prev : "-1";
 }
 
 /** Paint the surface for the strategy computed here: cleared (ever seen by a
- *  visited vertex), watched now (seen by a currently-occupied one), or still
- *  dirty. The per-cell scan is O(nCells) per held vertex, so the base colour
- *  is only recomputed when the qualifying vertex sets actually changed since
- *  the last call -- which, at 30-60 calls/second while playing, is most of
- *  them: a scene's cell count is in the hundreds of thousands and the
- *  held/watched sets only change at the (far rarer) departure/arrival
- *  events. The result is cached in S.compBaseColor so the (cheap) inspector
- *  overlay below can always restart from a clean base instead of painting on
- *  top of whatever the previous frame left behind.
+ *  visited vertex), watched now (seen by a currently-occupied one -- only
+ *  while "Show detection sets" is on), or still dirty. The per-cell scan is
+ *  O(nCells) per held vertex, so it is skipped unless the qualifying vertex
+ *  sets (or the heatmap/detection toggle) actually changed since the last
+ *  call -- which, at 30-60 calls/second while playing, is most of them: a
+ *  scene's cell count is in the hundreds of thousands and the held/watched
+ *  sets only change at the (far rarer) departure/arrival events. Only the
+ *  pack markers (`placeComputedPacks`, cheap: O(moves)) move every frame
+ *  regardless.
  */
 let compPaintKey = null;
 
@@ -996,19 +979,16 @@ function paintComputed(t) {
   for (const [vStr, vt] of Object.entries(computed.visit_time)) {
     if (vt <= t) held.push(+vStr);
   }
-  const counts = robotCountsAt(t);
   const heldNow = [];
-  for (const [v, n] of counts) if (n > 0) heldNow.push(v);
+  for (const [v, n] of robotCountsAt(t)) if (n > 0) heldNow.push(v);
   heldNow.sort((a, b) => a - b);
 
   const showPriors = $("#c-show-priors").checked && priorsView;
-  // Prefixed with the view kind, so toggling the heatmap on/off always
-  // invalidates the cache even when the held/watched sets themselves didn't
-  // change between the two calls.
-  const key = (showPriors ? "H|" : "C|") + held.join(",") + "|" + heldNow.join(",");
+  const showDetection = $("#c-show-detection").checked;
+  const mode = showPriors ? "H" : (showDetection ? "W" : "C");
+  const key = mode + "|" + held.join(",") + "|" + heldNow.join(",");
   if (key !== compPaintKey) {
     compPaintKey = key;
-    updateInspectSelect(heldNow, counts);
 
     const col = G.surface.geometry.attributes.color.array;
     if (showPriors) {
@@ -1020,17 +1000,20 @@ function paintComputed(t) {
         const m = dset(v);
         for (let i = 0; i < S.nCells; i++) if (m[i]) cleared[i] = 1;
       }
-      const watchedNow = new Uint8Array(S.nCells);
-      for (const v of heldNow) {
-        const m = dset(v);
-        for (let i = 0; i < S.nCells; i++) if (m[i]) watchedNow[i] = 1;
+      let watchedNow = null;
+      if (showDetection) {
+        watchedNow = new Uint8Array(S.nCells);
+        for (const v of heldNow) {
+          const m = dset(v);
+          for (let i = 0; i < S.nCells; i++) if (m[i]) watchedNow[i] = 1;
+        }
       }
       for (let i = 0; i < S.nCells; i++) {
-        const c = watchedNow[i] ? WATCHED : (cleared[i] ? CLEARED : DIRTY);
+        const c = (watchedNow && watchedNow[i]) ? WATCHED : (cleared[i] ? CLEARED : DIRTY);
         col[3 * i] = c[0]; col[3 * i + 1] = c[1]; col[3 * i + 2] = c[2];
       }
+      G.surface.geometry.attributes.color.needsUpdate = true;
     }
-    S.compBaseColor = col.slice();
 
     const hp = new Float32Array(held.length * 3);
     held.forEach((q, k) => {
@@ -1039,20 +1022,6 @@ function paintComputed(t) {
     });
     setGeom(G.held, hp);
   }
-
-  // The inspected vertex's exact detection set, painted over the cached
-  // base -- cheap (only the set cells, via dsetIndices) and unconditionally
-  // re-applied from the clean base every call, so switching the pick (or
-  // clearing it) never leaves a stale overlay from a previous call behind.
-  const col = G.surface.geometry.attributes.color.array;
-  col.set(S.compBaseColor);
-  const inspect = parseInt($("#c-inspect").value, 10);
-  if (inspect >= 0 && heldNow.includes(inspect)) {
-    for (const i of dsetIndices(inspect)) {
-      col[3 * i] = SEEN_BY[0]; col[3 * i + 1] = SEEN_BY[1]; col[3 * i + 2] = SEEN_BY[2];
-    }
-  }
-  G.surface.geometry.attributes.color.needsUpdate = true;
 
   placeComputedPacks(t);
 
@@ -1081,7 +1050,7 @@ function paintPriorHeatmap() {
  *  (placed hotspots but no run yet), or the plain height ramp. */
 function updateSurfaceView() {
   if (computed) {
-    paintComputed(parseFloat($("#c-time").value));
+    paintComputed(compTime);
     return;
   }
   if ($("#c-show-priors").checked && priorsView) {
@@ -1134,7 +1103,7 @@ function toggleCompPlay() {
     $("#c-play").textContent = "Play";
     return;
   }
-  if (parseFloat($("#c-time").value) >= +$("#c-time").max) $("#c-time").value = "0";
+  if (compTime >= +$("#c-time").max) compTime = 0;
   compPlaying = true;
   compLastMs = 0;
   $("#c-play").textContent = "Pause";
