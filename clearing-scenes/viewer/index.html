@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<!--
+  The scene viewer. Open this file directly -- no server, no build step.
+
+  Each scene lives in one data/<scene>.js written by scripts/build_web.py and
+  is loaded on demand, so switching scenes fetches a few megabytes rather than
+  all of them at once.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Clearing scenes</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div id="view"></div>
+
+<aside id="panel">
+  <h1>Clearing scenes</h1>
+  <p class="sub">Terrestrial survey &rarr; walkable surface &rarr; visibility graph</p>
+
+  <label class="field">
+    <span>Scene</span>
+    <select id="scene"></select>
+  </label>
+
+  <div id="stats" class="stats"></div>
+
+  <fieldset>
+    <legend>Layers</legend>
+    <label><input type="checkbox" id="l-cloud" checked> Survey cloud</label>
+    <label><input type="checkbox" id="l-surface" checked> Walkable surface</label>
+    <label><input type="checkbox" id="l-edges" checked> Guard-region edges</label>
+    <label><input type="checkbox" id="l-shady" checked> &nbsp;&nbsp;&mdash; incl. shady</label>
+    <label><input type="checkbox" id="l-vertices" checked> Vertices</label>
+    <label><input type="checkbox" id="l-routes"> Robot routes (all)</label>
+    <label><input type="checkbox" id="l-boundary" checked> Scenario boundary</label>
+  </fieldset>
+
+  <fieldset>
+    <legend>Robot route</legend>
+    <label class="field">
+      <span>From vertex</span>
+      <select id="route-from"></select>
+    </label>
+    <label class="field">
+      <span>To</span>
+      <select id="route-to"></select>
+    </label>
+    <div id="route-meta" class="hint"></div>
+    <p class="hint">The path the platform actually walks, over the walkable
+      surface. An edge of the graph is a line of sight; the ground between its
+      two ends may be a building.</p>
+  </fieldset>
+
+  <fieldset>
+    <legend>Detection set</legend>
+    <label class="field">
+      <span>Vertex</span>
+      <select id="vertex"></select>
+    </label>
+    <p class="hint">The surface a searcher standing there sees. Click a vertex in
+      the view to pick it.</p>
+  </fieldset>
+
+  <fieldset id="playback">
+    <legend>Clearing strategy</legend>
+    <div id="strat-meta" class="hint"></div>
+    <label><input type="checkbox" id="show-strat"> Paint the strategy state</label>
+    <label><input type="checkbox" id="show-machines"> Show the machines, with their ids</label>
+    <input type="range" id="step" min="0" max="0" value="0">
+    <div class="row">
+      <button id="play">Play</button>
+      <span id="step-label" class="hint"></span>
+    </div>
+    <p class="hint">
+      <span class="key k-clear"></span> cleared
+      <span class="key k-dirty"></span> contaminated
+      <span class="key k-seen"></span> watched now
+      &middot; <kbd>&larr;</kbd><kbd>&rarr;</kbd> step
+    </p>
+  </fieldset>
+
+  <fieldset id="fleet" style="display:none">
+    <legend>Fleet</legend>
+    <div id="fleet-meta" class="hint"></div>
+    <div id="fleet-list"></div>
+    <p class="hint">Click a machine &mdash; in the list or in the view &mdash; for
+      the surface it watches from where it stands and the ground it has walked.
+      Playing walks the team along the paths it really takes between two steps.</p>
+    <p class="hint">A searcher in transit is credited with nothing: a machine
+      watches nothing, and the guarantee is about the vertices a step holds, not
+      about the walking between them.</p>
+  </fieldset>
+
+  <p class="foot">
+    Drag to orbit &middot; right-drag to pan &middot; wheel to zoom &middot;
+    <kbd>R</kbd> to reset
+  </p>
+</aside>
+
+<div id="loading">loading&hellip;</div>
+
+<script src="vendor/three.min.js"></script>
+<script src="data/index.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

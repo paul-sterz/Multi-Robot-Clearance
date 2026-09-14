@@ -1,0 +1,8 @@
+# What the library and the scripts need. Nothing here is exotic; the heavy
+# geometry stack lives in `e1-clearing-graph` and only `export_from_e1.py`
+# touches it.
+numpy>=1.24
+scipy>=1.10          # connected components for the flood, assignment for makespan
+pyyaml>=6.0          # the scenario files
+pillow>=10           # writing GIF frames
+pytest>=7.0          # tests

@@ -1,0 +1,1476 @@
+# Blenheim Palace -- ground-platform clearing scenario
+#
+# Vertices are sampled sensor positions on the walkable surface. An edge
+# (i, j) exists where a searcher at j can watch part of dD(p_i), the
+# boundary of what a searcher at i sees: the guard region G_ij of
+# Kolling et al. 2010. `routes` gives the platform's travel time
+# between every pair of vertices;
+# the path it actually walks along each edge is in the npz beside it.
+#
+# Regenerate with scripts/export_from_e1.py; see docs/scene-format.md.
+
+scene: blenheim-palace
+title: Blenheim Palace
+
+source:
+  dataset: Oxford Spires Dataset (Tao et al., IJRR 2025)
+  survey: terrestrial laser scan, merged cloud + individual E57 setups
+  pipeline: e1-clearing-graph, stages 2-6
+  occupancy: O-carved (unobserved space blocks)
+  graph_file: carved_huav20_R30_seed1
+  vertex_set: repaired-ground
+  vertex_set_note: E1 Stage 5/6 plus e2.gsst.repair_scene(level='ground'); guard graph rebuilt with e1.graph.build_graph and checked against e2.gsst.ground_guide
+  note: the ground half of E1's two-platform graph; identical for every h_uav, which only selects the file
+
+platform:
+  kind: ground
+  sensor_height_m: 1.0
+  detection_range_m: 30.0
+  speed_m_s: 1.0
+
+target:
+  height_m: 1.0
+  radius_m: 0.25
+  visibility: all 5 rays to the target cylinder must pass
+
+site_boundary:
+  # Where the scenario stops. Drawn by hand in e1-clearing-graph
+  # (configs/site_boundary.yaml) and approved there; the surface,
+  # the vertices, the guard regions and the routes below are all
+  # what survives it. The evader cannot leave it and no searcher has
+  # to watch across it: the drawn lines are held, not open frontier.
+  bounded: true
+  stamp: 5196ff7e927c            # hash of the drawn lines; matches E1's approval
+  approved: 2026-08-22
+  source: e1-clearing-graph configs/site_boundary.yaml, drawn by hand
+  cuts: 4                  # hand-drawn lines across the openings
+  held_line_m: 35.7          # how much of the perimeter those lines are
+  cells_dropped: 9298       # walkable cells outside it, removed before anything was indexed
+  walkable_dropped_m2: 371.9   # what that is in area: surveyed ground this scenario gives up
+  excluded_m2: 408.6           # E1's own figure, measured on its 0.4 m boundary raster rather
+                              # than on this 0.2 m walkable surface, so the two differ slightly
+  outline_segments: 2718
+  outline_length_m: 1087.2    # the whole outline, in the npz as site_boundary_seg
+
+surface:
+  geometry_file: geometry/blenheim-palace.npz
+  cell_size_m: 0.2
+  cells: 283432
+  area_m2: 11337.28
+  bbox_min: [-131.57, -164.72, -6.41]
+  bbox_max: [-6.97, -0.92, -1.31]
+  max_step_m: 0.25          # height a neighbouring cell may differ by
+  evader_edges: 1119062       # 8-connected under that rule; recomputed, not stored
+  uncoverable_cells: 2140   # seen by no vertex, at any team size
+  uncoverable_area_m2: 85.6
+
+graph:
+  vertices: 47
+  edges: 258
+  edges_regular: 170
+  edges_shady: 88
+
+  # id, sensor position [m], the area D(p) the vertex sees, and how
+  # many cells its detection-set boundary dD(p) is
+  vertices_list:
+    - {id:   0, xyz: [   -69.77,    -46.92,   -4.25], detection_m2:   2795.2, detection_boundary_cells:   1019}
+    - {id:   1, xyz: [   -50.97,    -98.72,   -4.02], detection_m2:   2594.2, detection_boundary_cells:   1286}
+    - {id:   2, xyz: [  -100.17,    -68.92,   -4.11], detection_m2:     2449, detection_boundary_cells:   1357}
+    - {id:   3, xyz: [   -35.17,    -45.92,   -3.67], detection_m2:   1950.4, detection_boundary_cells:    994}
+    - {id:   4, xyz: [   -97.17,   -107.32,   -4.13], detection_m2:   1771.1, detection_boundary_cells:   1166}
+    - {id:   5, xyz: [  -101.17,    -33.12,   -4.52], detection_m2:   1798.2, detection_boundary_cells:    619}
+    - {id:   6, xyz: [   -76.57,   -121.32,   -3.76], detection_m2:    662.4, detection_boundary_cells:    890}
+    - {id:   7, xyz: [   -38.97,   -111.92,   -3.67], detection_m2:   1137.5, detection_boundary_cells:   1088}
+    - {id:   8, xyz: [   -75.97,    -15.12,   -4.95], detection_m2:   1368.8, detection_boundary_cells:    420}
+    - {id:   9, xyz: [   -27.37,    -73.52,   -3.58], detection_m2:     1586, detection_boundary_cells:   1545}
+    - {id:  10, xyz: [  -119.17,    -66.32,   -3.52], detection_m2:   1403.6, detection_boundary_cells:   1382}
+    - {id:  11, xyz: [   -62.57,   -137.92,    -0.9], detection_m2:    165.4, detection_boundary_cells:    624}
+    - {id:  12, xyz: [   -38.97,   -120.92,   -2.86], detection_m2:   1042.8, detection_boundary_cells:   1123}
+    - {id:  13, xyz: [   -65.77,   -157.52,   -0.63], detection_m2:     54.6, detection_boundary_cells:    217}
+    - {id:  14, xyz: [  -101.97,   -121.72,   -3.58], detection_m2:    487.8, detection_boundary_cells:    943}
+    - {id:  15, xyz: [   -59.77,   -148.52,   -0.62], detection_m2:     46.1, detection_boundary_cells:    265}
+    - {id:  16, xyz: [   -19.77,   -102.72,   -3.48], detection_m2:    165.6, detection_boundary_cells:    597}
+    - {id:  17, xyz: [    -9.97,    -62.32,   -3.57], detection_m2:     89.7, detection_boundary_cells:    624}
+    - {id:  18, xyz: [   -64.57,   -130.72,   -1.82], detection_m2:    547.9, detection_boundary_cells:   1252}
+    - {id:  19, xyz: [   -60.17,   -161.32,   -0.63], detection_m2:     19.5, detection_boundary_cells:    105}
+    - {id:  20, xyz: [   -74.37,   -141.72,   -2.63], detection_m2:    340.1, detection_boundary_cells:    293}
+    - {id:  21, xyz: [   -42.77,    -25.32,   -4.51], detection_m2:     1364, detection_boundary_cells:    568}
+    - {id:  22, xyz: [   -17.97,    -84.32,   -3.33], detection_m2:    332.6, detection_boundary_cells:    578}
+    - {id:  23, xyz: [   -65.97,   -146.92,   -0.63], detection_m2:     44.1, detection_boundary_cells:    324}
+    - {id:  24, xyz: [  -106.17,    -76.92,   -3.64], detection_m2:   1168.5, detection_boundary_cells:   1163}
+    - {id:  25, xyz: [  -114.97,   -104.72,    -3.5], detection_m2:    117.2, detection_boundary_cells:    500}
+    - {id:  26, xyz: [   -38.57,    -69.12,    -4.1], detection_m2:   2095.2, detection_boundary_cells:   1443}
+    - {id:  27, xyz: [   -57.97,   -157.72,   -0.63], detection_m2:     50.2, detection_boundary_cells:    163}
+    - {id:  28, xyz: [   -20.77,   -106.92,    -3.5], detection_m2:     81.6, detection_boundary_cells:    357}
+    - {id:  29, xyz: [  -115.17,    -92.52,   -3.16], detection_m2:    209.6, detection_boundary_cells:    475}
+    - {id:  30, xyz: [   -58.37,   -122.32,   -2.84], detection_m2:   1675.2, detection_boundary_cells:   1359}
+    - {id:  31, xyz: [   -66.37,   -148.72,   -0.63], detection_m2:     50.5, detection_boundary_cells:    299}
+    - {id:  32, xyz: [  -130.77,    -75.52,   -3.56], detection_m2:    139.1, detection_boundary_cells:    466}
+    - {id:  33, xyz: [   -92.17,   -123.32,   -3.26], detection_m2:   1022.9, detection_boundary_cells:   1550}
+    - {id:  34, xyz: [   -17.37,    -70.92,   -3.43], detection_m2:    648.5, detection_boundary_cells:    878}
+    - {id:  35, xyz: [   -61.37,   -154.12,   -0.63], detection_m2:       58, detection_boundary_cells:    279}
+    - {id:  36, xyz: [   -67.57,   -150.12,   -0.64], detection_m2:       18, detection_boundary_cells:    115}
+    - {id:  37, xyz: [   -67.17,   -144.92,   -0.63], detection_m2:     16.3, detection_boundary_cells:    138}
+    - {id:  38, xyz: [  -112.37,   -100.52,   -3.53], detection_m2:    693.6, detection_boundary_cells:    791}
+    - {id:  39, xyz: [  -115.97,   -106.52,   -2.87], detection_m2:     56.5, detection_boundary_cells:    502}
+    - {id:  40, xyz: [   -14.37,    -63.92,   -3.55], detection_m2:    169.8, detection_boundary_cells:    849}
+    - {id:  41, xyz: [   -27.57,    -19.72,   -3.67], detection_m2:    378.1, detection_boundary_cells:    356}
+    - {id:  42, xyz: [   -75.17,   -137.72,   -2.68], detection_m2:    311.2, detection_boundary_cells:    288}
+    - {id:  43, xyz: [   -67.37,   -137.72,   -0.92], detection_m2:       12, detection_boundary_cells:     46}
+    - {id:  44, xyz: [   -30.77,   -117.92,   -3.57], detection_m2:    450.4, detection_boundary_cells:    821}
+    - {id:  45, xyz: [   -58.77,   -147.32,   -0.62], detection_m2:     45.9, detection_boundary_cells:    241}
+    - {id:  46, xyz: [   -57.57,   -147.92,   -0.62], detection_m2:     17.8, detection_boundary_cells:     80}
+
+  # i, j, whether the guard region G_ij = dD(p_i) n D(p_j) is strictly
+  # contained in another one (shady) or not (regular), and how big it is
+  edges_list:
+    - {i:   0, j:   1, type: regular, guard_region_cells:    278, guard_region_m2:    11.12}
+    - {i:   0, j:   2, type: regular, guard_region_cells:    710, guard_region_m2:     28.4}
+    - {i:   0, j:   3, type: regular, guard_region_cells:    554, guard_region_m2:    22.16}
+    - {i:   0, j:   5, type: regular, guard_region_cells:    520, guard_region_m2:     20.8}
+    - {i:   0, j:   8, type: regular, guard_region_cells:    537, guard_region_m2:    21.48}
+    - {i:   0, j:   9, type: regular, guard_region_cells:    354, guard_region_m2:    14.16}
+    - {i:   0, j:  10, type: shady  , guard_region_cells:    258, guard_region_m2:    10.32}
+    - {i:   0, j:  21, type: regular, guard_region_cells:    483, guard_region_m2:    19.32}
+    - {i:   0, j:  24, type: shady  , guard_region_cells:     71, guard_region_m2:     2.84}
+    - {i:   0, j:  26, type: regular, guard_region_cells:    705, guard_region_m2:     28.2}
+    - {i:   0, j:  34, type: shady  , guard_region_cells:    108, guard_region_m2:     4.32}
+    - {i:   0, j:  40, type: shady  , guard_region_cells:     64, guard_region_m2:     2.56}
+    - {i:   1, j:   2, type: regular, guard_region_cells:    140, guard_region_m2:      5.6}
+    - {i:   1, j:   3, type: regular, guard_region_cells:    236, guard_region_m2:     9.44}
+    - {i:   1, j:   4, type: regular, guard_region_cells:    361, guard_region_m2:    14.44}
+    - {i:   1, j:   6, type: regular, guard_region_cells:    459, guard_region_m2:    18.36}
+    - {i:   1, j:   7, type: regular, guard_region_cells:    980, guard_region_m2:     39.2}
+    - {i:   1, j:   9, type: regular, guard_region_cells:    806, guard_region_m2:    32.24}
+    - {i:   1, j:  11, type: shady  , guard_region_cells:    210, guard_region_m2:      8.4}
+    - {i:   1, j:  12, type: regular, guard_region_cells:   1124, guard_region_m2:    44.96}
+    - {i:   1, j:  14, type: shady  , guard_region_cells:     58, guard_region_m2:     2.32}
+    - {i:   1, j:  16, type: regular, guard_region_cells:    459, guard_region_m2:    18.36}
+    - {i:   1, j:  18, type: regular, guard_region_cells:    807, guard_region_m2:    32.28}
+    - {i:   1, j:  26, type: regular, guard_region_cells:    680, guard_region_m2:     27.2}
+    - {i:   1, j:  28, type: regular, guard_region_cells:    213, guard_region_m2:     8.52}
+    - {i:   1, j:  30, type: regular, guard_region_cells:    953, guard_region_m2:    38.12}
+    - {i:   1, j:  33, type: regular, guard_region_cells:    422, guard_region_m2:    16.88}
+    - {i:   1, j:  34, type: shady  , guard_region_cells:    397, guard_region_m2:    15.88}
+    - {i:   1, j:  40, type: shady  , guard_region_cells:     68, guard_region_m2:     2.72}
+    - {i:   1, j:  44, type: regular, guard_region_cells:    852, guard_region_m2:    34.08}
+    - {i:   2, j:   4, type: regular, guard_region_cells:    532, guard_region_m2:    21.28}
+    - {i:   2, j:   5, type: regular, guard_region_cells:    482, guard_region_m2:    19.28}
+    - {i:   2, j:   8, type: shady  , guard_region_cells:     89, guard_region_m2:     3.56}
+    - {i:   2, j:  10, type: regular, guard_region_cells:   1501, guard_region_m2:    60.04}
+    - {i:   2, j:  14, type: shady  , guard_region_cells:    137, guard_region_m2:     5.48}
+    - {i:   2, j:  24, type: regular, guard_region_cells:   1269, guard_region_m2:    50.76}
+    - {i:   2, j:  25, type: shady  , guard_region_cells:    184, guard_region_m2:     7.36}
+    - {i:   2, j:  29, type: regular, guard_region_cells:    474, guard_region_m2:    18.96}
+    - {i:   2, j:  32, type: regular, guard_region_cells:    473, guard_region_m2:    18.92}
+    - {i:   2, j:  33, type: shady  , guard_region_cells:    198, guard_region_m2:     7.92}
+    - {i:   2, j:  38, type: regular, guard_region_cells:    392, guard_region_m2:    15.68}
+    - {i:   2, j:  39, type: shady  , guard_region_cells:    128, guard_region_m2:     5.12}
+    - {i:   3, j:   8, type: shady  , guard_region_cells:    233, guard_region_m2:     9.32}
+    - {i:   3, j:   9, type: regular, guard_region_cells:   1196, guard_region_m2:    47.84}
+    - {i:   3, j:  17, type: regular, guard_region_cells:    474, guard_region_m2:    18.96}
+    - {i:   3, j:  21, type: regular, guard_region_cells:    625, guard_region_m2:       25}
+    - {i:   3, j:  22, type: regular, guard_region_cells:    563, guard_region_m2:    22.52}
+    - {i:   3, j:  26, type: regular, guard_region_cells:   1146, guard_region_m2:    45.84}
+    - {i:   3, j:  34, type: regular, guard_region_cells:    727, guard_region_m2:    29.08}
+    - {i:   3, j:  40, type: regular, guard_region_cells:    700, guard_region_m2:       28}
+    - {i:   3, j:  41, type: regular, guard_region_cells:    361, guard_region_m2:    14.44}
+    - {i:   4, j:   6, type: regular, guard_region_cells:    336, guard_region_m2:    13.44}
+    - {i:   4, j:  10, type: regular, guard_region_cells:    482, guard_region_m2:    19.28}
+    - {i:   4, j:  11, type: regular, guard_region_cells:    220, guard_region_m2:      8.8}
+    - {i:   4, j:  12, type: shady  , guard_region_cells:     14, guard_region_m2:     0.56}
+    - {i:   4, j:  14, type: regular, guard_region_cells:    954, guard_region_m2:    38.16}
+    - {i:   4, j:  18, type: regular, guard_region_cells:    419, guard_region_m2:    16.76}
+    - {i:   4, j:  20, type: regular, guard_region_cells:    267, guard_region_m2:    10.68}
+    - {i:   4, j:  24, type: regular, guard_region_cells:    610, guard_region_m2:     24.4}
+    - {i:   4, j:  25, type: regular, guard_region_cells:    452, guard_region_m2:    18.08}
+    - {i:   4, j:  29, type: shady  , guard_region_cells:     72, guard_region_m2:     2.88}
+    - {i:   4, j:  30, type: regular, guard_region_cells:    559, guard_region_m2:    22.36}
+    - {i:   4, j:  33, type: regular, guard_region_cells:   1259, guard_region_m2:    50.36}
+    - {i:   4, j:  38, type: regular, guard_region_cells:    813, guard_region_m2:    32.52}
+    - {i:   4, j:  39, type: regular, guard_region_cells:    460, guard_region_m2:     18.4}
+    - {i:   4, j:  42, type: regular, guard_region_cells:    272, guard_region_m2:    10.88}
+    - {i:   5, j:   8, type: regular, guard_region_cells:    417, guard_region_m2:    16.68}
+    - {i:   5, j:  10, type: regular, guard_region_cells:    592, guard_region_m2:    23.68}
+    - {i:   5, j:  21, type: shady  , guard_region_cells:     94, guard_region_m2:     3.76}
+    - {i:   5, j:  24, type: shady  , guard_region_cells:    386, guard_region_m2:    15.44}
+    - {i:   6, j:   7, type: shady  , guard_region_cells:    256, guard_region_m2:    10.24}
+    - {i:   6, j:  11, type: regular, guard_region_cells:    308, guard_region_m2:    12.32}
+    - {i:   6, j:  12, type: regular, guard_region_cells:    506, guard_region_m2:    20.24}
+    - {i:   6, j:  14, type: regular, guard_region_cells:    240, guard_region_m2:      9.6}
+    - {i:   6, j:  18, type: regular, guard_region_cells:    664, guard_region_m2:    26.56}
+    - {i:   6, j:  20, type: regular, guard_region_cells:    325, guard_region_m2:       13}
+    - {i:   6, j:  30, type: regular, guard_region_cells:    854, guard_region_m2:    34.16}
+    - {i:   6, j:  33, type: regular, guard_region_cells:    632, guard_region_m2:    25.28}
+    - {i:   6, j:  35, type: shady  , guard_region_cells:     12, guard_region_m2:     0.48}
+    - {i:   6, j:  42, type: regular, guard_region_cells:    296, guard_region_m2:    11.84}
+    - {i:   6, j:  43, type: shady  , guard_region_cells:      8, guard_region_m2:     0.32}
+    - {i:   6, j:  44, type: shady  , guard_region_cells:    117, guard_region_m2:     4.68}
+    - {i:   7, j:   9, type: regular, guard_region_cells:    639, guard_region_m2:    25.56}
+    - {i:   7, j:  11, type: shady  , guard_region_cells:     19, guard_region_m2:     0.76}
+    - {i:   7, j:  12, type: regular, guard_region_cells:    852, guard_region_m2:    34.08}
+    - {i:   7, j:  16, type: regular, guard_region_cells:    380, guard_region_m2:     15.2}
+    - {i:   7, j:  18, type: shady  , guard_region_cells:    188, guard_region_m2:     7.52}
+    - {i:   7, j:  26, type: regular, guard_region_cells:    503, guard_region_m2:    20.12}
+    - {i:   7, j:  28, type: regular, guard_region_cells:    177, guard_region_m2:     7.08}
+    - {i:   7, j:  30, type: regular, guard_region_cells:    739, guard_region_m2:    29.56}
+    - {i:   7, j:  33, type: shady  , guard_region_cells:     89, guard_region_m2:     3.56}
+    - {i:   7, j:  34, type: shady  , guard_region_cells:    252, guard_region_m2:    10.08}
+    - {i:   7, j:  44, type: regular, guard_region_cells:    860, guard_region_m2:     34.4}
+    - {i:   8, j:  21, type: shady  , guard_region_cells:    339, guard_region_m2:    13.56}
+    - {i:   9, j:  12, type: regular, guard_region_cells:    264, guard_region_m2:    10.56}
+    - {i:   9, j:  16, type: shady  , guard_region_cells:    249, guard_region_m2:     9.96}
+    - {i:   9, j:  17, type: regular, guard_region_cells:    532, guard_region_m2:    21.28}
+    - {i:   9, j:  21, type: shady  , guard_region_cells:    386, guard_region_m2:    15.44}
+    - {i:   9, j:  22, type: regular, guard_region_cells:    591, guard_region_m2:    23.64}
+    - {i:   9, j:  26, type: regular, guard_region_cells:   1549, guard_region_m2:    61.96}
+    - {i:   9, j:  30, type: shady  , guard_region_cells:    126, guard_region_m2:     5.04}
+    - {i:   9, j:  34, type: regular, guard_region_cells:    813, guard_region_m2:    32.52}
+    - {i:   9, j:  40, type: regular, guard_region_cells:    757, guard_region_m2:    30.28}
+    - {i:   9, j:  41, type: shady  , guard_region_cells:    193, guard_region_m2:     7.72}
+    - {i:   9, j:  44, type: regular, guard_region_cells:    387, guard_region_m2:    15.48}
+    - {i:  10, j:  14, type: shady  , guard_region_cells:     45, guard_region_m2:      1.8}
+    - {i:  10, j:  24, type: regular, guard_region_cells:   1067, guard_region_m2:    42.68}
+    - {i:  10, j:  29, type: regular, guard_region_cells:    490, guard_region_m2:     19.6}
+    - {i:  10, j:  32, type: regular, guard_region_cells:    409, guard_region_m2:    16.36}
+    - {i:  10, j:  38, type: shady  , guard_region_cells:    240, guard_region_m2:      9.6}
+    - {i:  11, j:  12, type: shady  , guard_region_cells:    172, guard_region_m2:     6.88}
+    - {i:  11, j:  15, type: regular, guard_region_cells:     71, guard_region_m2:     2.84}
+    - {i:  11, j:  18, type: regular, guard_region_cells:    536, guard_region_m2:    21.44}
+    - {i:  11, j:  20, type: shady  , guard_region_cells:      6, guard_region_m2:     0.24}
+    - {i:  11, j:  23, type: regular, guard_region_cells:     64, guard_region_m2:     2.56}
+    - {i:  11, j:  30, type: regular, guard_region_cells:    504, guard_region_m2:    20.16}
+    - {i:  11, j:  31, type: regular, guard_region_cells:     93, guard_region_m2:     3.72}
+    - {i:  11, j:  33, type: regular, guard_region_cells:    403, guard_region_m2:    16.12}
+    - {i:  11, j:  35, type: regular, guard_region_cells:    100, guard_region_m2:        4}
+    - {i:  11, j:  36, type: regular, guard_region_cells:     47, guard_region_m2:     1.88}
+    - {i:  11, j:  37, type: regular, guard_region_cells:     28, guard_region_m2:     1.12}
+    - {i:  11, j:  42, type: shady  , guard_region_cells:     15, guard_region_m2:      0.6}
+    - {i:  11, j:  43, type: regular, guard_region_cells:     59, guard_region_m2:     2.36}
+    - {i:  11, j:  45, type: regular, guard_region_cells:     63, guard_region_m2:     2.52}
+    - {i:  11, j:  46, type: shady  , guard_region_cells:     36, guard_region_m2:     1.44}
+    - {i:  12, j:  16, type: regular, guard_region_cells:    211, guard_region_m2:     8.44}
+    - {i:  12, j:  18, type: regular, guard_region_cells:    690, guard_region_m2:     27.6}
+    - {i:  12, j:  26, type: shady  , guard_region_cells:    234, guard_region_m2:     9.36}
+    - {i:  12, j:  28, type: regular, guard_region_cells:    126, guard_region_m2:     5.04}
+    - {i:  12, j:  30, type: regular, guard_region_cells:    910, guard_region_m2:     36.4}
+    - {i:  12, j:  33, type: regular, guard_region_cells:    270, guard_region_m2:     10.8}
+    - {i:  12, j:  44, type: regular, guard_region_cells:    671, guard_region_m2:    26.84}
+    - {i:  13, j:  15, type: shady  , guard_region_cells:      1, guard_region_m2:     0.04}
+    - {i:  13, j:  19, type: regular, guard_region_cells:     24, guard_region_m2:     0.96}
+    - {i:  13, j:  23, type: regular, guard_region_cells:     79, guard_region_m2:     3.16}
+    - {i:  13, j:  27, type: regular, guard_region_cells:    163, guard_region_m2:     6.52}
+    - {i:  13, j:  31, type: regular, guard_region_cells:     27, guard_region_m2:     1.08}
+    - {i:  13, j:  35, type: regular, guard_region_cells:    148, guard_region_m2:     5.92}
+    - {i:  13, j:  37, type: shady  , guard_region_cells:     73, guard_region_m2:     2.92}
+    - {i:  14, j:  18, type: shady  , guard_region_cells:     59, guard_region_m2:     2.36}
+    - {i:  14, j:  20, type: regular, guard_region_cells:    246, guard_region_m2:     9.84}
+    - {i:  14, j:  24, type: regular, guard_region_cells:    394, guard_region_m2:    15.76}
+    - {i:  14, j:  25, type: regular, guard_region_cells:    215, guard_region_m2:      8.6}
+    - {i:  14, j:  30, type: regular, guard_region_cells:    195, guard_region_m2:      7.8}
+    - {i:  14, j:  33, type: regular, guard_region_cells:    780, guard_region_m2:     31.2}
+    - {i:  14, j:  38, type: regular, guard_region_cells:    441, guard_region_m2:    17.64}
+    - {i:  14, j:  39, type: regular, guard_region_cells:    129, guard_region_m2:     5.16}
+    - {i:  14, j:  42, type: regular, guard_region_cells:    241, guard_region_m2:     9.64}
+    - {i:  15, j:  18, type: regular, guard_region_cells:     63, guard_region_m2:     2.52}
+    - {i:  15, j:  19, type: regular, guard_region_cells:      9, guard_region_m2:     0.36}
+    - {i:  15, j:  23, type: regular, guard_region_cells:    223, guard_region_m2:     8.92}
+    - {i:  15, j:  27, type: shady  , guard_region_cells:     20, guard_region_m2:      0.8}
+    - {i:  15, j:  31, type: regular, guard_region_cells:    263, guard_region_m2:    10.52}
+    - {i:  15, j:  35, type: regular, guard_region_cells:     85, guard_region_m2:      3.4}
+    - {i:  15, j:  36, type: regular, guard_region_cells:     90, guard_region_m2:      3.6}
+    - {i:  15, j:  37, type: shady  , guard_region_cells:     60, guard_region_m2:      2.4}
+    - {i:  15, j:  45, type: regular, guard_region_cells:    242, guard_region_m2:     9.68}
+    - {i:  15, j:  46, type: shady  , guard_region_cells:     69, guard_region_m2:     2.76}
+    - {i:  16, j:  18, type: shady  , guard_region_cells:      8, guard_region_m2:     0.32}
+    - {i:  16, j:  26, type: shady  , guard_region_cells:    140, guard_region_m2:      5.6}
+    - {i:  16, j:  28, type: regular, guard_region_cells:    276, guard_region_m2:    11.04}
+    - {i:  16, j:  30, type: regular, guard_region_cells:    189, guard_region_m2:     7.56}
+    - {i:  16, j:  44, type: regular, guard_region_cells:    360, guard_region_m2:     14.4}
+    - {i:   1, j:  17, type: shady  , guard_region_cells:      5, guard_region_m2:      0.2}
+    - {i:  17, j:  22, type: regular, guard_region_cells:    450, guard_region_m2:       18}
+    - {i:  17, j:  26, type: regular, guard_region_cells:    511, guard_region_m2:    20.44}
+    - {i:  17, j:  34, type: regular, guard_region_cells:    391, guard_region_m2:    15.64}
+    - {i:  17, j:  40, type: regular, guard_region_cells:    456, guard_region_m2:    18.24}
+    - {i:  18, j:  20, type: shady  , guard_region_cells:     62, guard_region_m2:     2.48}
+    - {i:  18, j:  23, type: regular, guard_region_cells:     51, guard_region_m2:     2.04}
+    - {i:  18, j:  25, type: shady  , guard_region_cells:      2, guard_region_m2:     0.08}
+    - {i:  18, j:  30, type: regular, guard_region_cells:   1262, guard_region_m2:    50.48}
+    - {i:  18, j:  31, type: regular, guard_region_cells:     56, guard_region_m2:     2.24}
+    - {i:  18, j:  33, type: regular, guard_region_cells:    729, guard_region_m2:    29.16}
+    - {i:  18, j:  35, type: regular, guard_region_cells:     75, guard_region_m2:        3}
+    - {i:  18, j:  36, type: shady  , guard_region_cells:     29, guard_region_m2:     1.16}
+    - {i:  18, j:  37, type: shady  , guard_region_cells:      6, guard_region_m2:     0.24}
+    - {i:  18, j:  38, type: shady  , guard_region_cells:     51, guard_region_m2:     2.04}
+    - {i:  18, j:  42, type: shady  , guard_region_cells:     59, guard_region_m2:     2.36}
+    - {i:  18, j:  43, type: shady  , guard_region_cells:     42, guard_region_m2:     1.68}
+    - {i:  18, j:  44, type: shady  , guard_region_cells:      8, guard_region_m2:     0.32}
+    - {i:  18, j:  45, type: regular, guard_region_cells:     48, guard_region_m2:     1.92}
+    - {i:  18, j:  46, type: shady  , guard_region_cells:     38, guard_region_m2:     1.52}
+    - {i:  19, j:  23, type: regular, guard_region_cells:      4, guard_region_m2:     0.16}
+    - {i:  19, j:  31, type: shady  , guard_region_cells:      7, guard_region_m2:     0.28}
+    - {i:  19, j:  35, type: regular, guard_region_cells:      9, guard_region_m2:     0.36}
+    - {i:  19, j:  37, type: shady  , guard_region_cells:      1, guard_region_m2:     0.04}
+    - {i:  19, j:  45, type: shady  , guard_region_cells:      8, guard_region_m2:     0.32}
+    - {i:  20, j:  25, type: shady  , guard_region_cells:      3, guard_region_m2:     0.12}
+    - {i:  20, j:  30, type: shady  , guard_region_cells:    127, guard_region_m2:     5.08}
+    - {i:  20, j:  33, type: regular, guard_region_cells:    307, guard_region_m2:    12.28}
+    - {i:  20, j:  38, type: shady  , guard_region_cells:     11, guard_region_m2:     0.44}
+    - {i:  20, j:  42, type: regular, guard_region_cells:    269, guard_region_m2:    10.76}
+    - {i:  21, j:  26, type: regular, guard_region_cells:    493, guard_region_m2:    19.72}
+    - {i:  21, j:  34, type: shady  , guard_region_cells:     30, guard_region_m2:      1.2}
+    - {i:  21, j:  40, type: shady  , guard_region_cells:     13, guard_region_m2:     0.52}
+    - {i:  21, j:  41, type: regular, guard_region_cells:    345, guard_region_m2:     13.8}
+    - {i:  22, j:  26, type: regular, guard_region_cells:    465, guard_region_m2:     18.6}
+    - {i:  22, j:  34, type: regular, guard_region_cells:    477, guard_region_m2:    19.08}
+    - {i:  22, j:  40, type: regular, guard_region_cells:    458, guard_region_m2:    18.32}
+    - {i:  23, j:  27, type: shady  , guard_region_cells:     43, guard_region_m2:     1.72}
+    - {i:  23, j:  31, type: regular, guard_region_cells:    236, guard_region_m2:     9.44}
+    - {i:  23, j:  35, type: regular, guard_region_cells:     93, guard_region_m2:     3.72}
+    - {i:  23, j:  36, type: regular, guard_region_cells:    105, guard_region_m2:      4.2}
+    - {i:  23, j:  37, type: regular, guard_region_cells:    157, guard_region_m2:     6.28}
+    - {i:  23, j:  45, type: regular, guard_region_cells:    254, guard_region_m2:    10.16}
+    - {i:  23, j:  46, type: shady  , guard_region_cells:     77, guard_region_m2:     3.08}
+    - {i:  24, j:  25, type: regular, guard_region_cells:    206, guard_region_m2:     8.24}
+    - {i:  24, j:  29, type: regular, guard_region_cells:    501, guard_region_m2:    20.04}
+    - {i:  24, j:  32, type: regular, guard_region_cells:    405, guard_region_m2:     16.2}
+    - {i:  24, j:  33, type: regular, guard_region_cells:    426, guard_region_m2:    17.04}
+    - {i:  24, j:  38, type: regular, guard_region_cells:    496, guard_region_m2:    19.84}
+    - {i:  24, j:  39, type: regular, guard_region_cells:    342, guard_region_m2:    13.68}
+    - {i:  25, j:  33, type: regular, guard_region_cells:    314, guard_region_m2:    12.56}
+    - {i:  25, j:  38, type: regular, guard_region_cells:    358, guard_region_m2:    14.32}
+    - {i:  25, j:  39, type: regular, guard_region_cells:     47, guard_region_m2:     1.88}
+    - {i:  25, j:  42, type: shady  , guard_region_cells:     13, guard_region_m2:     0.52}
+    - {i:  26, j:  30, type: shady  , guard_region_cells:    173, guard_region_m2:     6.92}
+    - {i:  26, j:  34, type: regular, guard_region_cells:    866, guard_region_m2:    34.64}
+    - {i:  26, j:  40, type: regular, guard_region_cells:    781, guard_region_m2:    31.24}
+    - {i:  26, j:  41, type: shady  , guard_region_cells:    298, guard_region_m2:    11.92}
+    - {i:  26, j:  44, type: regular, guard_region_cells:    294, guard_region_m2:    11.76}
+    - {i:  27, j:  35, type: regular, guard_region_cells:    128, guard_region_m2:     5.12}
+    - {i:  27, j:  37, type: shady  , guard_region_cells:     40, guard_region_m2:      1.6}
+    - {i:  27, j:  45, type: shady  , guard_region_cells:     18, guard_region_m2:     0.72}
+    - {i:  18, j:  28, type: shady  , guard_region_cells:      8, guard_region_m2:     0.32}
+    - {i:  28, j:  30, type: shady  , guard_region_cells:     39, guard_region_m2:     1.56}
+    - {i:  28, j:  44, type: regular, guard_region_cells:    190, guard_region_m2:      7.6}
+    - {i:  29, j:  32, type: regular, guard_region_cells:    146, guard_region_m2:     5.84}
+    - {i:  30, j:  33, type: regular, guard_region_cells:    940, guard_region_m2:     37.6}
+    - {i:  30, j:  35, type: shady  , guard_region_cells:     32, guard_region_m2:     1.28}
+    - {i:  30, j:  38, type: shady  , guard_region_cells:     79, guard_region_m2:     3.16}
+    - {i:  30, j:  42, type: shady  , guard_region_cells:    155, guard_region_m2:      6.2}
+    - {i:  30, j:  43, type: shady  , guard_region_cells:     23, guard_region_m2:     0.92}
+    - {i:  30, j:  44, type: regular, guard_region_cells:    444, guard_region_m2:    17.76}
+    - {i:  31, j:  35, type: regular, guard_region_cells:     81, guard_region_m2:     3.24}
+    - {i:  31, j:  36, type: regular, guard_region_cells:    125, guard_region_m2:        5}
+    - {i:  31, j:  37, type: shady  , guard_region_cells:     88, guard_region_m2:     3.52}
+    - {i:  31, j:  45, type: regular, guard_region_cells:    241, guard_region_m2:     9.64}
+    - {i:  31, j:  46, type: shady  , guard_region_cells:     89, guard_region_m2:     3.56}
+    - {i:  33, j:  38, type: regular, guard_region_cells:    606, guard_region_m2:    24.24}
+    - {i:  33, j:  39, type: regular, guard_region_cells:    192, guard_region_m2:     7.68}
+    - {i:  33, j:  42, type: regular, guard_region_cells:    310, guard_region_m2:     12.4}
+    - {i:  34, j:  40, type: regular, guard_region_cells:    620, guard_region_m2:     24.8}
+    - {i:  34, j:  44, type: shady  , guard_region_cells:     43, guard_region_m2:     1.72}
+    - {i:  35, j:  36, type: regular, guard_region_cells:     15, guard_region_m2:      0.6}
+    - {i:  35, j:  37, type: shady  , guard_region_cells:     48, guard_region_m2:     1.92}
+    - {i:  35, j:  43, type: shady  , guard_region_cells:     13, guard_region_m2:     0.52}
+    - {i:  35, j:  45, type: shady  , guard_region_cells:     61, guard_region_m2:     2.44}
+    - {i:  36, j:  37, type: regular, guard_region_cells:     28, guard_region_m2:     1.12}
+    - {i:  36, j:  45, type: regular, guard_region_cells:     99, guard_region_m2:     3.96}
+    - {i:  36, j:  46, type: shady  , guard_region_cells:     42, guard_region_m2:     1.68}
+    - {i:  37, j:  45, type: shady  , guard_region_cells:     65, guard_region_m2:      2.6}
+    - {i:  38, j:  39, type: regular, guard_region_cells:    386, guard_region_m2:    15.44}
+    - {i:  38, j:  42, type: shady  , guard_region_cells:      9, guard_region_m2:     0.36}
+    - {i:   0, j:  41, type: shady  , guard_region_cells:    100, guard_region_m2:        4}
+    - {i:   1, j:  42, type: shady  , guard_region_cells:      4, guard_region_m2:     0.16}
+    - {i:  45, j:  46, type: regular, guard_region_cells:     73, guard_region_m2:     2.92}
+
+routes:
+  # Shortest path for the platform over the walkable surface,
+  # between every pair of vertices it can reach. Lattice paths at the
+  # cell size, so they overestimate a smoothed path by a few per cent.
+  reachable_pairs: 1081
+  unreachable_pairs: 0
+  speed_m_s: 1
+  polylines_for_graph_edges: 258   # the walked path per edge, in the npz
+  columns: [i, j, distance_m, time_s]
+  values:
+    - [  0,   1,    59.6,    59.6]
+    - [  0,   2,    39.5,    39.5]
+    - [  0,   3,    70.1,    70.1]
+    - [  0,   4,    71.8,    71.8]
+    - [  0,   5,    37.1,    37.1]
+    - [  0,   6,    78.9,    78.9]
+    - [  0,   7,    77.9,    77.9]
+    - [  0,   8,    34.4,    34.4]
+    - [  0,   9,    53.5,    53.5]
+    - [  0,  10,    63.7,    63.7]
+    - [  0,  11,    94.5,    94.5]
+    - [  0,  12,    87.5,    87.5]
+    - [  0,  13,   118.7,   118.7]
+    - [  0,  14,    88.4,    88.4]
+    - [  0,  15,   115.2,   115.2]
+    - [  0,  16,      77,      77]
+    - [  0,  17,    66.4,    66.4]
+    - [  0,  18,    86.3,    86.3]
+    - [  0,  19,   122.8,   122.8]
+    - [  0,  20,    97.5,    97.5]
+    - [  0,  21,      36,      36]
+    - [  0,  22,    67.8,    67.8]
+    - [  0,  23,   103.6,   103.6]
+    - [  0,  24,    53.2,    53.2]
+    - [  0,  25,    77.5,    77.5]
+    - [  0,  26,    40.4,    40.4]
+    - [  0,  27,   120.4,   120.4]
+    - [  0,  28,    80.7,    80.7]
+    - [  0,  29,    65.2,    65.2]
+    - [  0,  30,    81.5,    81.5]
+    - [  0,  31,   105.5,   105.5]
+    - [  0,  32,    72.9,    72.9]
+    - [  0,  33,    86.7,    86.7]
+    - [  0,  34,    62.4,    62.4]
+    - [  0,  35,   115.3,   115.3]
+    - [  0,  36,   107.8,   107.8]
+    - [  0,  37,   106.2,   106.2]
+    - [  0,  38,    71.4,    71.4]
+    - [  0,  39,    79.6,    79.6]
+    - [  0,  40,    62.5,    62.5]
+    - [  0,  41,      94,      94]
+    - [  0,  42,    93.2,    93.2]
+    - [  0,  43,    94.9,    94.9]
+    - [  0,  44,    87.3,    87.3]
+    - [  0,  45,   105.9,   105.9]
+    - [  0,  46,   107.4,   107.4]
+    - [  1,   2,    61.5,    61.5]
+    - [  1,   3,    67.3,    67.3]
+    - [  1,   4,    49.8,    49.8]
+    - [  1,   5,    86.4,    86.4]
+    - [  1,   6,      35,      35]
+    - [  1,   7,    18.3,    18.3]
+    - [  1,   8,      94,      94]
+    - [  1,   9,    35.1,    35.1]
+    - [  1,  10,      84,      84]
+    - [  1,  11,      45,      45]
+    - [  1,  12,    27.9,    27.9]
+    - [  1,  13,      70,      70]
+    - [  1,  14,    60.6,    60.6]
+    - [  1,  15,    66.5,    66.5]
+    - [  1,  16,      33,      33]
+    - [  1,  17,    57.2,    57.2]
+    - [  1,  18,      38,      38]
+    - [  1,  19,    74.2,    74.2]
+    - [  1,  20,    53.5,    53.5]
+    - [  1,  21,    76.8,    76.8]
+    - [  1,  22,    41.5,    41.5]
+    - [  1,  23,    54.9,    54.9]
+    - [  1,  24,    65.6,    65.6]
+    - [  1,  25,    73.3,    73.3]
+    - [  1,  26,    34.7,    34.7]
+    - [  1,  27,    71.7,    71.7]
+    - [  1,  28,    33.9,    33.9]
+    - [  1,  29,    69.2,    69.2]
+    - [  1,  30,      29,      29]
+    - [  1,  31,    56.8,    56.8]
+    - [  1,  32,    89.4,    89.4]
+    - [  1,  33,      57,      57]
+    - [  1,  34,    45.3,    45.3]
+    - [  1,  35,    66.6,    66.6]
+    - [  1,  36,    59.1,    59.1]
+    - [  1,  37,    57.5,    57.5]
+    - [  1,  38,    67.9,    67.9]
+    - [  1,  39,    75.5,    75.5]
+    - [  1,  40,    52.2,    52.2]
+    - [  1,  41,    91.2,    91.2]
+    - [  1,  42,    49.2,    49.2]
+    - [  1,  43,    47.1,    47.1]
+    - [  1,  44,    28.3,    28.3]
+    - [  1,  45,    56.8,    56.8]
+    - [  1,  46,    58.2,    58.2]
+    - [  2,   3,    96.7,    96.7]
+    - [  2,   4,    39.7,    39.7]
+    - [  2,   5,    36.2,    36.2]
+    - [  2,   6,    62.7,    62.7]
+    - [  2,   7,    79.3,    79.3]
+    - [  2,   8,    63.8,    63.8]
+    - [  2,   9,      75,      75]
+    - [  2,  10,    24.1,    24.1]
+    - [  2,  11,      85,      85]
+    - [  2,  12,    88.9,    88.9]
+    - [  2,  13,   109.3,   109.3]
+    - [  2,  14,    54.9,    54.9]
+    - [  2,  15,   105.8,   105.8]
+    - [  2,  16,    94.6,    94.6]
+    - [  2,  17,    92.9,    92.9]
+    - [  2,  18,    76.9,    76.9]
+    - [  2,  19,   113.4,   113.4]
+    - [  2,  20,    83.9,    83.9]
+    - [  2,  21,    75.5,    75.5]
+    - [  2,  22,    89.2,    89.2]
+    - [  2,  23,    94.1,    94.1]
+    - [  2,  24,    18.1,    18.1]
+    - [  2,  25,    42.9,    42.9]
+    - [  2,  26,    61.9,    61.9]
+    - [  2,  27,   110.9,   110.9]
+    - [  2,  28,    95.4,    95.4]
+    - [  2,  29,    30.2,    30.2]
+    - [  2,  30,    72.1,    72.1]
+    - [  2,  31,    96.1,    96.1]
+    - [  2,  32,    33.3,    33.3]
+    - [  2,  33,    57.9,    57.9]
+    - [  2,  34,    83.9,    83.9]
+    - [  2,  35,   105.8,   105.8]
+    - [  2,  36,    98.3,    98.3]
+    - [  2,  37,    96.7,    96.7]
+    - [  2,  38,    36.8,    36.8]
+    - [  2,  39,      45,      45]
+    - [  2,  40,    87.9,    87.9]
+    - [  2,  41,   120.6,   120.6]
+    - [  2,  42,    81.5,    81.5]
+    - [  2,  43,    85.5,    85.5]
+    - [  2,  44,    89.8,    89.8]
+    - [  2,  45,    96.5,    96.5]
+    - [  2,  46,    97.9,    97.9]
+    - [  3,   4,   109.6,   109.6]
+    - [  3,   5,   107.2,   107.2]
+    - [  3,   6,   102.3,   102.3]
+    - [  3,   7,    75.6,    75.6]
+    - [  3,   8,    94.8,    94.8]
+    - [  3,   9,    32.2,    32.2]
+    - [  3,  10,   120.8,   120.8]
+    - [  3,  11,   112.2,   112.2]
+    - [  3,  12,    84.6,    84.6]
+    - [  3,  13,   137.3,   137.3]
+    - [  3,  14,   120.4,   120.4]
+    - [  3,  15,   133.8,   133.8]
+    - [  3,  16,    63.9,    63.9]
+    - [  3,  17,    33.2,    33.2]
+    - [  3,  18,   105.3,   105.3]
+    - [  3,  19,   141.4,   141.4]
+    - [  3,  20,   120.8,   120.8]
+    - [  3,  21,      71,      71]
+    - [  3,  22,    45.6,    45.6]
+    - [  3,  23,   122.2,   122.2]
+    - [  3,  24,   110.3,   110.3]
+    - [  3,  25,   127.7,   127.7]
+    - [  3,  26,    35.1,    35.1]
+    - [  3,  27,     139,     139]
+    - [  3,  28,    67.5,    67.5]
+    - [  3,  29,   122.4,   122.4]
+    - [  3,  30,    96.3,    96.3]
+    - [  3,  31,   124.1,   124.1]
+    - [  3,  32,     130,     130]
+    - [  3,  33,   117.1,   117.1]
+    - [  3,  34,      33,      33]
+    - [  3,  35,   133.9,   133.9]
+    - [  3,  36,   126.3,   126.3]
+    - [  3,  37,   124.8,   124.8]
+    - [  3,  38,   122.3,   122.3]
+    - [  3,  39,   129.8,   129.8]
+    - [  3,  40,    29.3,    29.3]
+    - [  3,  41,    31.4,    31.4]
+    - [  3,  42,   116.5,   116.5]
+    - [  3,  43,   114.3,   114.3]
+    - [  3,  44,      78,      78]
+    - [  3,  45,   124.1,   124.1]
+    - [  3,  46,   125.5,   125.5]
+    - [  4,   5,    75.9,    75.9]
+    - [  4,   6,    26.4,    26.4]
+    - [  4,   7,    60.4,    60.4]
+    - [  4,   8,     101,     101]
+    - [  4,   9,    84.1,    84.1]
+    - [  4,  10,    50.8,    50.8]
+    - [  4,  11,    51.3,    51.3]
+    - [  4,  12,    65.5,    65.5]
+    - [  4,  13,    75.6,    75.6]
+    - [  4,  14,    16.6,    16.6]
+    - [  4,  15,    72.1,    72.1]
+    - [  4,  16,    79.5,    79.5]
+    - [  4,  17,   105.9,   105.9]
+    - [  4,  18,    43.2,    43.2]
+    - [  4,  19,    79.7,    79.7]
+    - [  4,  20,    44.3,    44.3]
+    - [  4,  21,   104.5,   104.5]
+    - [  4,  22,    91.2,    91.2]
+    - [  4,  23,    60.4,    60.4]
+    - [  4,  24,    34.3,    34.3]
+    - [  4,  25,    35.2,    35.2]
+    - [  4,  26,    74.4,    74.4]
+    - [  4,  27,    77.3,    77.3]
+    - [  4,  28,    77.3,    77.3]
+    - [  4,  29,    32.1,    32.1]
+    - [  4,  30,    45.6,    45.6]
+    - [  4,  31,    62.4,    62.4]
+    - [  4,  32,    52.8,    52.8]
+    - [  4,  33,    18.2,    18.2]
+    - [  4,  34,      95,      95]
+    - [  4,  35,    72.1,    72.1]
+    - [  4,  36,    64.6,    64.6]
+    - [  4,  37,    63.1,    63.1]
+    - [  4,  38,    30.8,    30.8]
+    - [  4,  39,      37,      37]
+    - [  4,  40,   100.8,   100.8]
+    - [  4,  41,   133.5,   133.5]
+    - [  4,  42,    41.8,    41.8]
+    - [  4,  43,    51.8,    51.8]
+    - [  4,  44,    70.9,    70.9]
+    - [  4,  45,    62.8,    62.8]
+    - [  4,  46,    64.3,    64.3]
+    - [  5,   6,    98.9,    98.9]
+    - [  5,   7,   104.7,   104.7]
+    - [  5,   8,    32.7,    32.7]
+    - [  5,   9,    90.7,    90.7]
+    - [  5,  10,    56.9,    56.9]
+    - [  5,  11,   121.2,   121.2]
+    - [  5,  12,   114.3,   114.3]
+    - [  5,  13,   145.5,   145.5]
+    - [  5,  14,    90.3,    90.3]
+    - [  5,  15,     142,     142]
+    - [  5,  16,   110.5,   110.5]
+    - [  5,  17,   103.5,   103.5]
+    - [  5,  18,   113.1,   113.1]
+    - [  5,  19,   149.6,   149.6]
+    - [  5,  20,   120.2,   120.2]
+    - [  5,  21,    61.6,    61.6]
+    - [  5,  22,   104.9,   104.9]
+    - [  5,  23,   130.3,   130.3]
+    - [  5,  24,    53.5,    53.5]
+    - [  5,  25,    78.3,    78.3]
+    - [  5,  26,    77.5,    77.5]
+    - [  5,  27,   147.2,   147.2]
+    - [  5,  28,   111.3,   111.3]
+    - [  5,  29,    65.6,    65.6]
+    - [  5,  30,   108.3,   108.3]
+    - [  5,  31,   132.3,   132.3]
+    - [  5,  32,      66,      66]
+    - [  5,  33,    94.1,    94.1]
+    - [  5,  34,    99.5,    99.5]
+    - [  5,  35,     142,     142]
+    - [  5,  36,   134.5,   134.5]
+    - [  5,  37,     133,     133]
+    - [  5,  38,    72.2,    72.2]
+    - [  5,  39,    80.4,    80.4]
+    - [  5,  40,    99.6,    99.6]
+    - [  5,  41,   131.1,   131.1]
+    - [  5,  42,   117.7,   117.7]
+    - [  5,  43,   121.7,   121.7]
+    - [  5,  44,   114.1,   114.1]
+    - [  5,  45,   132.7,   132.7]
+    - [  5,  46,   134.2,   134.2]
+    - [  6,   7,    43.3,    43.3]
+    - [  6,   8,   108.1,   108.1]
+    - [  6,   9,    70.1,    70.1]
+    - [  6,  10,    73.8,    73.8]
+    - [  6,  11,    24.9,    24.9]
+    - [  6,  12,    39.1,    39.1]
+    - [  6,  13,    49.2,    49.2]
+    - [  6,  14,    30.6,    30.6]
+    - [  6,  15,    45.7,    45.7]
+    - [  6,  16,    64.7,    64.7]
+    - [  6,  17,    92.2,    92.2]
+    - [  6,  18,    16.8,    16.8]
+    - [  6,  19,    53.3,    53.3]
+    - [  6,  20,    26.5,    26.5]
+    - [  6,  21,   111.6,   111.6]
+    - [  6,  22,    76.4,    76.4]
+    - [  6,  23,      34,      34]
+    - [  6,  24,    57.3,    57.3]
+    - [  6,  25,    49.2,    49.2]
+    - [  6,  26,    69.6,    69.6]
+    - [  6,  27,    50.9,    50.9]
+    - [  6,  28,      62,      62]
+    - [  6,  29,    55.1,    55.1]
+    - [  6,  30,    19.2,    19.2]
+    - [  6,  31,      36,      36]
+    - [  6,  32,    75.8,    75.8]
+    - [  6,  33,    27.3,    27.3]
+    - [  6,  34,    80.2,    80.2]
+    - [  6,  35,    45.7,    45.7]
+    - [  6,  36,    38.2,    38.2]
+    - [  6,  37,    36.7,    36.7]
+    - [  6,  38,    50.9,    50.9]
+    - [  6,  39,      51,      51]
+    - [  6,  40,    87.1,    87.1]
+    - [  6,  41,   126.2,   126.2]
+    - [  6,  42,    22.2,    22.2]
+    - [  6,  43,    25.4,    25.4]
+    - [  6,  44,      49,      49]
+    - [  6,  45,    36.4,    36.4]
+    - [  6,  46,    37.9,    37.9]
+    - [  7,   8,   112.3,   112.3]
+    - [  7,   9,    43.5,    43.5]
+    - [  7,  10,   101.8,   101.8]
+    - [  7,  11,    44.9,    44.9]
+    - [  7,  12,     9.6,     9.6]
+    - [  7,  13,    69.9,    69.9]
+    - [  7,  14,    68.9,    68.9]
+    - [  7,  15,    66.4,    66.4]
+    - [  7,  16,      23,      23]
+    - [  7,  17,    65.6,    65.6]
+    - [  7,  18,    38.1,    38.1]
+    - [  7,  19,      74,      74]
+    - [  7,  20,    57.1,    57.1]
+    - [  7,  21,    88.5,    88.5]
+    - [  7,  22,    44.3,    44.3]
+    - [  7,  23,    54.8,    54.8]
+    - [  7,  24,    83.3,    83.3]
+    - [  7,  25,    87.5,    87.5]
+    - [  7,  26,    43.1,    43.1]
+    - [  7,  27,    71.6,    71.6]
+    - [  7,  28,    20.3,    20.3]
+    - [  7,  29,    86.9,    86.9]
+    - [  7,  30,    29.1,    29.1]
+    - [  7,  31,    56.7,    56.7]
+    - [  7,  32,   107.2,   107.2]
+    - [  7,  33,    62.8,    62.8]
+    - [  7,  34,    50.2,    50.2]
+    - [  7,  35,    66.5,    66.5]
+    - [  7,  36,      59,      59]
+    - [  7,  37,    57.4,    57.4]
+    - [  7,  38,    85.7,    85.7]
+    - [  7,  39,    89.3,    89.3]
+    - [  7,  40,    60.5,    60.5]
+    - [  7,  41,    99.6,    99.6]
+    - [  7,  42,    52.8,    52.8]
+    - [  7,  43,      47,      47]
+    - [  7,  44,    10.7,    10.7]
+    - [  7,  45,    56.7,    56.7]
+    - [  7,  46,    58.1,    58.1]
+    - [  8,   9,    78.9,    78.9]
+    - [  8,  10,    85.3,    85.3]
+    - [  8,  11,   128.8,   128.8]
+    - [  8,  12,   121.9,   121.9]
+    - [  8,  13,   153.1,   153.1]
+    - [  8,  14,   117.6,   117.6]
+    - [  8,  15,   149.5,   149.5]
+    - [  8,  16,   111.4,   111.4]
+    - [  8,  17,    91.1,    91.1]
+    - [  8,  18,   120.7,   120.7]
+    - [  8,  19,   157.2,   157.2]
+    - [  8,  20,   130.4,   130.4]
+    - [  8,  21,    37.4,    37.4]
+    - [  8,  22,    93.6,    93.6]
+    - [  8,  23,   137.9,   137.9]
+    - [  8,  24,    81.9,    81.9]
+    - [  8,  25,   106.7,   106.7]
+    - [  8,  26,    69.5,    69.5]
+    - [  8,  27,   154.7,   154.7]
+    - [  8,  28,     115,     115]
+    - [  8,  29,      94,      94]
+    - [  8,  30,   115.9,   115.9]
+    - [  8,  31,   139.9,   139.9]
+    - [  8,  32,    94.5,    94.5]
+    - [  8,  33,   115.9,   115.9]
+    - [  8,  34,    87.1,    87.1]
+    - [  8,  35,   149.6,   149.6]
+    - [  8,  36,   142.1,   142.1]
+    - [  8,  37,   140.5,   140.5]
+    - [  8,  38,   100.6,   100.6]
+    - [  8,  39,   108.8,   108.8]
+    - [  8,  40,    87.2,    87.2]
+    - [  8,  41,   118.8,   118.8]
+    - [  8,  42,   126.1,   126.1]
+    - [  8,  43,   129.3,   129.3]
+    - [  8,  44,   121.7,   121.7]
+    - [  8,  45,   140.3,   140.3]
+    - [  8,  46,   141.7,   141.7]
+    - [  9,  10,      99,      99]
+    - [  9,  11,    80.1,    80.1]
+    - [  9,  12,    52.5,    52.5]
+    - [  9,  13,   105.2,   105.2]
+    - [  9,  14,      95,      95]
+    - [  9,  15,   101.6,   101.6]
+    - [  9,  16,    32.7,    32.7]
+    - [  9,  17,    22.1,    22.1]
+    - [  9,  18,    73.1,    73.1]
+    - [  9,  19,   109.3,   109.3]
+    - [  9,  20,    88.6,    88.6]
+    - [  9,  21,    55.1,    55.1]
+    - [  9,  22,    14.7,    14.7]
+    - [  9,  23,      90,      90]
+    - [  9,  24,    84.9,    84.9]
+    - [  9,  25,   102.2,   102.2]
+    - [  9,  26,    13.3,    13.3]
+    - [  9,  27,   106.8,   106.8]
+    - [  9,  28,    36.4,    36.4]
+    - [  9,  29,    96.9,    96.9]
+    - [  9,  30,    64.1,    64.1]
+    - [  9,  31,      92,      92]
+    - [  9,  32,   107.7,   107.7]
+    - [  9,  33,    91.6,    91.6]
+    - [  9,  34,    11.1,    11.1]
+    - [  9,  35,   101.7,   101.7]
+    - [  9,  36,    94.2,    94.2]
+    - [  9,  37,    92.6,    92.6]
+    - [  9,  38,    96.8,    96.8]
+    - [  9,  39,   104.3,   104.3]
+    - [  9,  40,      17,      17]
+    - [  9,  41,    56.1,    56.1]
+    - [  9,  42,    84.3,    84.3]
+    - [  9,  43,    82.2,    82.2]
+    - [  9,  44,    45.8,    45.8]
+    - [  9,  45,    91.9,    91.9]
+    - [  9,  46,    93.4,    93.4]
+    - [ 10,  11,    98.2,    98.2]
+    - [ 10,  12,   107.6,   107.6]
+    - [ 10,  13,   122.4,   122.4]
+    - [ 10,  14,    62.6,    62.6]
+    - [ 10,  15,   118.9,   118.9]
+    - [ 10,  16,   117.1,   117.1]
+    - [ 10,  17,   117.1,   117.1]
+    - [ 10,  18,      90,      90]
+    - [ 10,  19,   126.6,   126.6]
+    - [ 10,  20,    95.1,    95.1]
+    - [ 10,  21,    99.6,    99.6]
+    - [ 10,  22,   111.9,   111.9]
+    - [ 10,  23,   107.3,   107.3]
+    - [ 10,  24,    23.3,    23.3]
+    - [ 10,  25,    44.2,    44.2]
+    - [ 10,  26,    85.7,    85.7]
+    - [ 10,  27,   124.1,   124.1]
+    - [ 10,  28,   117.9,   117.9]
+    - [ 10,  29,      28,      28]
+    - [ 10,  30,    87.8,    87.8]
+    - [ 10,  31,   109.2,   109.2]
+    - [ 10,  32,    17.6,    17.6]
+    - [ 10,  33,      69,      69]
+    - [ 10,  34,   107.9,   107.9]
+    - [ 10,  35,     119,     119]
+    - [ 10,  36,   111.5,   111.5]
+    - [ 10,  37,   109.9,   109.9]
+    - [ 10,  38,    38.1,    38.1]
+    - [ 10,  39,    46.3,    46.3]
+    - [ 10,  40,     112,     112]
+    - [ 10,  41,   144.7,   144.7]
+    - [ 10,  42,    92.6,    92.6]
+    - [ 10,  43,    98.6,    98.6]
+    - [ 10,  44,   112.3,   112.3]
+    - [ 10,  45,   109.7,   109.7]
+    - [ 10,  46,   111.1,   111.1]
+    - [ 11,  12,    35.2,    35.2]
+    - [ 11,  13,    25.6,    25.6]
+    - [ 11,  14,    47.1,    47.1]
+    - [ 11,  15,    22.1,    22.1]
+    - [ 11,  16,    62.1,    62.1]
+    - [ 11,  17,   102.2,   102.2]
+    - [ 11,  18,     8.2,     8.2]
+    - [ 11,  19,    29.7,    29.7]
+    - [ 11,  20,    29.4,    29.4]
+    - [ 11,  21,   121.8,   121.8]
+    - [ 11,  22,    83.4,    83.4]
+    - [ 11,  23,    10.4,    10.4]
+    - [ 11,  24,    79.6,    79.6]
+    - [ 11,  25,    68.7,    68.7]
+    - [ 11,  26,    79.7,    79.7]
+    - [ 11,  27,    27.3,    27.3]
+    - [ 11,  28,    59.3,    59.3]
+    - [ 11,  29,    79.4,    79.4]
+    - [ 11,  30,    18.1,    18.1]
+    - [ 11,  31,    12.4,    12.4]
+    - [ 11,  32,   100.1,   100.1]
+    - [ 11,  33,    37.2,    37.2]
+    - [ 11,  34,    88.1,    88.1]
+    - [ 11,  35,    22.1,    22.1]
+    - [ 11,  36,    14.6,    14.6]
+    - [ 11,  37,    13.1,    13.1]
+    - [ 11,  38,    70.4,    70.4]
+    - [ 11,  39,    70.5,    70.5]
+    - [ 11,  40,    97.1,    97.1]
+    - [ 11,  41,   136.2,   136.2]
+    - [ 11,  42,      25,      25]
+    - [ 11,  43,     4.9,     4.9]
+    - [ 11,  44,    45.1,    45.1]
+    - [ 11,  45,    12.3,    12.3]
+    - [ 11,  46,    13.8,    13.8]
+    - [ 12,  13,    60.3,    60.3]
+    - [ 12,  14,    67.5,    67.5]
+    - [ 12,  15,    56.8,    56.8]
+    - [ 12,  16,    26.9,    26.9]
+    - [ 12,  17,    74.6,    74.6]
+    - [ 12,  18,    29.8,    29.8]
+    - [ 12,  19,    64.4,    64.4]
+    - [ 12,  20,    51.5,    51.5]
+    - [ 12,  21,    98.1,    98.1]
+    - [ 12,  22,    53.3,    53.3]
+    - [ 12,  23,    45.1,    45.1]
+    - [ 12,  24,    88.4,    88.4]
+    - [ 12,  25,    88.3,    88.3]
+    - [ 12,  26,    52.5,    52.5]
+    - [ 12,  27,    61.9,    61.9]
+    - [ 12,  28,    24.1,    24.1]
+    - [ 12,  29,    92.1,    92.1]
+    - [ 12,  30,    20.3,    20.3]
+    - [ 12,  31,    47.1,    47.1]
+    - [ 12,  32,   112.4,   112.4]
+    - [ 12,  33,    57.2,    57.2]
+    - [ 12,  34,    59.2,    59.2]
+    - [ 12,  35,    56.8,    56.8]
+    - [ 12,  36,    49.3,    49.3]
+    - [ 12,  37,    47.7,    47.7]
+    - [ 12,  38,      90,      90]
+    - [ 12,  39,    90.1,    90.1]
+    - [ 12,  40,    69.5,    69.5]
+    - [ 12,  41,   108.6,   108.6]
+    - [ 12,  42,    47.2,    47.2]
+    - [ 12,  43,    37.3,    37.3]
+    - [ 12,  44,     9.9,     9.9]
+    - [ 12,  45,      47,      47]
+    - [ 12,  46,    48.5,    48.5]
+    - [ 13,  14,    71.4,    71.4]
+    - [ 13,  15,    11.5,    11.5]
+    - [ 13,  16,    87.2,    87.2]
+    - [ 13,  17,   127.2,   127.2]
+    - [ 13,  18,    32.5,    32.5]
+    - [ 13,  19,     7.3,     7.3]
+    - [ 13,  20,    53.6,    53.6]
+    - [ 13,  21,   146.8,   146.8]
+    - [ 13,  22,   108.5,   108.5]
+    - [ 13,  23,    15.1,    15.1]
+    - [ 13,  24,   103.9,   103.9]
+    - [ 13,  25,      93,      93]
+    - [ 13,  26,   104.8,   104.8]
+    - [ 13,  27,     7.9,     7.9]
+    - [ 13,  28,    84.4,    84.4]
+    - [ 13,  29,   103.7,   103.7]
+    - [ 13,  30,    43.2,    43.2]
+    - [ 13,  31,    13.9,    13.9]
+    - [ 13,  32,   124.4,   124.4]
+    - [ 13,  33,    61.4,    61.4]
+    - [ 13,  34,   113.2,   113.2]
+    - [ 13,  35,     5.8,     5.8]
+    - [ 13,  36,      12,      12]
+    - [ 13,  37,    16.8,    16.8]
+    - [ 13,  38,    94.7,    94.7]
+    - [ 13,  39,    94.7,    94.7]
+    - [ 13,  40,   122.2,   122.2]
+    - [ 13,  41,   161.2,   161.2]
+    - [ 13,  42,    49.3,    49.3]
+    - [ 13,  43,    26.9,    26.9]
+    - [ 13,  44,    70.2,    70.2]
+    - [ 13,  45,    22.1,    22.1]
+    - [ 13,  46,    23.2,    23.2]
+    - [ 14,  15,    67.9,    67.9]
+    - [ 14,  16,    90.4,    90.4]
+    - [ 14,  17,   116.7,   116.7]
+    - [ 14,  18,    41.5,    41.5]
+    - [ 14,  19,    75.5,    75.5]
+    - [ 14,  20,      36,      36]
+    - [ 14,  21,   121.1,   121.1]
+    - [ 14,  22,   102.1,   102.1]
+    - [ 14,  23,    56.2,    56.2]
+    - [ 14,  24,    46.5,    46.5]
+    - [ 14,  25,    23.8,    23.8]
+    - [ 14,  26,    85.3,    85.3]
+    - [ 14,  27,    73.1,    73.1]
+    - [ 14,  28,    87.6,    87.6]
+    - [ 14,  29,      38,      38]
+    - [ 14,  30,    47.6,    47.6]
+    - [ 14,  31,    58.2,    58.2]
+    - [ 14,  32,    62.9,    62.9]
+    - [ 14,  33,    11.1,    11.1]
+    - [ 14,  34,   105.9,   105.9]
+    - [ 14,  35,    67.9,    67.9]
+    - [ 14,  36,    60.4,    60.4]
+    - [ 14,  37,    58.9,    58.9]
+    - [ 14,  38,    25.5,    25.5]
+    - [ 14,  39,    25.6,    25.6]
+    - [ 14,  40,   111.7,   111.7]
+    - [ 14,  41,   144.4,   144.4]
+    - [ 14,  42,    33.6,    33.6]
+    - [ 14,  43,    47.6,    47.6]
+    - [ 14,  44,    77.4,    77.4]
+    - [ 14,  45,    58.6,    58.6]
+    - [ 14,  46,    60.1,    60.1]
+    - [ 15,  16,    83.6,    83.6]
+    - [ 15,  17,   123.7,   123.7]
+    - [ 15,  18,      29,      29]
+    - [ 15,  19,    14.1,    14.1]
+    - [ 15,  20,    50.1,    50.1]
+    - [ 15,  21,   143.3,   143.3]
+    - [ 15,  22,     105,     105]
+    - [ 15,  23,    11.6,    11.6]
+    - [ 15,  24,   100.4,   100.4]
+    - [ 15,  25,    89.4,    89.4]
+    - [ 15,  26,   101.3,   101.3]
+    - [ 15,  27,    11.7,    11.7]
+    - [ 15,  28,    80.9,    80.9]
+    - [ 15,  29,   100.2,   100.2]
+    - [ 15,  30,    39.7,    39.7]
+    - [ 15,  31,    10.4,    10.4]
+    - [ 15,  32,   120.9,   120.9]
+    - [ 15,  33,    57.9,    57.9]
+    - [ 15,  34,   109.7,   109.7]
+    - [ 15,  35,     6.4,     6.4]
+    - [ 15,  36,     8.5,     8.5]
+    - [ 15,  37,    13.3,    13.3]
+    - [ 15,  38,    91.2,    91.2]
+    - [ 15,  39,    91.2,    91.2]
+    - [ 15,  40,   118.7,   118.7]
+    - [ 15,  41,   157.7,   157.7]
+    - [ 15,  42,    45.8,    45.8]
+    - [ 15,  43,    23.4,    23.4]
+    - [ 15,  44,    66.7,    66.7]
+    - [ 15,  45,    18.6,    18.6]
+    - [ 15,  46,    19.7,    19.7]
+    - [ 16,  17,    53.3,    53.3]
+    - [ 16,  18,    56.7,    56.7]
+    - [ 16,  19,    91.3,    91.3]
+    - [ 16,  20,    78.4,    78.4]
+    - [ 16,  21,    87.6,    87.6]
+    - [ 16,  22,      32,      32]
+    - [ 16,  23,      72,      72]
+    - [ 16,  24,    98.6,    98.6]
+    - [ 16,  25,   106.4,   106.4]
+    - [ 16,  26,    41.9,    41.9]
+    - [ 16,  27,    88.8,    88.8]
+    - [ 16,  28,     4.6,     4.6]
+    - [ 16,  29,   102.2,   102.2]
+    - [ 16,  30,    47.2,    47.2]
+    - [ 16,  31,      74,      74]
+    - [ 16,  32,   122.5,   122.5]
+    - [ 16,  33,    84.1,    84.1]
+    - [ 16,  34,      38,      38]
+    - [ 16,  35,    83.7,    83.7]
+    - [ 16,  36,    76.2,    76.2]
+    - [ 16,  37,    74.6,    74.6]
+    - [ 16,  38,     101,     101]
+    - [ 16,  39,   108.5,   108.5]
+    - [ 16,  40,    48.2,    48.2]
+    - [ 16,  41,    87.8,    87.8]
+    - [ 16,  42,    74.1,    74.1]
+    - [ 16,  43,    64.2,    64.2]
+    - [ 16,  44,      20,      20]
+    - [ 16,  45,    73.9,    73.9]
+    - [ 16,  46,    75.4,    75.4]
+    - [ 17,  18,    95.2,    95.2]
+    - [ 17,  19,   131.4,   131.4]
+    - [ 17,  20,   110.7,   110.7]
+    - [ 17,  21,    67.3,    67.3]
+    - [ 17,  22,    30.8,    30.8]
+    - [ 17,  23,   112.1,   112.1]
+    - [ 17,  24,   106.6,   106.6]
+    - [ 17,  25,     124,     124]
+    - [ 17,  26,    31.4,    31.4]
+    - [ 17,  27,   128.9,   128.9]
+    - [ 17,  28,      57,      57]
+    - [ 17,  29,   118.6,   118.6]
+    - [ 17,  30,    86.2,    86.2]
+    - [ 17,  31,   114.1,   114.1]
+    - [ 17,  32,   126.3,   126.3]
+    - [ 17,  33,   113.4,   113.4]
+    - [ 17,  34,    18.3,    18.3]
+    - [ 17,  35,   123.8,   123.8]
+    - [ 17,  36,   116.3,   116.3]
+    - [ 17,  37,   114.7,   114.7]
+    - [ 17,  38,   118.5,   118.5]
+    - [ 17,  39,   126.1,   126.1]
+    - [ 17,  40,     5.1,     5.1]
+    - [ 17,  41,    57.1,    57.1]
+    - [ 17,  42,   106.4,   106.4]
+    - [ 17,  43,   104.3,   104.3]
+    - [ 17,  44,    67.9,    67.9]
+    - [ 17,  45,     114,     114]
+    - [ 17,  46,   115.5,   115.5]
+    - [ 18,  19,    36.6,    36.6]
+    - [ 18,  20,    23.7,    23.7]
+    - [ 18,  21,   114.8,   114.8]
+    - [ 18,  22,    76.4,    76.4]
+    - [ 18,  23,    17.3,    17.3]
+    - [ 18,  24,    71.5,    71.5]
+    - [ 18,  25,      63,      63]
+    - [ 18,  26,    72.7,    72.7]
+    - [ 18,  27,    34.2,    34.2]
+    - [ 18,  28,      54,      54]
+    - [ 18,  29,    71.3,    71.3]
+    - [ 18,  30,    11.2,    11.2]
+    - [ 18,  31,    19.3,    19.3]
+    - [ 18,  32,      92,      92]
+    - [ 18,  33,    31.5,    31.5]
+    - [ 18,  34,    81.1,    81.1]
+    - [ 18,  35,      29,      29]
+    - [ 18,  36,    21.5,    21.5]
+    - [ 18,  37,      20,      20]
+    - [ 18,  38,    64.7,    64.7]
+    - [ 18,  39,    64.8,    64.8]
+    - [ 18,  40,    90.1,    90.1]
+    - [ 18,  41,   129.2,   129.2]
+    - [ 18,  42,    19.4,    19.4]
+    - [ 18,  43,     9.2,     9.2]
+    - [ 18,  44,    39.7,    39.7]
+    - [ 18,  45,    19.7,    19.7]
+    - [ 18,  46,    21.1,    21.1]
+    - [ 19,  20,    57.8,    57.8]
+    - [ 19,  21,     151,     151]
+    - [ 19,  22,   112.6,   112.6]
+    - [ 19,  23,    19.3,    19.3]
+    - [ 19,  24,     108,     108]
+    - [ 19,  25,    97.1,    97.1]
+    - [ 19,  26,   108.9,   108.9]
+    - [ 19,  27,     4.6,     4.6]
+    - [ 19,  28,    88.5,    88.5]
+    - [ 19,  29,   107.8,   107.8]
+    - [ 19,  30,    47.3,    47.3]
+    - [ 19,  31,      18,      18]
+    - [ 19,  32,   128.5,   128.5]
+    - [ 19,  33,    65.6,    65.6]
+    - [ 19,  34,   117.3,   117.3]
+    - [ 19,  35,     7.7,     7.7]
+    - [ 19,  36,    16.1,    16.1]
+    - [ 19,  37,      21,      21]
+    - [ 19,  38,    98.8,    98.8]
+    - [ 19,  39,    98.9,    98.9]
+    - [ 19,  40,   126.3,   126.3]
+    - [ 19,  41,   165.4,   165.4]
+    - [ 19,  42,    53.4,    53.4]
+    - [ 19,  43,      31,      31]
+    - [ 19,  44,    74.3,    74.3]
+    - [ 19,  45,    26.2,    26.2]
+    - [ 19,  46,    27.3,    27.3]
+    - [ 20,  21,   130.3,   130.3]
+    - [ 20,  22,    92.9,    92.9]
+    - [ 20,  23,    38.5,    38.5]
+    - [ 20,  24,    78.6,    78.6]
+    - [ 20,  25,    57.6,    57.6]
+    - [ 20,  26,    88.3,    88.3]
+    - [ 20,  27,    55.3,    55.3]
+    - [ 20,  28,    75.7,    75.7]
+    - [ 20,  29,    71.8,    71.8]
+    - [ 20,  30,    31.7,    31.7]
+    - [ 20,  31,    40.4,    40.4]
+    - [ 20,  32,    96.8,    96.8]
+    - [ 20,  33,    26.1,    26.1]
+    - [ 20,  34,    96.7,    96.7]
+    - [ 20,  35,    50.2,    50.2]
+    - [ 20,  36,    42.7,    42.7]
+    - [ 20,  37,    41.1,    41.1]
+    - [ 20,  38,    59.3,    59.3]
+    - [ 20,  39,    59.4,    59.4]
+    - [ 20,  40,   105.7,   105.7]
+    - [ 20,  41,   144.7,   144.7]
+    - [ 20,  42,     4.3,     4.3]
+    - [ 20,  43,    29.8,    29.8]
+    - [ 20,  44,    61.4,    61.4]
+    - [ 20,  45,    40.8,    40.8]
+    - [ 20,  46,    42.3,    42.3]
+    - [ 21,  22,    69.8,    69.8]
+    - [ 21,  23,   131.7,   131.7]
+    - [ 21,  24,    89.1,    89.1]
+    - [ 21,  25,   110.4,   110.4]
+    - [ 21,  26,    45.7,    45.7]
+    - [ 21,  27,   148.5,   148.5]
+    - [ 21,  28,    91.2,    91.2]
+    - [ 21,  29,   101.2,   101.2]
+    - [ 21,  30,   105.8,   105.8]
+    - [ 21,  31,   133.7,   133.7]
+    - [ 21,  32,   108.8,   108.8]
+    - [ 21,  33,   119.5,   119.5]
+    - [ 21,  34,    63.3,    63.3]
+    - [ 21,  35,   143.4,   143.4]
+    - [ 21,  36,   135.9,   135.9]
+    - [ 21,  37,   134.3,   134.3]
+    - [ 21,  38,     105,     105]
+    - [ 21,  39,   112.5,   112.5]
+    - [ 21,  40,    63.4,    63.4]
+    - [ 21,  41,      95,      95]
+    - [ 21,  42,     126,     126]
+    - [ 21,  43,   123.9,   123.9]
+    - [ 21,  44,    97.9,    97.9]
+    - [ 21,  45,   133.6,   133.6]
+    - [ 21,  46,   135.1,   135.1]
+    - [ 22,  23,    93.3,    93.3]
+    - [ 22,  24,      94,      94]
+    - [ 22,  25,   109.3,   109.3]
+    - [ 22,  26,    27.5,    27.5]
+    - [ 22,  27,   110.1,   110.1]
+    - [ 22,  28,    35.7,    35.7]
+    - [ 22,  29,   104.1,   104.1]
+    - [ 22,  30,    67.4,    67.4]
+    - [ 22,  31,    95.3,    95.3]
+    - [ 22,  32,   117.3,   117.3]
+    - [ 22,  33,    96.4,    96.4]
+    - [ 22,  34,    13.8,    13.8]
+    - [ 22,  35,     105,     105]
+    - [ 22,  36,    97.5,    97.5]
+    - [ 22,  37,    95.9,    95.9]
+    - [ 22,  38,   103.9,   103.9]
+    - [ 22,  39,   111.5,   111.5]
+    - [ 22,  40,    25.8,    25.8]
+    - [ 22,  41,    69.5,    69.5]
+    - [ 22,  42,    88.5,    88.5]
+    - [ 22,  43,    85.5,    85.5]
+    - [ 22,  44,    46.6,    46.6]
+    - [ 22,  45,    95.2,    95.2]
+    - [ 22,  46,    96.7,    96.7]
+    - [ 23,  24,    88.7,    88.7]
+    - [ 23,  25,    77.8,    77.8]
+    - [ 23,  26,    89.6,    89.6]
+    - [ 23,  27,    16.8,    16.8]
+    - [ 23,  28,    69.3,    69.3]
+    - [ 23,  29,    88.5,    88.5]
+    - [ 23,  30,    28.1,    28.1]
+    - [ 23,  31,       2,       2]
+    - [ 23,  32,   109.2,   109.2]
+    - [ 23,  33,    46.3,    46.3]
+    - [ 23,  34,      98,      98]
+    - [ 23,  35,    11.7,    11.7]
+    - [ 23,  36,     4.2,     4.2]
+    - [ 23,  37,     3.3,     3.3]
+    - [ 23,  38,    79.5,    79.5]
+    - [ 23,  39,    79.6,    79.6]
+    - [ 23,  40,     107,     107]
+    - [ 23,  41,   146.1,   146.1]
+    - [ 23,  42,    34.1,    34.1]
+    - [ 23,  43,    11.8,    11.8]
+    - [ 23,  44,      55,      55]
+    - [ 23,  45,     7.4,     7.4]
+    - [ 23,  46,     8.8,     8.8]
+    - [ 24,  25,    32.3,    32.3]
+    - [ 24,  26,    75.2,    75.2]
+    - [ 24,  27,   105.6,   105.6]
+    - [ 24,  28,    99.4,    99.4]
+    - [ 24,  29,    19.4,    19.4]
+    - [ 24,  30,    68.5,    68.5]
+    - [ 24,  31,    90.7,    90.7]
+    - [ 24,  32,    25.9,    25.9]
+    - [ 24,  33,    52.5,    52.5]
+    - [ 24,  34,      96,      96]
+    - [ 24,  35,   100.4,   100.4]
+    - [ 24,  36,    92.9,    92.9]
+    - [ 24,  37,    91.4,    91.4]
+    - [ 24,  38,    26.2,    26.2]
+    - [ 24,  39,    34.4,    34.4]
+    - [ 24,  40,   101.5,   101.5]
+    - [ 24,  41,   134.2,   134.2]
+    - [ 24,  42,    76.1,    76.1]
+    - [ 24,  43,    80.1,    80.1]
+    - [ 24,  44,    93.8,    93.8]
+    - [ 24,  45,    91.1,    91.1]
+    - [ 24,  46,    92.6,    92.6]
+    - [ 25,  26,    92.5,    92.5]
+    - [ 25,  27,    94.6,    94.6]
+    - [ 25,  28,   106.2,   106.2]
+    - [ 25,  29,    19.6,    19.6]
+    - [ 25,  30,    68.4,    68.4]
+    - [ 25,  31,    79.8,    79.8]
+    - [ 25,  32,    44.5,    44.5]
+    - [ 25,  33,    32.7,    32.7]
+    - [ 25,  34,   113.1,   113.1]
+    - [ 25,  35,    89.5,    89.5]
+    - [ 25,  36,      82,      82]
+    - [ 25,  37,    80.4,    80.4]
+    - [ 25,  38,     6.8,     6.8]
+    - [ 25,  39,     2.4,     2.4]
+    - [ 25,  40,   118.9,   118.9]
+    - [ 25,  41,   151.6,   151.6]
+    - [ 25,  42,    55.1,    55.1]
+    - [ 25,  43,    69.2,    69.2]
+    - [ 25,  44,    98.1,    98.1]
+    - [ 25,  45,    80.2,    80.2]
+    - [ 25,  46,    81.6,    81.6]
+    - [ 26,  27,   106.4,   106.4]
+    - [ 26,  28,    45.6,    45.6]
+    - [ 26,  29,    87.2,    87.2]
+    - [ 26,  30,    63.7,    63.7]
+    - [ 26,  31,    91.6,    91.6]
+    - [ 26,  32,    94.9,    94.9]
+    - [ 26,  33,      82,      82]
+    - [ 26,  34,    22.2,    22.2]
+    - [ 26,  35,   101.3,   101.3]
+    - [ 26,  36,    93.8,    93.8]
+    - [ 26,  37,    92.2,    92.2]
+    - [ 26,  38,    87.1,    87.1]
+    - [ 26,  39,    94.7,    94.7]
+    - [ 26,  40,    26.4,    26.4]
+    - [ 26,  41,    59.1,    59.1]
+    - [ 26,  42,    83.9,    83.9]
+    - [ 26,  43,    81.8,    81.8]
+    - [ 26,  44,    52.2,    52.2]
+    - [ 26,  45,    91.5,    91.5]
+    - [ 26,  46,      93,      93]
+    - [ 27,  28,    86.1,    86.1]
+    - [ 27,  29,   105.4,   105.4]
+    - [ 27,  30,    44.9,    44.9]
+    - [ 27,  31,    15.6,    15.6]
+    - [ 27,  32,   126.1,   126.1]
+    - [ 27,  33,    63.1,    63.1]
+    - [ 27,  34,   114.9,   114.9]
+    - [ 27,  35,     5.2,     5.2]
+    - [ 27,  36,    13.6,    13.6]
+    - [ 27,  37,    18.5,    18.5]
+    - [ 27,  38,    96.3,    96.3]
+    - [ 27,  39,    96.4,    96.4]
+    - [ 27,  40,   123.9,   123.9]
+    - [ 27,  41,   162.9,   162.9]
+    - [ 27,  42,      51,      51]
+    - [ 27,  43,    28.6,    28.6]
+    - [ 27,  44,    71.9,    71.9]
+    - [ 27,  45,    23.7,    23.7]
+    - [ 27,  46,    24.9,    24.9]
+    - [ 28,  29,   103.1,   103.1]
+    - [ 28,  30,    44.5,    44.5]
+    - [ 28,  31,    71.2,    71.2]
+    - [ 28,  32,   123.3,   123.3]
+    - [ 28,  33,    81.3,    81.3]
+    - [ 28,  34,    41.6,    41.6]
+    - [ 28,  35,      81,      81]
+    - [ 28,  36,    73.5,    73.5]
+    - [ 28,  37,    71.9,    71.9]
+    - [ 28,  38,   101.8,   101.8]
+    - [ 28,  39,     108,     108]
+    - [ 28,  40,    51.9,    51.9]
+    - [ 28,  41,    91.5,    91.5]
+    - [ 28,  42,    71.3,    71.3]
+    - [ 28,  43,    61.5,    61.5]
+    - [ 28,  44,      16,      16]
+    - [ 28,  45,    71.2,    71.2]
+    - [ 28,  46,    72.6,    72.6]
+    - [ 29,  30,    72.2,    72.2]
+    - [ 29,  31,    90.5,    90.5]
+    - [ 29,  32,    28.3,    28.3]
+    - [ 29,  33,    46.8,    46.8]
+    - [ 29,  34,   107.9,   107.9]
+    - [ 29,  35,   100.2,   100.2]
+    - [ 29,  36,    92.7,    92.7]
+    - [ 29,  37,    91.2,    91.2]
+    - [ 29,  38,    13.5,    13.5]
+    - [ 29,  39,    21.7,    21.7]
+    - [ 29,  40,   113.6,   113.6]
+    - [ 29,  41,   146.3,   146.3]
+    - [ 29,  42,    69.3,    69.3]
+    - [ 29,  43,    79.9,    79.9]
+    - [ 29,  44,    97.5,    97.5]
+    - [ 29,  45,    90.9,    90.9]
+    - [ 29,  46,    92.4,    92.4]
+    - [ 30,  31,      30,      30]
+    - [ 30,  32,    92.5,    92.5]
+    - [ 30,  33,    37.3,    37.3]
+    - [ 30,  34,    72.2,    72.2]
+    - [ 30,  35,    39.8,    39.8]
+    - [ 30,  36,    32.2,    32.2]
+    - [ 30,  37,    30.7,    30.7]
+    - [ 30,  38,    70.2,    70.2]
+    - [ 30,  39,    70.2,    70.2]
+    - [ 30,  40,    81.2,    81.2]
+    - [ 30,  41,   120.2,   120.2]
+    - [ 30,  42,    27.3,    27.3]
+    - [ 30,  43,    20.2,    20.2]
+    - [ 30,  44,    30.2,    30.2]
+    - [ 30,  45,      30,      30]
+    - [ 30,  46,    31.4,    31.4]
+    - [ 31,  32,   111.2,   111.2]
+    - [ 31,  33,    48.2,    48.2]
+    - [ 31,  34,     100,     100]
+    - [ 31,  35,    10.4,    10.4]
+    - [ 31,  36,     2.9,     2.9]
+    - [ 31,  37,     4.5,     4.5]
+    - [ 31,  38,    81.5,    81.5]
+    - [ 31,  39,    81.6,    81.6]
+    - [ 31,  40,     109,     109]
+    - [ 31,  41,   148.1,   148.1]
+    - [ 31,  42,    36.1,    36.1]
+    - [ 31,  43,    13.7,    13.7]
+    - [ 31,  44,      57,      57]
+    - [ 31,  45,     8.2,     8.2]
+    - [ 31,  46,     9.3,     9.3]
+    - [ 32,  33,      71,      71]
+    - [ 32,  34,   117.1,   117.1]
+    - [ 32,  35,   120.9,   120.9]
+    - [ 32,  36,   113.4,   113.4]
+    - [ 32,  37,   111.9,   111.9]
+    - [ 32,  38,    38.4,    38.4]
+    - [ 32,  39,    46.6,    46.6]
+    - [ 32,  40,   121.2,   121.2]
+    - [ 32,  41,   153.9,   153.9]
+    - [ 32,  42,    94.3,    94.3]
+    - [ 32,  43,   100.6,   100.6]
+    - [ 32,  44,   117.7,   117.7]
+    - [ 32,  45,   111.6,   111.6]
+    - [ 32,  46,   113.1,   113.1]
+    - [ 33,  34,   100.2,   100.2]
+    - [ 33,  35,      58,      58]
+    - [ 33,  36,    50.5,    50.5]
+    - [ 33,  37,    48.9,    48.9]
+    - [ 33,  38,    34.4,    34.4]
+    - [ 33,  39,    34.4,    34.4]
+    - [ 33,  40,   108.3,   108.3]
+    - [ 33,  41,     141,     141]
+    - [ 33,  42,    23.6,    23.6]
+    - [ 33,  43,    37.6,    37.6]
+    - [ 33,  44,    67.1,    67.1]
+    - [ 33,  45,    48.7,    48.7]
+    - [ 33,  46,    50.1,    50.1]
+    - [ 34,  35,   109.7,   109.7]
+    - [ 34,  36,   102.2,   102.2]
+    - [ 34,  37,   100.7,   100.7]
+    - [ 34,  38,   107.7,   107.7]
+    - [ 34,  39,   115.3,   115.3]
+    - [ 34,  40,    13.2,    13.2]
+    - [ 34,  41,    56.9,    56.9]
+    - [ 34,  42,    92.3,    92.3]
+    - [ 34,  43,    90.2,    90.2]
+    - [ 34,  44,    52.6,    52.6]
+    - [ 34,  45,     100,     100]
+    - [ 34,  46,   101.4,   101.4]
+    - [ 35,  36,     8.5,     8.5]
+    - [ 35,  37,    13.4,    13.4]
+    - [ 35,  38,    91.2,    91.2]
+    - [ 35,  39,    91.3,    91.3]
+    - [ 35,  40,   118.7,   118.7]
+    - [ 35,  41,   157.8,   157.8]
+    - [ 35,  42,    45.8,    45.8]
+    - [ 35,  43,    23.5,    23.5]
+    - [ 35,  44,    66.7,    66.7]
+    - [ 35,  45,    18.6,    18.6]
+    - [ 35,  46,    19.7,    19.7]
+    - [ 36,  37,     5.9,     5.9]
+    - [ 36,  38,    83.7,    83.7]
+    - [ 36,  39,    83.8,    83.8]
+    - [ 36,  40,   111.2,   111.2]
+    - [ 36,  41,   150.3,   150.3]
+    - [ 36,  42,    38.3,    38.3]
+    - [ 36,  43,      16,      16]
+    - [ 36,  44,    59.2,    59.2]
+    - [ 36,  45,    11.1,    11.1]
+    - [ 36,  46,    12.2,    12.2]
+    - [ 37,  38,    82.1,    82.1]
+    - [ 37,  39,    82.2,    82.2]
+    - [ 37,  40,   109.7,   109.7]
+    - [ 37,  41,   148.7,   148.7]
+    - [ 37,  42,    36.8,    36.8]
+    - [ 37,  43,    14.4,    14.4]
+    - [ 37,  44,    57.7,    57.7]
+    - [ 37,  45,    10.7,    10.7]
+    - [ 37,  46,    12.1,    12.1]
+    - [ 38,  39,     8.9,     8.9]
+    - [ 38,  40,   113.5,   113.5]
+    - [ 38,  41,   146.2,   146.2]
+    - [ 38,  42,    56.9,    56.9]
+    - [ 38,  43,    70.9,    70.9]
+    - [ 38,  44,    96.2,    96.2]
+    - [ 38,  45,    81.9,    81.9]
+    - [ 38,  46,    83.3,    83.3]
+    - [ 39,  40,     121,     121]
+    - [ 39,  41,   153.7,   153.7]
+    - [ 39,  42,    56.9,    56.9]
+    - [ 39,  43,    70.9,    70.9]
+    - [ 39,  44,    99.9,    99.9]
+    - [ 39,  45,      82,      82]
+    - [ 39,  46,    83.4,    83.4]
+    - [ 40,  41,    53.2,    53.2]
+    - [ 40,  42,   101.3,   101.3]
+    - [ 40,  43,    99.2,    99.2]
+    - [ 40,  44,    62.8,    62.8]
+    - [ 40,  45,     109,     109]
+    - [ 40,  46,   110.4,   110.4]
+    - [ 41,  42,   140.4,   140.4]
+    - [ 41,  43,   138.3,   138.3]
+    - [ 41,  44,   101.9,   101.9]
+    - [ 41,  45,     148,     148]
+    - [ 41,  46,   149.5,   149.5]
+    - [ 42,  43,    25.5,    25.5]
+    - [ 42,  44,    57.1,    57.1]
+    - [ 42,  45,    36.5,    36.5]
+    - [ 42,  46,      38,      38]
+    - [ 43,  44,    47.2,    47.2]
+    - [ 43,  45,    14.1,    14.1]
+    - [ 43,  46,    15.6,    15.6]
+    - [ 44,  45,      57,      57]
+    - [ 44,  46,    58.4,    58.4]
+    - [ 45,  46,     1.4,     1.4]
