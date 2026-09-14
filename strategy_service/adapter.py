@@ -37,7 +37,7 @@ _CLEARING_SCENES_DIR = os.path.join(
 if _CLEARING_SCENES_DIR not in sys.path:
     sys.path.insert(0, _CLEARING_SCENES_DIR)
 
-from clearing import roster as clearing_roster  # noqa: E402
+from clearing import roster as clearing_roster  # type: ignore # noqa: E402
 
 from strategy_service.approaches import Graph  # noqa: E402
 

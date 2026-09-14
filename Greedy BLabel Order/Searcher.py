@@ -10,7 +10,7 @@ import copy
 import time
 
 
-def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles, distanceMap, alpha, cellpriors, D, maxTrees=None, populationSize=10, historyCallback=None, searchMode="evolutionary", travelTime=None):
+def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles, distanceMap, alpha, cellpriors, D, maxTrees=None, populationSize=10, historyCallback=None, searchMode="evolutionary", travelTime=None, horizon=10, recencyLambda=None):
     #INPUT:
     # G: a Graph object repesenting the merged navigationgraph
     # availableTime: the available computation time budget in seconds (ignored if maxTrees is given)
@@ -22,6 +22,10 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
     # alpha:
     # cellpriors: All prior values for each cell for calculating the expected searchtime function
     # D: Detection set for each node for calculating the expected searchtime function
+    # horizon: time budget (same unit as edge travel time) used by searchMode="FHPE_SA" for its
+    #          finite-horizon path enumeration (default 10)
+    # recencyLambda: decay constant used by searchMode="FHPE_SA" for its recency-weighted priors
+    #          (default None -> 2 * horizon)
     # aerialSpeed: TO-DO
     # groundSpeed: TO-DO
     # aerialBattery: TO-DO
@@ -881,6 +885,132 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
 
 
     # ---------------------------------------------------
+    # FINITE HORIZON PATH ENUMERATION WITH SEQUENTIAL ALLOCATION (FHPE_SA)
+    #
+    # Algorithm 1 (sequential allocation): searchers are handled one at a
+    # time. Each searcher gets the best path (by brute force, see
+    # bestPathForSearcher below) given everything already visited by the
+    # searchers processed before it, and its own visited nodes/times are
+    # then folded into that shared state before moving on to the next
+    # searcher.
+    #
+    # Algorithm 2 (finite horizon path enumeration): for a single searcher,
+    # every feasible simple path up to the time horizon is enumerated
+    # (brute force) and the one minimizing F is kept.
+    #
+    # F (modified expected search time, minimized):
+    #   sum over nodes visited by this path:      modifiedPrior(node) * visitTime
+    # + sum over nodes visited by neither this
+    #   path nor an earlier searcher:              prior * (horizon + 1)
+    # A node already visited by an earlier searcher never re-incurs the
+    # (horizon + 1) penalty, whether or not this path passes through it
+    # again - it has already been found. modifiedPrior only differs from
+    # the static prior for nodes an earlier searcher already visited: it is
+    # scaled by (1 - e^(-|t - t_last| / lambda)), so a path gains almost
+    # nothing from quickly re-visiting an already-searched node, and full
+    # credit again once enough time has passed since that node was last
+    # seen - this is what keeps the algorithm from parking every searcher
+    # on the same static high-prior nodes.
+    # ---------------------------------------------------
+
+    def bestPathForSearcher(root, visited, horizon, lam, G : Graph):
+        # visited: {nodeIdx: lastVisitTime}, already fixed by earlier
+        # searchers - read only, not modified here.
+        #
+        # Returns (path, F) where path = [(node, arrivalTime), ...] in
+        # walk order starting with (root, 0), and F is that path's score.
+
+        baselinePenalty = sum(
+            node.prior * (horizon + 1)
+            for node in G.nodes
+            if node.idx not in visited
+        )
+
+        def contribution(node, t):
+            prior = G.nodes[node].prior
+            if node in visited:
+                deltaT = abs(t - visited[node])
+                modifiedPrior = prior * (1 - math.exp(-deltaT / lam))
+                removedPenalty = 0.0
+            else:
+                modifiedPrior = prior
+                removedPenalty = prior * (horizon + 1)
+            return modifiedPrior * t - removedPenalty
+
+        best = {"path": None, "F": None}
+        pathStack = [(root, 0)]
+
+        def dfs(node, t, currentF, visitedInPath):
+
+            if best["F"] is None or currentF < best["F"]:
+                best["F"] = currentF
+                best["path"] = list(pathStack)
+
+            for neighbour in G.adj[G.nodes[node]]:
+
+                if neighbour.idx in visitedInPath:
+                    continue
+
+                newTime = t + G.edges[(node, neighbour.idx)].time
+
+                if newTime > horizon:
+                    continue
+
+                visitedInPath.add(neighbour.idx)
+                pathStack.append((neighbour.idx, newTime))
+
+                dfs(neighbour.idx, newTime, currentF + contribution(neighbour.idx, newTime), visitedInPath)
+
+                pathStack.pop()
+                visitedInPath.discard(neighbour.idx)
+
+        dfs(root, 0, baselinePenalty + contribution(root, 0), {root})
+
+        return best["path"], best["F"]
+
+
+    def FHPE_SA(root, G : Graph):
+        # Runs Algorithm 1 (sequential allocation) for a single fixed root,
+        # shared by all availableRobots searchers, and returns a result in
+        # the exact same shape treeSearch/transformStrategy produce:
+        # (executionPlan, tree, visitedTimes).
+
+        lam = recencyLambda if recencyLambda is not None else 2 * horizon
+
+        # V: {nodeIdx: visitTime}, grown after every searcher.
+        visited = {root: 0}
+        moves = []
+
+        for _ in range(availableRobots):
+
+            path, _ = bestPathForSearcher(root, visited, horizon, lam, G)
+
+            for (sourceNode, departure), (targetNode, arrival) in zip(path, path[1:]):
+                moves.append((sourceNode, targetNode, 1, departure, arrival))
+
+            for node, t in path:
+                visited[node] = t
+
+        executionPlan = [(None, root, availableRobots)] + moves
+
+        # Rebuilding a Graph out of the edges actually walked, purely so
+        # callers/visualisation relying on the (strategy, tree) shape keep
+        # working unchanged - FHPE_SA has no spanning tree of its own.
+        T = Graph()
+        for node in G.nodes:
+            T.add_node(node.idx, node.pos, node.prior)
+        for sourceNode, targetNode, _robots, _departure, _arrival in moves:
+            edge = G.edges[(sourceNode, targetNode)]
+            T.add_edge(T.nodes[sourceNode], T.nodes[targetNode], edge.time, edge.robotType)
+
+        visitedTimes = [-1] * len(G.nodes)
+        for node, t in visited.items():
+            visitedTimes[node] = t
+
+        return executionPlan, T, visitedTimes
+
+
+    # ---------------------------------------------------
     # COMPUTING EFFICENCY WITH WHICH TWO STRATEGYS ARE COMPARED
     # ---------------------------------------------------
     def computeExpTime(visitedTimes, G: Graph):
@@ -1110,6 +1240,36 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
             checkedTreesCounter += 1
             if clearance: fitness = computeExpTime(visitedTimes, G)
             else: fitness = np.inf
+            if fitness < bestFitness:
+                bestFitness = fitness
+                bestTree = T
+                bestStrategy = strategy
+            if historyCallback is not None:
+                historyCallback(checkedTreesCounter, fitness, bestFitness)
+
+    elif searchMode == "FHPE_SA":
+
+        #------------------------------------------------------------
+        # FINITE HORIZON PATH ENUMERATION WITH SEQUENTIAL ALLOCATION
+        # All availableRobots searchers share one root; every candidate
+        # root (0..startNodes-1) is tried and the best kept, same as the
+        # other modes cycling through possible roots.
+        #------------------------------------------------------------
+        for root in range(startNodes):
+
+            if shouldStop():
+                break
+
+            strategy, T, visitedTimes = FHPE_SA(root, G)
+            checkedTreesCounter += 1
+
+            fitness = sum(
+                node.prior * visitedTimes[node.idx]
+                if visitedTimes[node.idx] != -1
+                else node.prior * (horizon + 1)
+                for node in G.nodes
+            )
+
             if fitness < bestFitness:
                 bestFitness = fitness
                 bestTree = T
