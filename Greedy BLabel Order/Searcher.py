@@ -170,13 +170,26 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
     #      B-label bound and retrying with one extra robot on failure -
     #      if availableRobots does not suffice, clearance simply fails.
     # ---------------------------------------------------
-    def treeSearch(T : Graph, root, availableRobots, G : Graph):
+    def treeSearch(T : Graph, root, availableRobots, G : Graph, startNode=None, recordCandidates=True):
         # ------------------------------------------------
         # INPUT:
         # T - The Tree on which the strategy is calculated (Graph object)
         # root - The starting point of the strategy (index)
         # availableRobots - The amount of robots that can be used for exploration (non negative Integer)
         # G - The Navigation Graph (Graph object)
+        # startNode - physical node the robots actually start from, if
+        #   different from the tree's own root (e.g. a local clearance
+        #   candidate whose committed robots really start at the overall
+        #   mission root and should route directly - shortest path - to
+        #   wherever they are first needed, instead of first gathering at
+        #   the candidate's root). Defaults to root, matching prior
+        #   behaviour.
+        # recordCandidates - whether a failing tree here should feed
+        #   computeLocalClearanceCandidates() into the outer
+        #   localClearanceCandidates list. Disabled when treeSearch is
+        #   itself being used to evaluate local-candidate subtrees inside
+        #   computeClosingExits, where recording sub-candidates would just
+        #   be wasted work on trees that are already local subtrees.
         # ------------------------------------------------
         # OUTPUT:
         # strategy, clearance, visitedTimes - clearance is False (with the
@@ -226,6 +239,12 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
                         "nodes": nodes,
                         "bLabel": bLabel,
                         "opponents": len(opponents),
+                        # The actual opponent node indices (not just their
+                        # count) - needed later to tell whether an opponent
+                        # of THIS candidate is already guarded because it is
+                        # also an opponent of some other, already-cleared
+                        # candidate (see computeClosingExits).
+                        "opponentNodes": opponents,
                         "totalEdgeTime": totalTime,
                         "totalPrior": totalPrior,
                     })
@@ -331,7 +350,7 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
 
         explorePath(root, None)
 
-        strategy, clearance, visitedTimes = transformStrategy(strategy, availableRobots, root)
+        strategy, clearance, visitedTimes = transformStrategy(strategy, availableRobots, root, startNode=startNode)
 
         # Only worth computing while we still have no clearance strategy at
         # all, and only for a tree that just failed - a successful tree
@@ -340,13 +359,13 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
         # (never cleared here) - each one is stored purely as a set of node
         # indices, so it stays usable later without needing that tree
         # around any more.
-        if not foundClearance and not clearance:
+        if recordCandidates and not foundClearance and not clearance:
             localClearanceCandidates.extend(computeLocalClearanceCandidates())
 
         return strategy, clearance, visitedTimes
 
 
-    def transformStrategy(strategy, availableRobots, root):
+    def transformStrategy(strategy, availableRobots, root, startNode=None):
         """
         strategy:
             [(node, releaseIndex), ...]
@@ -657,12 +676,18 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
         # ROBOT STATE
         # ============================================================
 
+        # Robots may physically start somewhere other than the tree's own
+        # root (see startNode doc on treeSearch) - the LBAP naturally
+        # routes each of them via the shortest path from there to wherever
+        # it is first actually needed, task 0 (root itself) included.
+        physicalStart = root if startNode is None else startNode
+
         robots = [
             {
                 "id": robotId,
 
                 # Current physical position
-                "node": root,
+                "node": physicalStart,
 
                 # Earliest time at which this robot may depart
                 "freeFrom": 0,
@@ -850,7 +875,7 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
                             )
 
 
-        executionPlan.insert(0, (None, root, availableRobots))
+        executionPlan.insert(0, (None, physicalStart, availableRobots))
 
         # ============================================================
         # VISITED TIMES
@@ -949,8 +974,11 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
     
 
     # ---------------------------------------------------
-    # COMPUTING THE CLOSING EXISTS STRATEGY IF NOT ENOUGH ROBOTS ARE GIVEN
-    # TODO: Implement method
+    # COMPUTING THE CLOSING EXITS STRATEGY IF NOT ENOUGH ROBOTS ARE GIVEN
+    # Dedupe/score/filter the local clearance candidates gathered while
+    # searching (see computeLocalClearanceCandidates), commit robots to
+    # whichever succeed best-first, and search anything left over with
+    # FHPE_SA on the remaining time/robots/graph.
     # ---------------------------------------------------
 
     def computeClosingExits(root, localCandidates, G):
@@ -1042,12 +1070,172 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
 
         dedupedCandidates.sort(key=lambda candidate: candidate["ratio"], reverse=True)
 
-        # TODO: consume dedupedCandidates in ratio order - try each via
-        # treeSearch on its own local subtree, send its robots and append
-        # the resulting clearance strategy on success (re-checking all
-        # remaining candidates once one succeeds); fall back to FHPE_SA on
-        # the rest of the graph once no candidate is left.
-        return dedupedCandidates
+        # ------------------------------------------------
+        # 4) DROP CANDIDATES WORSE THAN THE BASELINE
+        # A candidate that would not even keep pace with plain
+        # average-efficiency search over the whole remaining budget isn't
+        # worth carving out as a dedicated local clearance.
+        # ------------------------------------------------
+        feasibleCandidates = [
+            candidate for candidate in dedupedCandidates
+            if candidate["ratio"] >= globalRatio
+        ]
+
+        if not feasibleCandidates:
+            return FHPE_SA(root, G)
+
+        # ------------------------------------------------
+        # Helpers for the consumption loop below
+        # ------------------------------------------------
+
+        def buildInducedSubgraph(nodeSet):
+            # Same node array as G (so idx-based indexing stays valid),
+            # but only the edges whose both endpoints lie inside nodeSet -
+            # every node outside it ends up isolated, which is exactly
+            # what's needed both for a local candidate's own subgraph and
+            # for the "rest of the graph" handed to FHPE_SA afterwards.
+            localG = Graph()
+            for node in G.nodes:
+                localG.add_node2(node)
+            for (u, v), edge in G.edges.items():
+                if u in nodeSet and v in nodeSet:
+                    localG.add_edge(localG.nodes[u], localG.nodes[v], edge.time, edge.robotType)
+            return localG
+
+        def computeLocalExpTime(visitedTimes, nodeSet):
+            # Same idea as computeExpTime, restricted to nodeSet - used
+            # only to rank the (up to) 10 random local spanning trees
+            # tried per candidate against each other, so nodes outside
+            # nodeSet (which stay at visitedTimes == -1, never actually
+            # reached by this local tree) must not be included.
+            eff = 0
+            foundPriors = np.copy(cellpriors)
+            orderedNodes = sorted(nodeSet, key=lambda idx: visitedTimes[idx])
+            for idx in orderedNodes:
+                for cell in D[idx]:
+                    eff += foundPriors[cell[0], cell[1]] * visitedTimes[idx]
+                    foundPriors[cell[0], cell[1]] = 0
+            return eff
+
+        # ------------------------------------------------
+        # 5) CONSUME CANDIDATES BEST-FIRST
+        # Every committed robot routes directly (shortest path, via
+        # treeSearch's startNode) from the overall mission root to
+        # wherever it is first actually needed - guard spot or first
+        # clearing position - instead of first gathering at the
+        # candidate's own root.
+        # ------------------------------------------------
+        overallStrategy = [(None, root, availableRobots)]
+        overallVisitedTime = {}
+
+        remainingRobots = availableRobots
+        guardedOpponents = set()
+        clearedNodes = set()
+
+        pending = feasibleCandidates
+
+        while pending:
+
+            candidate = pending.pop(0)
+
+            # Opponents already guarded because some other, already
+            # cleared candidate happens to border the same node don't need
+            # a second dedicated guard.
+            newOpponents = candidate["opponentNodes"] - guardedOpponents
+            neededGuards = len(newOpponents)
+
+            if candidate["bLabel"] + neededGuards > remainingRobots:
+                continue
+
+            localRobots = remainingRobots - neededGuards
+            localGraph = buildInducedSubgraph(candidate["nodes"])
+
+            bestLocal = None
+            for _ in range(10):
+                localTree = computeRandomSpanningTree(localGraph, candidate["root"])
+                localStrategy, localClearance, localVisitedTimes = treeSearch(
+                    localTree, candidate["root"], localRobots, localGraph,
+                    startNode=root, recordCandidates=False
+                )
+                if not localClearance:
+                    continue
+                localFitness = computeLocalExpTime(localVisitedTimes, candidate["nodes"])
+                if bestLocal is None or localFitness < bestLocal[0]:
+                    bestLocal = (localFitness, localStrategy, localVisitedTimes)
+
+            if bestLocal is None:
+                # All 10 random local trees failed with this robot budget -
+                # more robots won't free up later (remainingRobots only
+                # shrinks), so this candidate is permanently unworkable.
+                continue
+
+            _, chosenStrategy, chosenVisitedTimes = bestLocal
+
+            # Append this candidate's own (already directly-routed)
+            # clearance moves, then send one fresh guard robot straight to
+            # each newly-covered opponent node.
+            overallStrategy.extend(chosenStrategy[1:])
+            for node in candidate["nodes"]:
+                overallVisitedTime[node] = chosenVisitedTimes[node]
+
+            for opponentNode in newOpponents:
+                travelTime = flagDistance[root][opponentNode]
+                overallStrategy.append((root, opponentNode, 1, 0, travelTime))
+                overallVisitedTime[opponentNode] = travelTime
+
+            remainingRobots -= neededGuards
+            guardedOpponents |= newOpponents
+            clearedNodes |= candidate["nodes"]
+
+            # Re-evaluate the remaining candidates under the updated robot
+            # budget / guard coverage - order by ratio is unaffected by
+            # dropping infeasible entries, so no re-sort is needed.
+            pending = [
+                c for c in pending
+                if c["bLabel"] + len(c["opponentNodes"] - guardedOpponents) <= remainingRobots
+            ]
+
+        # ------------------------------------------------
+        # 6) SEARCH WHATEVER IS LEFT WITH FHPE_SA
+        # The area handled above (cleared regions + permanently guarded
+        # opponents) is removed from the graph FHPE_SA searches, its robots
+        # are excluded from the count, and it continues the clock from the
+        # time already spent instead of restarting the budget at 0.
+        # ------------------------------------------------
+        elapsedClearanceTime = max(
+            (arrival for (_, _, _, _, arrival) in overallStrategy[1:]),
+            default=0
+        )
+
+        excludedNodes = clearedNodes | guardedOpponents
+        remainingNodeIndices = {node.idx for node in G.nodes} - excludedNodes
+        remainingGraph = buildInducedSubgraph(remainingNodeIndices)
+
+        if remainingRobots > 0:
+            fhpeExecutionPlan, _, _, _ = FHPE_SA(
+                root, remainingGraph,
+                robotsOverride=remainingRobots,
+                startTime=elapsedClearanceTime,
+                seedLastVisitTime=overallVisitedTime,
+            )
+            overallStrategy.extend(fhpeExecutionPlan[1:])
+
+        # A lightweight graph of every edge actually travelled, purely so
+        # the "Spanning tree" visualization layer has something to draw -
+        # same construction as FHPE_SA's own visualTree.
+        visualTree = Graph()
+        for n in G.nodes:
+            visualTree.add_node2(n)
+        for move in overallStrategy[1:]:
+            src, tgt, _, dep, arr = move
+            if (src, tgt) in visualTree.edges:
+                continue
+            edgeInfo = G.edges.get((src, tgt)) or G.edges.get((tgt, src))
+            edgeTime = edgeInfo.time if edgeInfo is not None else (arr - dep)
+            robotType = edgeInfo.robotType if edgeInfo is not None else 2
+            visualTree.add_edge(visualTree.nodes[src], visualTree.nodes[tgt], edgeTime, robotType)
+
+        return overallStrategy, visualTree, len(feasibleCandidates), None
 
 
     # ---------------------------------------------------
@@ -1130,15 +1318,29 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
         return best["path"], best["times"]
 
 
-    def FHPE_SA(root, G : Graph):
+    def FHPE_SA(root, G : Graph, robotsOverride=None, startTime=0, seedLastVisitTime=None):
+        # robotsOverride: robot count to search with, if not the full
+        #   availableRobots (e.g. continuing after computeClosingExits has
+        #   permanently committed some robots as opponent guards).
+        # startTime: absolute time robots begin this search from - used to
+        #   continue after time has already been spent elsewhere (e.g. on
+        #   local clearances) instead of always starting the clock at 0.
+        #   probBudget stays the same absolute deadline, so starting later
+        #   naturally leaves exactly (probBudget - startTime) of search time.
+        # seedLastVisitTime: lastVisitTime entries for nodes already
+        #   handled before this call (cleared locally or under permanent
+        #   guard) so their decayed prior correctly reflects that instead
+        #   of looking completely unvisited.
+
+        robots_ = availableRobots if robotsOverride is None else robotsOverride
 
         lam = recencyLambda if recencyLambda is not None else 20 * horizon
 
-        lastVisitTime = {root: 0} #Format Node: lastVisitTime 
-        executionPlan = [(None, root, availableRobots)]
+        lastVisitTime = {root: 0, **(seedLastVisitTime or {})} #Format Node: lastVisitTime
+        executionPlan = [(None, root, robots_)]
 
-        robotNode = [root] * availableRobots #Position of where the nodes are after the horizon iteration
-        robotTime = [0] * availableRobots #Time when horizon iteration ends
+        robotNode = [root] * robots_ #Position of where the nodes are after the horizon iteration
+        robotTime = [startTime] * robots_ #Time when horizon iteration ends
 
         roundCounter = 0
 
@@ -1165,7 +1367,7 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
             horizonVisited = {} #Format Node: horizonVisitedTime
             roundPaths = [] #Every robot's full planned (path, times) this horizon iteration
 
-            for k in range(availableRobots):
+            for k in range(robots_):
 
                 path, times = bestPathForSearcher(
                     robotNode[k], robotTime[k], horizonVisited, lastVisitTime, horizon, lam, G, maxHops
@@ -1186,14 +1388,14 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
             nonTrivialFinishTimes = [times[-1] for path, times in roundPaths if len(path) > 1]
 
             if not nonTrivialFinishTimes:
-                for k in range(availableRobots):
+                for k in range(robots_):
                     robotTime[k] = probBudget
                 roundCounter += 1
                 continue
 
             T = min(nonTrivialFinishTimes)
 
-            for k in range(availableRobots):
+            for k in range(robots_):
 
                 path, times = roundPaths[k]
 
@@ -1554,11 +1756,7 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
             del fitnesses[worstIdx]
 
     if bestFitness == np.inf:
-        # TODO: scoredClosingCandidates still needs to be consumed (try
-        # best-first via treeSearch, send robots, fall back to FHPE_SA once
-        # exhausted) - computeClosingExits currently only dedupes and
-        # scores them.
-        scoredClosingCandidates = computeClosingExits(root, localClearanceCandidates, G)
+        bestStrategy, bestTree, _, _ = computeClosingExits(root, localClearanceCandidates, G)
 
     return bestStrategy, bestTree, checkedTreesCounter, bestFitness
 
