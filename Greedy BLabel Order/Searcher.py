@@ -176,6 +176,52 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
 
         BLabels, effLables, _, _ = computeWorstCaseLabels(T, root, None)
 
+        # ------------------------------------------------
+        # LOCAL CLEARANCE CANDIDATES
+        # A local clearance candidate is a subtree of T (identified by its
+        # root node) whose own B-label plus its "Gegner" fits within
+        # availableRobots. Gegner ("opponents") of a subtree are every node
+        # of G outside the subtree that has an edge into a node of the
+        # subtree - i.e. every source contamination could re-enter the
+        # subtree from once its guards leave. A node bordering several
+        # nodes of the subtree is still only counted once.
+        # Only computed on demand (see call site below), since it is only
+        # needed while no clearance strategy has been found yet.
+        # ------------------------------------------------
+        def computeLocalClearanceCandidates():
+
+            candidates = []
+            subtreeNodes = {}
+
+            def visit(node, parent):
+                nodes = {node}
+                for child in T.adj[T.nodes[node]]:
+                    if child.idx != parent:
+                        visit(child.idx, node)
+                        nodes |= subtreeNodes[child.idx]
+                subtreeNodes[node] = nodes
+
+                opponents = {
+                    neighbour.idx
+                    for u in nodes
+                    for neighbour in G.adj[G.nodes[u]]
+                    if neighbour.idx not in nodes
+                }
+
+                bLabel = BLabels[(parent, node)]
+
+                if bLabel + len(opponents) <= availableRobots:
+                    candidates.append({
+                        "root": node,
+                        "parent": parent,
+                        "nodes": nodes,
+                        "bLabel": bLabel,
+                        "opponents": len(opponents),
+                    })
+
+            visit(root, None)
+            return candidates
+
         visited = [0] * len(T.nodes)
         visited[root] = 1
 
@@ -274,7 +320,19 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
 
         explorePath(root, None)
 
-        return transformStrategy(strategy, availableRobots, root)
+        strategy, clearance, visitedTimes = transformStrategy(strategy, availableRobots, root)
+
+        # Only worth computing while we still have no clearance strategy at
+        # all, and only for a tree that just failed - a successful tree
+        # makes the fallback (which consumes these candidates) moot.
+        # Candidates accumulate across every failing tree seen so far
+        # (never cleared here) - each one is stored purely as a set of node
+        # indices, so it stays usable later without needing that tree
+        # around any more.
+        if not foundClearance and not clearance:
+            localClearanceCandidates.extend(computeLocalClearanceCandidates())
+
+        return strategy, clearance, visitedTimes
 
 
     def transformStrategy(strategy, availableRobots, root):
@@ -884,8 +942,11 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
     # TODO: Implement method
     # ---------------------------------------------------
 
-    def computeClosingExits(graphStrategy, G):
-        print("Hello World!")
+    def computeClosingExits(localCandidates, G):
+        #sort local candiates and delete duplicates
+        # calculate formula and delte all local candidates that do not satisfy. After one candidate was succesful every one has to be checked again
+        # solange noch kandidaten exisiteren  nehme besten und probiere. wenn klappt schicke Roboter hin, hänge clearance Strategie über TreeSearch mit wenig Bäumen drann und weiter
+        # Wenn keine Kandidaten mehr mache FHPE + SA auf restgraph.
         return []
 
 
@@ -1285,6 +1346,12 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
     currGen = []
     checkedTreesCounter = 0
 
+    # Tracks whether ANY clearance strategy has been found so far - not just
+    # whether the current bestFitness is finite - so treeSearch (see below)
+    # knows when local clearance candidates are still worth computing.
+    foundClearance = False
+    localClearanceCandidates = []
+
     def shouldStop():
         if maxTrees is not None:
             return checkedTreesCounter >= maxTrees
@@ -1303,7 +1370,9 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
 
             strategy, clearance, visitedTimes = treeSearch(T, root, availableRobots, G)
             checkedTreesCounter += 1
-            if clearance: fitness = computeExpTime(visitedTimes, G)
+            if clearance:
+                foundClearance = True
+                fitness = computeExpTime(visitedTimes, G)
             else: fitness = np.inf
             if fitness < bestFitness:
                 bestFitness = fitness
@@ -1345,7 +1414,9 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
 
             strategy, clearance, visitedTimes = treeSearch(indivium[0], indivium[1], availableRobots, G)
             checkedTreesCounter += 1
-            if clearance: fitness = computeExpTime(visitedTimes, G)
+            if clearance:
+                foundClearance = True
+                fitness = computeExpTime(visitedTimes, G)
             else: fitness = np.inf
             fitnesses.append(fitness)
             if fitness < bestFitness:
@@ -1364,7 +1435,9 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
 
             strategy, clearance, visitedTimes = treeSearch(child[0], child[1], availableRobots, G)
             checkedTreesCounter += 1
-            if clearance: fitness = computeExpTime(visitedTimes, G)
+            if clearance:
+                foundClearance = True
+                fitness = computeExpTime(visitedTimes, G)
             else: fitness = np.inf
             if fitness < bestFitness:
                 bestFitness = fitness
@@ -1381,7 +1454,7 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
             del fitnesses[worstIdx]
 
     if bestFitness == np.inf:
-        bestStrategy, T, _, _  = FHPE_SA(root ,G)
+        bestStrategy, T, _, _  = computeClosingExits(root ,G)
         bestTree = T
 
     return bestStrategy, bestTree, checkedTreesCounter, bestFitness
