@@ -255,6 +255,9 @@ def run_strategy(req: RunRequest):
         "metrics": {
             "checked_trees": checked_trees,
             "fitness": None if not np.isfinite(fitness) else fitness,
+            # True when the approach found no feasible clearance strategy
+            # and graphSearch fell back to the FHPE_SA patrol strategy.
+            "no_clearance_found": not np.isfinite(fitness),
             "mission_seconds": mission_seconds,
             "available_robots": req.available_robots,
             "vertices_visited": len(visit_time),

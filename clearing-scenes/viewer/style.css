@@ -75,6 +75,15 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 .stats span:first-child { color: var(--dim); }
 
 .hint { margin: 6px 0 0; color: var(--dim); font-size: 11px; }
+.warn {
+  margin: 8px 0 0;
+  padding: 6px 8px;
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  background: rgba(250, 176, 74, 0.12);
+  color: var(--accent);
+  font-size: 11px;
+}
 .row { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
 .row button { width: auto; padding: 4px 12px; }
 

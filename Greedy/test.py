@@ -389,6 +389,10 @@ for key, default in [
 
     ("checked_tree_counter", 0),
 
+    # True when graphSearch could not find a valid clearance strategy
+    # and fell back to the FHPE_SA patrol strategy instead.
+    ("no_clearance_found", False),
+
     # Detection sets per node (node_idx -> set of (row, col) cells)
     # and the time at which each node was first reached ("visited").
     ("detection_sets", None),
@@ -617,7 +621,7 @@ if run:
         "Computing strategy..."
     ):
 
-        strategy, T, checkedTreeCounter, _ = graphSearch(
+        strategy, T, checkedTreeCounter, fitness = graphSearch(
             G,
             computation_time,
             available_robots,
@@ -629,6 +633,8 @@ if run:
             D,
             maxTrees=max_trees,
         )
+
+    st.session_state.no_clearance_found = (fitness == np.inf)
 
     if strategy is None:
 
@@ -836,6 +842,16 @@ cellpriors = (
 visualization_phase = (
     st.session_state.visualization_phase
 )
+
+
+if st.session_state.no_clearance_found:
+
+    st.warning(
+        "Keine vollständige Clearance-Strategie gefunden "
+        "(zu wenig Roboter für diesen Graphen). Gezeigt wird stattdessen "
+        "die FHPE_SA-Patrouillenstrategie (Finite Horizon Path Enumeration "
+        "with Sequential Allocation)."
+    )
 
 
 # ==================================================

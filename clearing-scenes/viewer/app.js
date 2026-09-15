@@ -393,6 +393,7 @@ function build(data) {
   fillMarkerList();
   $("#c-playback").style.display = "none";
   $("#c-status").textContent = "";
+  $("#c-no-clearance-warning").hidden = true;
   $("#c-save-status").textContent = "";
   loadSavedHotspots();
   applyLayers();
@@ -903,8 +904,10 @@ async function runStrategy() {
     $("#c-status").textContent = `done — ${m.checked_trees} trees checked, `
       + `${fmtTime(m.mission_seconds)} mission, ${m.vertices_visited}/${m.n_vertices} `
       + `vertices reached${m.fitness == null ? "" : `, fitness ${m.fitness.toFixed(2)}`}.`;
+    $("#c-no-clearance-warning").hidden = !m.no_clearance_found;
   } catch (err) {
     $("#c-status").textContent = "error: " + err.message;
+    $("#c-no-clearance-warning").hidden = true;
   } finally {
     $("#c-run").disabled = false;
   }

@@ -10,7 +10,7 @@ import copy
 import time
 
 
-def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles, distanceMap, alpha, cellpriors, D, maxTrees=None, populationSize=10, historyCallback=None, searchMode="evolutionary", travelTime=None):
+def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles, distanceMap, alpha, cellpriors, D, maxTrees=None, populationSize=10, historyCallback=None, searchMode="evolutionary", travelTime=None, horizon=15, recencyLambda=None, probBudget = 200):
     #INPUT:
     # G: a Graph object repesenting the merged navigationgraph
     # availableTime: the available computation time budget in seconds (ignored if maxTrees is given)
@@ -22,6 +22,11 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
     # alpha:
     # cellpriors: All prior values for each cell for calculating the expected searchtime function
     # D: Detection set for each node for calculating the expected searchtime function
+    # horizon: time budget (same unit as edge travel time) used by FHPE_SA's finite-horizon
+    #          path enumeration (the fallback strategy when no clearance is found)
+    # recencyLambda: recency decay constant used by FHPE_SA (default None -> 2 * horizon)
+    # probBudget: simulated-time budget used by FHPE_SA - every move it plans arrives at its
+    #          target by t = probBudget at the latest (default 200); NOT a wall-clock limit
     # aerialSpeed: TO-DO
     # groundSpeed: TO-DO
     # aerialBattery: TO-DO
@@ -425,6 +430,183 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
 
 
     # ---------------------------------------------------
+    # FINITE HORIZON PATH ENUMERATION WITH SEQUENTIAL ALLOCATION (FHPE_SA)
+    #
+    # F, per candidate path, sums one term per node w in G:
+    #   w reached within the horizon (by this path or an earlier searcher
+    #   this round) at the shortest such time t:   priorAt(w, t) * t
+    #   w not reached at all:                       priorAt(w, deadline) * deadline
+    # priorAt(w, t) decays w's static prior by how long it has been since
+    # w was actually last visited (lastVisitTime, updated only once a
+    # path is chosen - never during the search itself), so a node found
+    # long ago is worth almost as much as an unfound one again.
+    # ---------------------------------------------------
+
+    def bestPathForSearcher(startNode, startTime, horizonVisited, lastVisitTime, horizon, lam, G : Graph):
+
+        deadline = startTime + horizon + 1
+
+        #Calculating the Prior at a node with respect to the recency bias if a node was already visited
+        def priorAt(node, t):
+            prior = G.nodes[node].prior
+            if node not in lastVisitTime:
+                return prior
+            delta = max(0, t - lastVisitTime[node])
+            return prior * (1 - math.exp(-delta / lam))
+
+        def objective(path, times):
+            merged = dict(horizonVisited)
+            for node, t in zip(path, times):
+                if node not in merged or t < merged[node]:
+                    merged[node] = t
+
+            F = 0
+            for node in G.nodes:
+                t = merged.get(node.idx, deadline)
+                F += priorAt(node.idx, t) * t
+            return F
+
+        # Staying put is never a candidate: with every prior > 0, moving to
+        # any reachable neighbour strictly lowers F (its contribution goes
+        # from priorAt(w, deadline) * deadline down to priorAt(w, t) * t,
+        # t < deadline). Only exception is a genuine dead end (no
+        # neighbour reachable within horizon/probBudget at all).
+        best = {"F": None, "path": None, "times": None}
+
+        def visit(node, t, path, times):
+            for neighbour in G.adj[G.nodes[node]]:
+                newT = t + G.edges[(node, neighbour.idx)].time
+                if newT - startTime > horizon or newT > probBudget:
+                    continue
+                path.append(neighbour.idx)
+                times.append(newT)
+
+                F = objective(path, times)
+                if best["F"] is None or F < best["F"]:
+                    best["F"] = F
+                    best["path"] = list(path)
+                    best["times"] = list(times)
+
+                visit(neighbour.idx, newT, path, times)
+
+                path.pop()
+                times.pop()
+
+        visit(startNode, startTime, [startNode], [startTime])
+
+        if best["path"] is None:
+            return [startNode], [startTime]
+
+        return best["path"], best["times"]
+
+
+    def FHPE_SA(root, G : Graph):
+
+        lam = recencyLambda if recencyLambda is not None else 20 * horizon
+
+        lastVisitTime = {root: 0} #Format Node: lastVisitTime
+        executionPlan = [(None, root, availableRobots)]
+
+        robotNode = [root] * availableRobots #Position of where the nodes are after the horizon iteration
+        robotTime = [0] * availableRobots #Time when horizon iteration ends
+
+        roundCounter = 0
+
+        # Robots rarely finish their planned horizon path at the same
+        # time. Cuts a robot's still-running path down to what actually
+        # gets executed before time T: every move fully done by T is kept
+        # as is, the one move straddling T is finished (a robot can't be
+        # pulled off mid-edge), and everything planned after that is
+        # dropped.
+        def truncateToTime(path, times, T):
+            k = 0
+            while k < len(times) and times[k] <= T:
+                k += 1
+            if k == len(times):
+                return path, times
+            if k == 0:
+                return path[:1], times[:1]
+            if times[k - 1] == T:
+                return path[:k], times[:k]
+            return path[:k + 1], times[:k + 1]
+
+        while min(robotTime) < probBudget: #As long as there is time
+
+            horizonVisited = {} #Format Node: horizonVisitedTime
+            roundPaths = [] #Every robot's full planned (path, times) this horizon iteration
+
+            for k in range(availableRobots):
+
+                path, times = bestPathForSearcher(
+                    robotNode[k], robotTime[k], horizonVisited, lastVisitTime, horizon, lam, G
+                )
+
+                for node, t in zip(path, times):
+                    if node not in horizonVisited or t < horizonVisited[node]: #New Node or visited but earlier
+                        horizonVisited[node] = t
+
+                roundPaths.append((path, times))
+
+            # As soon as the first (shortest) planned path finishes,
+            # everyone replans - so this round only actually runs until
+            # that earliest finish time T. Robots stuck at a genuine dead
+            # end (no move fits within horizon/probBudget at all) don't
+            # count towards T; if every robot is stuck, none of them will
+            # ever move again, so they are done for good.
+            nonTrivialFinishTimes = [times[-1] for path, times in roundPaths if len(path) > 1]
+
+            if not nonTrivialFinishTimes:
+                for k in range(availableRobots):
+                    robotTime[k] = probBudget
+                roundCounter += 1
+                continue
+
+            T = min(nonTrivialFinishTimes)
+
+            for k in range(availableRobots):
+
+                path, times = roundPaths[k]
+
+                if len(path) == 1:
+                    robotTime[k] = probBudget
+                    continue
+
+                execPath, execTimes = truncateToTime(path, times, T)
+
+                for i in range(1, len(execPath)):
+                    executionPlan.append((execPath[i - 1], execPath[i], 1, execTimes[i - 1], execTimes[i]))
+
+                # Adjust the lastVisitTime only for the part of the path
+                # that is actually executed - a node planned but never
+                # reached (cut off by the truncation above) must not have
+                # its lastVisitTime touched.
+                for node, t in zip(execPath, execTimes):
+                    if node not in lastVisitTime or t > lastVisitTime[node]: # New Node or new last visit
+                        lastVisitTime[node] = t
+
+                robotNode[k] = execPath[-1]
+                robotTime[k] = execTimes[-1]
+
+            roundCounter += 1
+
+        # A lightweight graph of every edge actually travelled, purely so
+        # the "Spanning tree" visualization layer has something to draw.
+        visualTree = Graph()
+        for n in G.nodes:
+            visualTree.add_node2(n)
+        for move in executionPlan[1:]:
+            src, tgt, _, dep, arr = move
+            if (src, tgt) in visualTree.edges:
+                continue
+            edgeInfo = G.edges.get((src, tgt)) or G.edges.get((tgt, src))
+            edgeTime = edgeInfo.time if edgeInfo is not None else (arr - dep)
+            robotType = edgeInfo.robotType if edgeInfo is not None else 2
+            visualTree.add_edge(visualTree.nodes[src], visualTree.nodes[tgt], edgeTime, robotType)
+
+        return executionPlan, visualTree, roundCounter, None
+
+
+    # ---------------------------------------------------
     # COMPUTING EFFICENCY WITH WHICH TWO STRATEGYS ARE COMPARED
     # ---------------------------------------------------
     def computeExpTime(visitedTimes, G: Graph):
@@ -730,10 +912,8 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
             del fitnesses[worstIdx]
 
     if bestFitness == np.inf:
-        bestStrategy = computeClosingExits(bestStrategy,G)
-        print(availableRobots)
-        print("HAALLLO")
-        bestTree = G
+        bestStrategy, T, _, _  = FHPE_SA(root ,G)
+        bestTree = T
 
     return bestStrategy, bestTree, checkedTreesCounter, bestFitness
 
