@@ -1118,7 +1118,9 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
                 times.append(newT)
 
                 F = objective(path, times)
-                if best["F"] is None or F < best["F"]:
+                # Equal F: prefer whichever finishes sooner. Still tied
+                # (same F, same finish time): keep the current best.
+                if best["F"] is None or F < best["F"] or (F == best["F"] and newT < best["times"][-1]):
                     best["F"] = F
                     best["path"] = list(path)
                     best["times"] = list(times)
