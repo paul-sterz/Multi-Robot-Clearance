@@ -678,9 +678,12 @@ if run:
         G.edges.keys()
     )
 
+    # T is None whenever graphSearch fell back to computeClosingExits -
+    # that strategy mixes local clearances, permanent guards and an
+    # FHPE_SA patrol path, so there is no meaningful spanning tree to draw.
     treeEdges = list(
         T.edges.keys()
-    )
+    ) if T is not None else []
 
     # --------------------------------------------------
     # Determine, for every node, the earliest time at
