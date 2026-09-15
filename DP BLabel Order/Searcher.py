@@ -10,7 +10,7 @@ import copy
 import time
 
 
-def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles, distanceMap, alpha, cellpriors, D, maxTrees=None, populationSize=10, historyCallback=None, searchMode="evolutionary", travelTime=None, horizon=15, recencyLambda=None, probBudget = 200):
+def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles, distanceMap, alpha, cellpriors, D, maxTrees=None, populationSize=10, historyCallback=None, searchMode="evolutionary", travelTime=None, horizon=15, recencyLambda=None, probBudget = 200, maxHops=4):
     #INPUT:
     # G: a Graph object repesenting the merged navigationgraph
     # availableTime: the available computation time budget in seconds (ignored if maxTrees is given)
@@ -27,6 +27,10 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
     # recencyLambda: recency decay constant used by FHPE_SA (default None -> 2 * horizon)
     # probBudget: simulated-time budget used by FHPE_SA - every move it plans arrives at its
     #          target by t = probBudget at the latest (default 200); NOT a wall-clock limit
+    # maxHops: hard cap on how many edges FHPE_SA's brute-force search may chain in one
+    #          horizon-planning call, on top of horizon/probBudget (default 4) - keeps the
+    #          search tractable once edges are small next to horizon (e.g. a real scene's
+    #          fine-grained travel times), where horizon alone would let it branch forever
     # aerialSpeed: TO-DO
     # groundSpeed: TO-DO
     # aerialBattery: TO-DO
@@ -1078,7 +1082,7 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
     # long ago is worth almost as much as an unfound one again.
     # ---------------------------------------------------
 
-    def bestPathForSearcher(startNode, startTime, horizonVisited, lastVisitTime, horizon, lam, G : Graph):
+    def bestPathForSearcher(startNode, startTime, horizonVisited, lastVisitTime, horizon, lam, G : Graph, maxHops):
 
         deadline = startTime + horizon + 1
 
@@ -1106,10 +1110,17 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
         # any reachable neighbour strictly lowers F (its contribution goes
         # from priorAt(w, deadline) * deadline down to priorAt(w, t) * t,
         # t < deadline). Only exception is a genuine dead end (no
-        # neighbour reachable within horizon/probBudget at all).
+        # neighbour reachable within horizon/probBudget/maxHops at all).
         best = {"F": None, "path": None, "times": None}
 
-        def visit(node, t, path, times):
+        # maxHops bounds the search depth on top of horizon/probBudget:
+        # brute-forcing every path is only tractable when a hop is a big
+        # chunk of the budget (a handful of hops fills it) - once edges are
+        # small next to horizon (a real scene's fine-grained travel times),
+        # the branching otherwise explodes long before horizon does.
+        def visit(node, t, path, times, hopsLeft):
+            if hopsLeft <= 0:
+                return
             for neighbour in G.adj[G.nodes[node]]:
                 newT = t + G.edges[(node, neighbour.idx)].time
                 if newT - startTime > horizon or newT > probBudget:
@@ -1125,12 +1136,12 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
                     best["path"] = list(path)
                     best["times"] = list(times)
 
-                visit(neighbour.idx, newT, path, times)
+                visit(neighbour.idx, newT, path, times, hopsLeft - 1)
 
                 path.pop()
                 times.pop()
 
-        visit(startNode, startTime, [startNode], [startTime])
+        visit(startNode, startTime, [startNode], [startTime], maxHops)
 
         if best["path"] is None:
             return [startNode], [startTime]
@@ -1176,7 +1187,7 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
             for k in range(availableRobots):
 
                 path, times = bestPathForSearcher(
-                    robotNode[k], robotTime[k], horizonVisited, lastVisitTime, horizon, lam, G
+                    robotNode[k], robotTime[k], horizonVisited, lastVisitTime, horizon, lam, G, maxHops
                 )
 
                 for node, t in zip(path, times):

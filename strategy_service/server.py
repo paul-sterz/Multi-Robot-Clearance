@@ -226,11 +226,24 @@ def run_strategy(req: RunRequest):
     available_time = req.stopping.value if req.stopping.mode == "time" else None
     max_trees = int(req.stopping.value) if req.stopping.mode == "trees" else None
 
+    # FHPE_SA's own hardcoded default horizon is tuned for the small
+    # synthetic Streamlit grids, where an edge takes a handful of steps --
+    # far too small next to a real scene's walking-SECOND edge weights
+    # (tens of seconds between guard-graph vertices here). Left at that
+    # default, a robot has no reachable neighbour within the horizon at
+    # all, so the fallback used whenever clearance is infeasible always
+    # produced zero real moves (a 0-second "strategy"). Size it off the
+    # scene's own edges instead, so it always has real room to move --
+    # FHPE_SA's separate maxHops cap is what keeps this tractable even
+    # though horizon now spans several hops.
+    edge_times = [e.time for e in G.edges.values()]
+    fhpe_horizon = float(np.median(edge_times)) * 4 if edge_times else 60.0
+
     t0 = time.time()
     strategy, _best_tree, checked_trees, fitness = graph_search(
         G, available_time, req.available_robots, start_nodes,
         None, None, None, cellpriors, D,
-        maxTrees=max_trees, travelTime=travel_time,
+        maxTrees=max_trees, travelTime=travel_time, horizon=fhpe_horizon,
     )
     elapsed_s = time.time() - t0
 
