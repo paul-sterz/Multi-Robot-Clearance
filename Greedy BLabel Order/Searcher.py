@@ -75,8 +75,13 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
     def computeWorstCaseLabels(T : Graph, root, parent):
 
         #Saving labels in a dictionary of the form: ((x,y) | lambda((x,y))
-        edgeLabelsRobotCost = {} 
+        edgeLabelsRobotCost = {}
         edgeLabelsEfficiency = {}
+        # Same keys as edgeLabelsEfficiency, but the raw (totalTime, totalPrior)
+        # sum pair the ratio was built from, instead of just their ratio -
+        # needed wherever both quantities are required separately (e.g. the
+        # local clearance candidate scoring in computeClosingExits).
+        edgeLabelsTotals = {}
 
 
         # Keep track of total prior and time in subtree
@@ -92,7 +97,7 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
         # Calculating lables recursive for children
         for y in T.adj[T.nodes[root]]:
             if y.idx != parent:
-                subLabelsRobotCost, subLablesEfficiency, sumTime, sumPrior = computeWorstCaseLabels(T, y.idx, root)
+                subLabelsRobotCost, subLablesEfficiency, subLabelsTotals, sumTime, sumPrior = computeWorstCaseLabels(T, y.idx, root)
                 totalTime += sumTime
                 totalPrior += sumPrior
 
@@ -101,6 +106,7 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
 
                 edgeLabelsEfficiency.update(subLablesEfficiency)
                 edgeLabelsRobotCost.update(subLabelsRobotCost)
+                edgeLabelsTotals.update(subLabelsTotals)
                 childLabels.append(subLabelsRobotCost[(root, y.idx)])
                 children.append(y.idx)
   
@@ -116,6 +122,7 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
                 totalTime +=  1
 
             edgeLabelsEfficiency[(parent, root)] = totalPrior / totalTime
+            edgeLabelsTotals[(parent, root)] = (totalTime, totalPrior)
         else:
 
             #formula from the paper for robot cost
@@ -140,9 +147,10 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
             else:
                 totalTime = 1
             edgeLabelsEfficiency[(parent, root)] = totalPrior / totalTime
+            edgeLabelsTotals[(parent, root)] = (totalTime, totalPrior)
 
 
-        return edgeLabelsRobotCost, edgeLabelsEfficiency, totalTime, totalPrior
+        return edgeLabelsRobotCost, edgeLabelsEfficiency, edgeLabelsTotals, totalTime, totalPrior
 
     
      # ---------------------------------------------------
@@ -174,7 +182,7 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
         # strategy, clearance, visitedTimes - clearance is False (with the
         # other two None) whenever availableRobots does not suffice.
 
-        BLabels, effLables, _, _ = computeWorstCaseLabels(T, root, None)
+        BLabels, effLables, subtreeTotals, _, _ = computeWorstCaseLabels(T, root, None)
 
         # ------------------------------------------------
         # LOCAL CLEARANCE CANDIDATES
@@ -211,12 +219,15 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
                 bLabel = BLabels[(parent, node)]
 
                 if bLabel + len(opponents) <= availableRobots:
+                    totalTime, totalPrior = subtreeTotals[(parent, node)]
                     candidates.append({
                         "root": node,
                         "parent": parent,
                         "nodes": nodes,
                         "bLabel": bLabel,
                         "opponents": len(opponents),
+                        "totalEdgeTime": totalTime,
+                        "totalPrior": totalPrior,
                     })
 
             visit(root, None)
@@ -942,12 +953,101 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
     # TODO: Implement method
     # ---------------------------------------------------
 
-    def computeClosingExits(localCandidates, G):
-        #sort local candiates and delete duplicates
-        # calculate formula and delte all local candidates that do not satisfy. After one candidate was succesful every one has to be checked again
-        # solange noch kandidaten exisiteren  nehme besten und probiere. wenn klappt schicke Roboter hin, hänge clearance Strategie über TreeSearch mit wenig Bäumen drann und weiter
-        # Wenn keine Kandidaten mehr mache FHPE + SA auf restgraph.
-        return []
+    def computeClosingExits(root, localCandidates, G):
+
+        # ------------------------------------------------
+        # 1) DEDUPLICATE
+        # Two candidates covering the exact same node set (found via
+        # different failing trees) are the same local clearance option -
+        # keep only the first occurrence.
+        # ------------------------------------------------
+        seenNodeSets = set()
+        dedupedCandidates = []
+        for candidate in localCandidates:
+            key = frozenset(candidate["nodes"])
+            if key in seenNodeSets:
+                continue
+            seenNodeSets.add(key)
+            dedupedCandidates.append(candidate)
+
+        if not dedupedCandidates:
+            return FHPE_SA(root, G)
+
+        # ------------------------------------------------
+        # 2) GLOBAL BASELINE RATIO
+        # Expected prior mass collectable over the whole remaining budget
+        # (probBudget) when searching at the graph's average efficiency
+        # (average prior per node / average travel time per edge).
+        # ------------------------------------------------
+        totalPriorAll = sum(node.prior for node in G.nodes)
+        avgPriorAll = totalPriorAll / len(G.nodes)
+
+        allEdgeTimes = [edge.time for edge in G.edges.values()]
+        avgEdgeTimeAll = sum(allEdgeTimes) / len(allEdgeTimes)
+
+        globalRatio = probBudget * avgPriorAll / avgEdgeTimeAll
+
+        # ------------------------------------------------
+        # 3) PER-CANDIDATE SCORING
+        # ------------------------------------------------
+        EPS = 1e-9
+
+        for candidate in dedupedCandidates:
+
+            candidateNodes = candidate["nodes"]
+            localMass = candidate["totalPrior"]
+            clearanceTime = candidate["totalEdgeTime"]
+
+            # Prior redistribution: once this local area is handled
+            # separately, its prior mass is already accounted for - the
+            # remaining nodes' priors are proportionally renormalised so
+            # they still sum to the original total (a "given this area is
+            # already cleared" conditional redistribution).
+            removedFraction = localMass / totalPriorAll if totalPriorAll > 0 else 0
+            renormFactor = 1 / max(EPS, 1 - removedFraction)
+
+            remainingNodes = [node for node in G.nodes if node.idx not in candidateNodes]
+
+            avgRedistributedPrior = (
+                sum(node.prior * renormFactor for node in remainingNodes) / len(remainingNodes)
+                if remainingNodes else 0
+            )
+
+            # Average travel time recomputed on the remaining region only
+            # (edges whose both endpoints lie outside this candidate) -
+            # falls back to the global average on the degenerate case of
+            # no such edge existing at all.
+            remainingEdgeTimes = [
+                edge.time
+                for (u, v), edge in G.edges.items()
+                if u not in candidateNodes and v not in candidateNodes
+            ]
+            avgEdgeTimeRemaining = (
+                sum(remainingEdgeTimes) / len(remainingEdgeTimes)
+                if remainingEdgeTimes else avgEdgeTimeAll
+            )
+
+            redistributedRatio = avgRedistributedPrior / avgEdgeTimeRemaining
+
+            sparRobots = availableRobots - candidate["opponents"]
+
+            score = (
+                localMass
+                + (probBudget - clearanceTime) * redistributedRatio * sparRobots
+            )
+
+            candidate["globalBaselineRatio"] = globalRatio
+            candidate["redistributedRatio"] = redistributedRatio
+            candidate["ratio"] = score
+
+        dedupedCandidates.sort(key=lambda candidate: candidate["ratio"], reverse=True)
+
+        # TODO: consume dedupedCandidates in ratio order - try each via
+        # treeSearch on its own local subtree, send its robots and append
+        # the resulting clearance strategy on success (re-checking all
+        # remaining candidates once one succeeds); fall back to FHPE_SA on
+        # the rest of the graph once no candidate is left.
+        return dedupedCandidates
 
 
     # ---------------------------------------------------
@@ -1454,8 +1554,11 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
             del fitnesses[worstIdx]
 
     if bestFitness == np.inf:
-        bestStrategy, T, _, _  = computeClosingExits(root ,G)
-        bestTree = T
+        # TODO: scoredClosingCandidates still needs to be consumed (try
+        # best-first via treeSearch, send robots, fall back to FHPE_SA once
+        # exhausted) - computeClosingExits currently only dedupes and
+        # scores them.
+        scoredClosingCandidates = computeClosingExits(root, localClearanceCandidates, G)
 
     return bestStrategy, bestTree, checkedTreesCounter, bestFitness
 
