@@ -1035,7 +1035,10 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
         # 2) GLOBAL BASELINE RATIO
         # Expected prior mass collectable over the whole remaining budget
         # (probBudget) when searching at the graph's average efficiency
-        # (average prior per node / average travel time per edge).
+        # (average prior per node / average travel time per edge) with
+        # ALL availableRobots searching in parallel - matching the same
+        # robot-count factor the per-candidate score below applies via
+        # sparRobots, so the two stay on a comparable footing.
         # ------------------------------------------------
         totalPriorAll = sum(node.prior for node in G.nodes)
         avgPriorAll = totalPriorAll / len(G.nodes)
@@ -1043,7 +1046,7 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
         allEdgeTimes = [edge.time for edge in G.edges.values()]
         avgEdgeTimeAll = sum(allEdgeTimes) / len(allEdgeTimes)
 
-        globalRatio = probBudget * avgPriorAll / avgEdgeTimeAll
+        globalRatio = probBudget * avgPriorAll / avgEdgeTimeAll * availableRobots
 
         # ------------------------------------------------
         # 3) PER-CANDIDATE SCORING
