@@ -67,6 +67,8 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
                 path = aStar(G.nodes[i].pos, G.nodes[j].pos, obstacles, distanceMap, alpha)
                 flagDistance[i][j] = len(path) - 1
 
+    lam = recencyLambda if recencyLambda is not None else 20 * horizon
+
     # ---------------------------------------------------
     # COMPUTING EDGE LABLES FOR THE TREE SEARCH THAT REPRESENT THE AMOUNT OF NEEDED ROBOTS AND THE EFFICIENCY OF EACH SUBTREE
     # Remark: Lables represent the amount of robots needed for this path
@@ -1042,11 +1044,10 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
         # ------------------------------------------------
         totalPriorAll = sum(node.prior for node in G.nodes)
         avgPriorAll = totalPriorAll / len(G.nodes)
-
         allEdgeTimes = [edge.time for edge in G.edges.values()]
         avgEdgeTimeAll = sum(allEdgeTimes) / len(allEdgeTimes)
 
-        globalRatio = probBudget * avgPriorAll / avgEdgeTimeAll * availableRobots
+        globalRatio = probBudget * availableRobots * avgPriorAll / avgEdgeTimeAll 
 
         # ------------------------------------------------
         # 3) PER-CANDIDATE SCORING
@@ -1089,12 +1090,14 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
             )
 
             redistributedRatio = avgRedistributedPrior / avgEdgeTimeRemaining
-
+            print("------------------------------------------------")
+            print( " RedispituedRatio "+str(redistributedRatio) + " vs." + " Globale Ratio: " +str(avgPriorAll / avgEdgeTimeAll))
+            print("------------------------------------------------")
             sparRobots = availableRobots - candidate["opponents"]
 
             score = (
                 localMass
-                + (probBudget - clearanceTime) * redistributedRatio * sparRobots
+                + (probBudget - clearanceTime) * redistributedRatio * sparRobots + (probBudget - clearanceTime) * localMass * (1 - np.exp(-1 / lam))
             )
 
             candidate["globalBaselineRatio"] = globalRatio
@@ -1102,7 +1105,9 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
             candidate["ratio"] = score
 
         dedupedCandidates.sort(key=lambda candidate: candidate["ratio"], reverse=True)
-
+        print("------------------------------------------------")
+        print( " Kandidat "+str(dedupedCandidates[0]["ratio"]) + " vs." + " Globale Ratio: " +str(globalRatio))
+        print("------------------------------------------------")
         # ------------------------------------------------
         # 4) DROP CANDIDATES WORSE THAN THE BASELINE
         # A candidate that would not even keep pace with plain
@@ -1325,84 +1330,147 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
 
         # ------------------------------------------------
         # 7) SEARCH WHATEVER IS LEFT WITH FHPE_SA
-        # Continues from the exact (node, freeFromTime) the remaining
-        # mobile robots are actually left at (now outside every cleared
-        # region) - never a fresh respawn at root - so each one naturally
-        # gets exactly (probBudget - its own free time) of search time
-        # left. The graph handed to it has the cleared regions' own
-        # nodes/edges removed, and additionally drops every permanently
-        # guarded opponent node THAT ISN'T a cut vertex - a guard is
-        # already stationed there, so there is nothing left for FHPE_SA to
-        # gain by stopping there again. A guarded node that IS a cut
-        # vertex (the only link to further territory beyond it) is kept
-        # instead: dropping it would strand that whole territory as
-        # unreachable, wasting the rest of the budget entirely rather than
-        # just being slightly less efficient. No mobile robot ever ends up
-        # standing on a guarded node itself (only the dedicated guards
-        # sent via assignNearestRobot do, and those never rejoin
-        # robotPool), so no extra relocation is needed for them the way it
-        # was for clearedNodes above.
+        # Every permanently guarded opponent node is dropped from the
+        # graph unconditionally now, even one that is the only link
+        # between two otherwise separate areas - a guard is already
+        # stationed there, so FHPE_SA gains nothing by stopping there
+        # again, and letting it "bridge" the gap just means every robot
+        # keeps treating both sides as one shared pool instead of properly
+        # splitting up to cover the actual disconnected territories.
         # ------------------------------------------------
-        def dropNonSeparatingGuards(baseNodes, guards):
-            # Removes guards one at a time, re-checking against the
-            # SHRINKING graph after each actual removal - two guards can
-            # each be individually safe to drop (the other one still
-            # bridges the gap) while dropping BOTH at once would split the
-            # graph, so they cannot be evaluated independently against the
-            # original, still-fully-guarded graph all at once.
-            remaining = set(baseNodes)
+        baseRemainingNodes = {node.idx for node in G.nodes} - clearedNodes
+        remainingNodeIndices = baseRemainingNodes - guardedOpponents
+        remainingGraph = buildInducedSubgraph(remainingNodeIndices)
 
-            def buildAdjacency(nodeSet):
-                adjacency = defaultdict(set)
-                for (u, v) in G.edges.keys():
-                    if u in nodeSet and v in nodeSet:
-                        adjacency[u].add(v)
-                        adjacency[v].add(u)
-                return adjacency
-
-            def reachableSet(nodeSet, adjacency, start):
-                seen = {start}
+        # ------------------------------------------------
+        # 8) SPLIT ACROSS WHATEVER SEPARATE AREAS THIS CREATES
+        # Dropping every guard can leave remainingGraph as several mutually
+        # unreachable components (not just two) - each is searched by its
+        # own share of the mobile robots, apportioned by that component's
+        # share of the remaining prior mass (10 robots, two components each
+        # holding 50% of the prior -> 5 each), using largest-remainder
+        # rounding so the shares always add back up to exactly len(robotPool)
+        # robots - never fewer (lost) or more (invented).
+        # ------------------------------------------------
+        def connectedComponents(nodeSet, graph):
+            seen = set()
+            comps = []
+            for start in nodeSet:
+                if start in seen:
+                    continue
+                comp = {start}
                 stack = [start]
                 while stack:
                     cur = stack.pop()
-                    for neighbour in adjacency[cur]:
-                        if neighbour in nodeSet and neighbour not in seen:
-                            seen.add(neighbour)
-                            stack.append(neighbour)
-                return seen
+                    for neighbour in graph.adj[graph.nodes[cur]]:
+                        if neighbour.idx in nodeSet and neighbour.idx not in comp:
+                            comp.add(neighbour.idx)
+                            stack.append(neighbour.idx)
+                comps.append(comp)
+                seen |= comp
+            return comps
 
-            for guard in guards:
+        def apportionByLargestRemainder(total, weights):
+            # Guarantees sum(result) == total exactly, regardless of
+            # floating-point rounding - the plain share every component is
+            # entitled to (its floor) plus, one each, to whichever
+            # components have the largest leftover fraction, until the
+            # rounding gap to `total` is used up.
+            totalWeight = sum(weights)
+            if totalWeight <= 0:
+                base, extra = divmod(total, len(weights))
+                return [base + (1 if i < extra else 0) for i in range(len(weights))]
 
-                adjacency = buildAdjacency(remaining)
-                component = reachableSet(remaining, adjacency, guard)
-                others = component - {guard}
-
-                if not others:
-                    remaining.discard(guard)
-                    continue
-
-                if reachableSet(others, adjacency, next(iter(others))) == others:
-                    # Removing guard leaves its component intact - safe
-                    # to drop against the graph as it currently stands
-                    # (previously dropped guards included).
-                    remaining.discard(guard)
-                # else: guard bridges two parts of its component under the
-                # CURRENT graph - keep it as a pass-through node.
-
-            return baseNodes - remaining
+            exact = [total * w / totalWeight for w in weights]
+            counts = [int(math.floor(x)) for x in exact]
+            shortfall = total - sum(counts)
+            order = sorted(range(len(weights)), key=lambda i: exact[i] - counts[i], reverse=True)
+            for i in range(shortfall):
+                counts[order[i]] += 1
+            return counts
 
         if robotPool:
-            baseRemainingNodes = {node.idx for node in G.nodes} - clearedNodes
-            droppedGuards = dropNonSeparatingGuards(baseRemainingNodes, guardedOpponents & baseRemainingNodes)
-            remainingNodeIndices = baseRemainingNodes - droppedGuards
-            remainingGraph = buildInducedSubgraph(remainingNodeIndices)
 
-            fhpeExecutionPlan, _, _, _ = FHPE_SA(
-                root, remainingGraph,
-                startState=robotPool,
-                seedLastVisitTime=overallVisitedTime,
-            )
-            overallStrategy.extend(fhpeExecutionPlan)
+            components = connectedComponents(remainingNodeIndices, remainingGraph)
+
+            if len(components) <= 1:
+                fhpeExecutionPlan, _, _, _ = FHPE_SA(
+                    root, remainingGraph,
+                    startState=robotPool,
+                    seedLastVisitTime=overallVisitedTime,
+                )
+                overallStrategy.extend(fhpeExecutionPlan)
+
+            else:
+
+                componentPriors = [
+                    sum(G.nodes[i].prior for i in comp)
+                    for comp in components
+                ]
+                targetCounts = apportionByLargestRemainder(len(robotPool), componentPriors)
+
+                # Greedy nearest-first (robot, component) matching: sum of
+                # targetCounts always equals len(robotPool), so every robot
+                # is guaranteed to end up assigned somewhere, even though
+                # this isn't a globally-optimal (min-total-travel) matching.
+                costs = []
+                for robotIdx, (node, _) in enumerate(robotPool):
+                    for compIdx, comp in enumerate(components):
+                        if targetCounts[compIdx] == 0:
+                            continue
+                        nearestDist = min(flagDistance[node][n] for n in comp)
+                        costs.append((nearestDist, robotIdx, compIdx))
+                costs.sort(key=lambda c: c[0])
+
+                assignedComponent = [None] * len(robotPool)
+                remainingCapacity = list(targetCounts)
+                assignedCount = 0
+                for dist, robotIdx, compIdx in costs:
+                    if assignedComponent[robotIdx] is not None or remainingCapacity[compIdx] == 0:
+                        continue
+                    assignedComponent[robotIdx] = compIdx
+                    remainingCapacity[compIdx] -= 1
+                    assignedCount += 1
+                    if assignedCount == len(robotPool):
+                        break
+
+                # Relocate every robot - shortest path - to the nearest
+                # node inside whichever component it was actually assigned
+                # to (a no-op if it already happens to stand there).
+                splitPool = [[] for _ in components]
+                for robotIdx, (node, freeTime) in enumerate(robotPool):
+                    comp = components[assignedComponent[robotIdx]]
+
+                    if node in comp:
+                        splitPool[assignedComponent[robotIdx]].append((node, freeTime))
+                        continue
+
+                    nearestNode, nearestDist = None, None
+                    for candidateNode in comp:
+                        dist = flagDistance[node][candidateNode]
+                        if nearestDist is None or dist < nearestDist:
+                            nearestDist = dist
+                            nearestNode = candidateNode
+
+                    arrival = freeTime + nearestDist
+                    overallStrategy.append((node, nearestNode, 1, freeTime, arrival))
+                    if nearestNode not in overallVisitedTime or arrival < overallVisitedTime[nearestNode]:
+                        overallVisitedTime[nearestNode] = arrival
+                    splitPool[assignedComponent[robotIdx]].append((nearestNode, arrival))
+
+                # One shared FHPE_SA call over the whole (multi-component)
+                # remainingGraph: since the components have no edges
+                # between them at all, each robot's own search naturally
+                # stays confined to whichever component it was placed in -
+                # no need to invoke FHPE_SA separately per component.
+                combinedPool = [state for pool in splitPool for state in pool]
+
+                fhpeExecutionPlan, _, _, _ = FHPE_SA(
+                    root, remainingGraph,
+                    startState=combinedPool,
+                    seedLastVisitTime=overallVisitedTime,
+                )
+                overallStrategy.extend(fhpeExecutionPlan)
 
         return overallStrategy, None, len(feasibleCandidates), None
 
@@ -1509,7 +1577,6 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
             startState = [(root, 0)] * availableRobots
         robots_ = len(startState)
 
-        lam = recencyLambda if recencyLambda is not None else 20 * horizon
 
         lastVisitTime = {root: 0, **(seedLastVisitTime or {})} #Format Node: lastVisitTime
         executionPlan = [(None, root, robots_)] if usingDefaultStart else []
