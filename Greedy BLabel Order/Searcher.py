@@ -10,7 +10,7 @@ import copy
 import time
 
 
-def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles, distanceMap, alpha, cellpriors, D, maxTrees=None, populationSize=10, historyCallback=None, searchMode="evolutionary", travelTime=None, horizon=5, recencyLambda=None, probBudget = 200, maxHops=4):
+def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles, distanceMap, alpha, cellpriors, D, maxTrees=None, populationSize=10, historyCallback=None, searchMode="evolutionary", travelTime=None, horizon=5, recencyLambda=None, probBudget = 200, maxHops=4, skipTreeSearch=False, startRootOverride=None, clearedRegionsOut=None):
     #INPUT:
     # G: a Graph object repesenting the merged navigationgraph
     # availableTime: the available computation time budget in seconds (ignored if maxTrees is given)
@@ -33,6 +33,22 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
     # maxHops: additional hard cap on how many edges FHPE_SA's brute-force search may chain
     #          in one horizon-planning call, on top of horizon itself (default 4) - whichever
     #          of horizon/maxHops is smaller effectively wins
+    # skipTreeSearch: if True, bypass the whole tree search / closing-exits machinery and
+    #          return FHPE_SA(startRootOverride or 0, G) directly - a "no local clearing at
+    #          all" baseline that still starts from an explicitly chosen root, used to compare
+    #          the closing-exits strategy against a plain FHPE_SA run from the exact same root.
+    # startRootOverride: root FHPE_SA starts from when skipTreeSearch is True (default 0).
+    #          Ignored otherwise.
+    # clearedRegionsOut: optional list() the caller passes in - populated (in place) with one
+    #          (frozenset(nodeIndices), completionTime) entry per region that ended up
+    #          permanently/deterministically cleared: one entry covering every node, completing
+    #          when the last node anywhere was first reached, on a full clearance; one entry per
+    #          successfully-secured local region (each with ITS OWN completion time - the time
+    #          its own last node was reached, not any other region's) when computeClosingExits
+    #          ran instead; or left empty when skipTreeSearch is True (a plain FHPE_SA run clears
+    #          nothing). A region's nodes only count as safe from its own completion time onward,
+    #          never earlier - the whole point of tracking it is that clearing still has to
+    #          physically finish first. Left untouched if None (default).
     # aerialSpeed: TO-DO
     # groundSpeed: TO-DO
     # aerialBattery: TO-DO
@@ -1037,6 +1053,8 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
             dedupedCandidates.append(candidate)
 
         if not dedupedCandidates:
+            if clearedRegionsOut is not None:
+                clearedRegionsOut.clear()
             return FHPE_SA(root, G)
 
         # ------------------------------------------------
@@ -1120,6 +1138,8 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
         ]
 
         if not feasibleCandidates:
+            if clearedRegionsOut is not None:
+                clearedRegionsOut.clear()
             return FHPE_SA(root, G)
 
         # ------------------------------------------------
@@ -1170,6 +1190,11 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
         robotPool = [(root, 0)] * availableRobots
         guardedOpponents = set()
         clearedNodes = set()
+        # One (nodeSet, completionTime) entry per successfully-secured local
+        # region, each with its OWN completion time (when ITS last node was
+        # first reached) - a region only becomes safe once its own clearing
+        # is actually done, not from t=0 or from any other region's timing.
+        clearedRegions = []
 
         def assignNearestRobot(targetNode, pool):
             # Greedy nearest-available match: pops whichever pooled robot
@@ -1255,6 +1280,8 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
             robotPool = list(chosenFinalStates)
             guardedOpponents |= newOpponents
             clearedNodes |= candidate["nodes"]
+            regionCompletionTime = max(chosenVisitedTimes[n] for n in candidate["nodes"])
+            clearedRegions.append((frozenset(candidate["nodes"]), regionCompletionTime))
 
             # Drop every remaining candidate that shares so much as one
             # node with a region already cleared - candidates come from
@@ -1471,6 +1498,10 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
                     seedLastVisitTime=overallVisitedTime,
                 )
                 overallStrategy.extend(fhpeExecutionPlan)
+
+        if clearedRegionsOut is not None:
+            clearedRegionsOut.clear()
+            clearedRegionsOut.extend(clearedRegions)
 
         return overallStrategy, None, len(feasibleCandidates), None
 
@@ -1876,6 +1907,18 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
         return ParentA, ParentB
 
     # ------------------------------------------------------------
+    # OPTIONAL SHORTCUT: PLAIN FHPE_SA, NO TREE SEARCH / CLOSING EXITS AT ALL
+    # See skipTreeSearch's doc above - this is a comparison baseline, not
+    # part of the normal search flow.
+    # ------------------------------------------------------------
+
+    if skipTreeSearch:
+        fixedRoot = startRootOverride if startRootOverride is not None else 0
+        if clearedRegionsOut is not None:
+            clearedRegionsOut.clear()
+        return FHPE_SA(fixedRoot, G)
+
+    # ------------------------------------------------------------
     # THE REAL GRAPH SEARCH ALGORITHIM USING EVERYTHING FROM ABOVE
     # ------------------------------------------------------------
 
@@ -1883,6 +1926,7 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
     bestFitness = np.inf
     bestStrategy = None
     bestTree = None
+    bestVisitedTimes = None
     counter = [0] * startNodes
     currGen = []
     checkedTreesCounter = 0
@@ -1919,6 +1963,7 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
                 bestFitness = fitness
                 bestTree = T
                 bestStrategy = strategy
+                bestVisitedTimes = visitedTimes
             if historyCallback is not None:
                 historyCallback(checkedTreesCounter, fitness, bestFitness)
 
@@ -1964,6 +2009,7 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
                 bestFitness = fitness
                 bestTree = indivium[0]
                 bestStrategy = strategy
+                bestVisitedTimes = visitedTimes
             if historyCallback is not None:
                 historyCallback(checkedTreesCounter, fitness, bestFitness)
 
@@ -1984,6 +2030,7 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
                 bestFitness = fitness
                 bestTree = child[0]
                 bestStrategy = strategy
+                bestVisitedTimes = visitedTimes
             if historyCallback is not None:
                 historyCallback(checkedTreesCounter, fitness, bestFitness)
 
@@ -1996,6 +2043,16 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
 
     if bestFitness == np.inf:
         bestStrategy, bestTree, _, _ = computeClosingExits(root, localClearanceCandidates, G)
+    elif clearedRegionsOut is not None:
+        # A full clearance was found directly (closing exits never ran) -
+        # one region covering every node, completing when the LAST node
+        # anywhere was first reached (not from t=0 - the clearance still
+        # has to actually finish).
+        clearedRegionsOut.clear()
+        clearedRegionsOut.append((
+            frozenset(range(len(G.nodes))),
+            max(bestVisitedTimes),
+        ))
 
     return bestStrategy, bestTree, checkedTreesCounter, bestFitness
 

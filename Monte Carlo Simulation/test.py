@@ -23,6 +23,8 @@ from baselineTest import baselineTest, BASELINE_METHOD_NAMES
 
 from treeTest import runSpanningTreeEvolution
 
+from closingExitsTest import runClosingExitsComparison
+
 # 3DTest.py can't be `import`ed by that name (a module name can't start with
 # a digit) - loaded the same way approachTest.py loads each approach's
 # Searcher.py.
@@ -86,6 +88,7 @@ app_mode = st.radio(
         "Approach Test",
         "Baseline Test",
         "Spanning Tree Evolution",
+        "Closing Exits Test",
     ],
     horizontal=True,
     key="app_mode",
@@ -207,6 +210,22 @@ for key, default in [
     ("evo_population_size", 10),
 
     ("evolution_results", None),
+
+    ("ce_num_of_runs", 100),
+
+    ("ce_stopping_criterion", "Computation time"),
+
+    ("ce_computation_time", 3),
+
+    ("ce_max_trees", 100),
+
+    ("ce_available_robots", 6),
+
+    ("ce_horizon", 5),
+
+    ("ce_hurt_probability", 0.02),
+
+    ("ce_simulation_results", None),
 
 ]:
 
@@ -1111,7 +1130,7 @@ elif app_mode == "Baseline Test":
         )
 
 
-else:
+elif app_mode == "Spanning Tree Evolution":
 
     # ==================================================
     # SPANNING TREE EVOLUTION
@@ -1411,6 +1430,213 @@ else:
 
         st.dataframe(
             comparisonTable.round(4),
+            use_container_width=True,
+            hide_index=True,
+        )
+
+
+elif app_mode == "Closing Exits Test":
+
+    # ==================================================
+    # CLOSING EXITS TEST
+    #
+    # Compares Greedy BLabel Order's graphSearch() (a full clearance if one
+    # is found, otherwise its computeClosingExits() fallback: local
+    # clearances + guards + a final FHPE_SA patrol) against a plain FHPE_SA
+    # baseline that skips local clearing entirely and starts from the exact
+    # same root. Both are scored by simulating a randomly moving, possibly
+    # "hurt"-and-frozen target - see closingExitsTest.py's module docstring
+    # for the exact model. Always runs on the 2D synthetic grid - the
+    # comparison itself has nothing scene-specific about it.
+    # ==================================================
+
+
+    if is3D:
+        st.info(
+            "The Closing Exits test always runs on the 2D synthetic grid - "
+            "the 3D scene selection above is ignored here."
+        )
+
+
+    st.markdown("### Run Parameters")
+
+    ce_num_of_runs = st.slider(
+        "Number of runs per graph",
+        1,
+        1000,
+        st.session_state.ce_num_of_runs,
+    )
+
+    st.session_state.ce_num_of_runs = ce_num_of_runs
+
+    ce_stopping_criterion = st.radio(
+        "Stop after",
+        [
+            "Computation time",
+            "Number of spanning trees",
+        ],
+        horizontal=True,
+        index=[
+            "Computation time",
+            "Number of spanning trees",
+        ].index(st.session_state.ce_stopping_criterion),
+    )
+
+    st.session_state.ce_stopping_criterion = ce_stopping_criterion
+
+    if ce_stopping_criterion == "Computation time":
+
+        ce_computation_time = st.slider(
+            "Computation Time (s)",
+            1,
+            60,
+            st.session_state.ce_computation_time,
+        )
+
+        st.session_state.ce_computation_time = ce_computation_time
+
+        ce_max_trees = None
+
+    else:
+
+        ce_max_trees = st.slider(
+            "Number of spanning trees",
+            100,
+            10000,
+            st.session_state.ce_max_trees,
+            step=100,
+        )
+
+        st.session_state.ce_max_trees = ce_max_trees
+
+        ce_computation_time = None
+
+    ce_available_robots = st.slider(
+        "Available robots",
+        1,
+        50,
+        st.session_state.ce_available_robots,
+    )
+
+    st.session_state.ce_available_robots = ce_available_robots
+
+    ce_horizon = st.slider(
+        "FHPE_SA horizon (max edges per planned path)",
+        1,
+        30,
+        st.session_state.ce_horizon,
+    )
+
+    st.session_state.ce_horizon = ce_horizon
+
+    # Reuses the SAME global "FHPE+SA probabilistic search budget" slider
+    # every other mode already shows near the top of the page (prob_budget)
+    # instead of a second, redundant one here.
+    ce_prob_budget = prob_budget
+
+    ce_hurt_probability = st.slider(
+        "Target hurt probability q (per step)",
+        0.0,
+        1.0,
+        st.session_state.ce_hurt_probability,
+        step=0.01,
+    )
+
+    st.session_state.ce_hurt_probability = ce_hurt_probability
+
+
+    # ==================================================
+    # SIMULATE
+    # ==================================================
+
+
+    st.markdown("---")
+
+    if st.button(
+        "Simulate Target Search",
+        type="primary",
+        use_container_width=True,
+    ):
+
+        with st.spinner(
+            f"Running {ce_num_of_runs} target-search simulations..."
+        ):
+
+            ceResult = runClosingExitsComparison(
+                detecRad=detection_radius,
+                numOfRuns=ce_num_of_runs,
+                availableRobots=ce_available_robots,
+                availableTime=ce_computation_time,
+                maxTrees=ce_max_trees,
+                horizon=ce_horizon,
+                probBudget=ce_prob_budget,
+                hurtProbability=ce_hurt_probability,
+            )
+
+        st.session_state.ce_simulation_results = {
+            **ceResult,
+            "available_robots": ce_available_robots,
+            "horizon": ce_horizon,
+            "prob_budget": ce_prob_budget,
+            "hurt_probability": ce_hurt_probability,
+        }
+
+
+    #------------------------------------------------------------------
+    # RESULTS
+    #------------------------------------------------------------------
+
+
+    ceResults = st.session_state.ce_simulation_results
+
+    if ceResults is not None:
+
+        st.markdown("### Environment")
+
+        st.plotly_chart(
+            buildEnvironmentFigure(
+                obstacles,
+                ceResults["priors"],
+                H,
+                W,
+                G=ceResults["G"],
+                regularEdges=list(ceResults["G"].edges.keys()),
+            ),
+            use_container_width=True,
+        )
+
+        st.markdown("### Target-Finding Comparison")
+
+        st.caption(
+            "Mean / P90 find time are computed over runs that actually "
+            "found the target (timed-out runs are excluded there, and "
+            "reported separately via the timeout rate). Clearance mass is "
+            "the mean fraction of graph nodes that ended up permanently "
+            "cleared (1.0 on a full clearance) - always 0 for plain "
+            "FHPE_SA, since it never clears anything."
+        )
+
+        summaryTable = pd.DataFrame([
+            {
+                "Strategy": name,
+                "Nodes": ceResults["numGraphNodes"],
+                "Edges": ceResults["numGraphEdges"],
+                "Runs": len(ceResults["findTimesClosingExits"]),
+                "Available Robots": ceResults["available_robots"],
+                "Horizon (edges)": ceResults["horizon"],
+                "Prob Budget": ceResults["prob_budget"],
+                "Hurt Probability q": ceResults["hurt_probability"],
+                "Mean Find Time": stats["mean_find_time"],
+                "Variance Find Time": stats["variance_find_time"],
+                "P90 Find Time": stats["p90_find_time"],
+                "Timeout Rate": stats["timeout_rate"],
+                "Clearance Mass": stats["clearance_mass"],
+            }
+            for name, stats in ceResults["summary"].items()
+        ])
+
+        st.dataframe(
+            summaryTable.round(4),
             use_container_width=True,
             hide_index=True,
         )
