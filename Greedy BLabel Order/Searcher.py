@@ -10,7 +10,7 @@ import copy
 import time
 
 
-def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles, distanceMap, alpha, cellpriors, D, maxTrees=None, populationSize=10, historyCallback=None, searchMode="evolutionary", travelTime=None, horizon=15, recencyLambda=None, probBudget = 200, maxHops=4):
+def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles, distanceMap, alpha, cellpriors, D, maxTrees=None, populationSize=10, historyCallback=None, searchMode="evolutionary", travelTime=None, horizon=5, recencyLambda=None, probBudget = 200, maxHops=4):
     #INPUT:
     # G: a Graph object repesenting the merged navigationgraph
     # availableTime: the available computation time budget in seconds (ignored if maxTrees is given)
@@ -22,15 +22,17 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
     # alpha:
     # cellpriors: All prior values for each cell for calculating the expected searchtime function
     # D: Detection set for each node for calculating the expected searchtime function
-    # horizon: time budget (same unit as edge travel time) used by FHPE_SA's finite-horizon
-    #          path enumeration (the fallback strategy when no clearance is found)
-    # recencyLambda: recency decay constant used by FHPE_SA (default None -> 2 * horizon)
+    # horizon: max number of EDGES a candidate path may chain in one of FHPE_SA's
+    #          finite-horizon path enumeration calls (the fallback strategy when no
+    #          clearance is found) - a hop COUNT, not a time budget, since edges can take
+    #          very different amounts of time to travel
+    # recencyLambda: recency decay constant used by FHPE_SA, in the same time units as
+    #          edge travel times (default None -> probBudget / 10)
     # probBudget: simulated-time budget used by FHPE_SA - every move it plans arrives at its
     #          target by t = probBudget at the latest (default 200); NOT a wall-clock limit
-    # maxHops: hard cap on how many edges FHPE_SA's brute-force search may chain in one
-    #          horizon-planning call, on top of horizon/probBudget (default 4) - keeps the
-    #          search tractable once edges are small next to horizon (e.g. a real scene's
-    #          fine-grained travel times), where horizon alone would let it branch forever
+    # maxHops: additional hard cap on how many edges FHPE_SA's brute-force search may chain
+    #          in one horizon-planning call, on top of horizon itself (default 4) - whichever
+    #          of horizon/maxHops is smaller effectively wins
     # aerialSpeed: TO-DO
     # groundSpeed: TO-DO
     # aerialBattery: TO-DO
@@ -67,7 +69,11 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
                 path = aStar(G.nodes[i].pos, G.nodes[j].pos, obstacles, distanceMap, alpha)
                 flagDistance[i][j] = len(path) - 1
 
-    lam = recencyLambda if recencyLambda is not None else 20 * horizon
+    # horizon is now a hop COUNT (max edges a candidate path may chain, see
+    # bestPathForSearcher below), not a time budget - so it can no longer
+    # anchor a TIME decay constant. lam still needs a genuine time scale, so
+    # it now defaults off probBudget (the actual mission timescale) instead.
+    lam = recencyLambda if recencyLambda is not None else probBudget / 10
 
     # ---------------------------------------------------
     # COMPUTING EDGE LABLES FOR THE TREE SEARCH THAT REPRESENT THE AMOUNT OF NEEDED ROBOTS AND THE EFFICIENCY OF EACH SUBTREE
@@ -1484,7 +1490,15 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
 
     def bestPathForSearcher(startNode, startTime, horizonVisited, lastVisitTime, horizon, lam, G : Graph, maxHops):
 
-        deadline = startTime + horizon + 1
+        # horizon is now the max number of EDGES a candidate path may chain
+        # (not a time budget) - "not reached at all" therefore no longer has
+        # a horizon-relative time to compare candidates against, since two
+        # candidate paths of the same hop count can finish at very
+        # different real times once edges vary in travel time. The
+        # absolute mission deadline (probBudget) is the only genuine,
+        # path-independent reference time left, so it takes over as the
+        # common comparison point every candidate path is scored against.
+        deadline = probBudget + 1
 
         #Calculating the Prior at a node with respect to the recency bias if a node was already visited
         def priorAt(node, t):
@@ -1513,17 +1527,17 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
         # neighbour reachable within horizon/probBudget/maxHops at all).
         best = {"F": None, "path": None, "times": None}
 
-        # maxHops bounds the search depth on top of horizon/probBudget:
-        # brute-forcing every path is only tractable when a hop is a big
-        # chunk of the budget (a handful of hops fills it) - once edges are
-        # small next to horizon (a real scene's fine-grained travel times),
-        # the branching otherwise explodes long before horizon does.
+        # horizon directly caps how many edges a candidate path may chain;
+        # maxHops remains an independent, additional tractability cap on
+        # top of it (whichever of the two is smaller effectively wins) -
+        # brute-forcing every path only stays tractable with a hard limit
+        # on branching depth regardless of how horizon itself is set.
         def visit(node, t, path, times, hopsLeft):
             if hopsLeft <= 0:
                 return
             for neighbour in G.adj[G.nodes[node]]:
                 newT = t + G.edges[(node, neighbour.idx)].time
-                if newT - startTime > horizon or newT > probBudget:
+                if newT > probBudget:
                     continue
                 path.append(neighbour.idx)
                 times.append(newT)
@@ -1541,7 +1555,7 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
                 path.pop()
                 times.pop()
 
-        visit(startNode, startTime, [startNode], [startTime], maxHops)
+        visit(startNode, startTime, [startNode], [startTime], min(horizon, maxHops))
 
         if best["path"] is None:
             return [startNode], [startTime]
