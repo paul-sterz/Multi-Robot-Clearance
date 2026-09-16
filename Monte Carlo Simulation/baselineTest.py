@@ -191,6 +191,8 @@ def baselineTest(
     thirdApproachName: str,
     availableTime,
     maxTrees,
+    epsilon=0.05,
+    probBudget=200,
 ):
 
     #-------------------------------------------------------------------
@@ -210,6 +212,7 @@ def baselineTest(
         GRAPH_PRIOR_L,
         GRAPH_PRIOR_SIGMA,
         GRAPH_ALPHA,
+        epsilon,
     )
 
     distanceMap = computeObstacleDistance(obstacles)
@@ -290,6 +293,7 @@ def baselineTest(
             priors,
             D,
             maxTrees=maxTrees,
+            probBudget=probBudget,
         )
 
         resultsTime[i, -1] = time.time() - startTime

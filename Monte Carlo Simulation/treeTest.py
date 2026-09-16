@@ -48,6 +48,7 @@ def _runSingleSearch(
     maxTrees,
     populationSize,
     searchMode,
+    probBudget,
 ):
 
     history = []
@@ -69,6 +70,7 @@ def _runSingleSearch(
         populationSize=populationSize,
         historyCallback=historyCallback,
         searchMode=searchMode,
+        probBudget=probBudget,
     )
 
     return {
@@ -87,6 +89,8 @@ def runSpanningTreeEvolution(
     availableTime,
     maxTrees,
     populationSize: int,
+    epsilon=0.05,
+    probBudget=200,
 ):
 
     #-------------------------------------------------------------------
@@ -102,6 +106,7 @@ def runSpanningTreeEvolution(
         GRAPH_PRIOR_L,
         GRAPH_PRIOR_SIGMA,
         GRAPH_ALPHA,
+        epsilon,
     )
 
     distanceMap = computeObstacleDistance(obstacles)
@@ -125,6 +130,7 @@ def runSpanningTreeEvolution(
         maxTrees,
         populationSize,
         searchMode="evolutionary",
+        probBudget=probBudget,
     )
 
     random_ = _runSingleSearch(
@@ -140,6 +146,7 @@ def runSpanningTreeEvolution(
         maxTrees,
         populationSize,
         searchMode="random",
+        probBudget=probBudget,
     )
 
     return {

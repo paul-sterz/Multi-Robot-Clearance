@@ -123,11 +123,14 @@ def loadHotspotConfig(scene, sceneName: str):
     return hotspots, startVertices, priorL, priorRadiusM
 
 
-def build3DEnvironment(sceneName: str, startVertices=None):
+def build3DEnvironment(sceneName: str, startVertices=None, epsilon=None):
     """The 3D equivalent of calling graphBuilder() in the 2D tests: builds
     the graph/detection sets/priors once, to be reused for every run and
     every method compared - exactly like "NUR EIN GRAPH" in approachTest.py
     and baselineTest.py.
+
+    epsilon: GraphBuilder uncertainty floor passed to compute_priors(),
+        defaulting to PRIOR_EPSILON_3D when not given (None).
 
     Returns (scene, G, D, startNodes, cellpriors, travelTime).
     """
@@ -144,9 +147,12 @@ def build3DEnvironment(sceneName: str, startVertices=None):
         if startVertices is None:
             startVertices = [0]
 
+    if epsilon is None:
+        epsilon = PRIOR_EPSILON_3D
+
     sigma = priorRadiusM / math.sqrt(2 * math.log(50))
     priors = scene_adapter.compute_priors(
-        scene, hotspots, priorL, sigma, PRIOR_EPSILON_3D
+        scene, hotspots, priorL, sigma, epsilon
     )
     G, D, startNodes, idxToVertex = scene_adapter.build_graph(scene, startVertices, priors)
     travelTime = scene_adapter.travel_time_matrix(scene, idxToVertex)
@@ -160,9 +166,9 @@ def build3DEnvironment(sceneName: str, startVertices=None):
 # ==================================================
 
 
-def approachTest3D(sceneName: str, numOfRuns: int, availableRobots: int, availableTime, maxTrees):
+def approachTest3D(sceneName: str, numOfRuns: int, availableRobots: int, availableTime, maxTrees, epsilon=None, probBudget=200):
 
-    scene, G, D, startNodes, cellpriors, travelTime = build3DEnvironment(sceneName)
+    scene, G, D, startNodes, cellpriors, travelTime = build3DEnvironment(sceneName, epsilon=epsilon)
 
     numApproaches = len(APPROACHES)
 
@@ -189,6 +195,7 @@ def approachTest3D(sceneName: str, numOfRuns: int, availableRobots: int, availab
                 D,
                 maxTrees=maxTrees,
                 travelTime=travelTime,
+                probBudget=probBudget,
             )
 
             resultsTime[i, approachIdx] = time.time() - startTime
@@ -230,9 +237,11 @@ def baselineTest3D(
     thirdApproachName: str,
     availableTime,
     maxTrees,
+    epsilon=None,
+    probBudget=200,
 ):
 
-    scene, G, D, startNodes, cellpriors, travelTime = build3DEnvironment(sceneName)
+    scene, G, D, startNodes, cellpriors, travelTime = build3DEnvironment(sceneName, epsilon=epsilon)
 
     thirdApproachIdx = APPROACH_NAMES.index(thirdApproachName)
     thirdApproachSearchFn = APPROACHES[thirdApproachIdx]
@@ -304,6 +313,7 @@ def baselineTest3D(
             D,
             maxTrees=maxTrees,
             travelTime=travelTime,
+            probBudget=probBudget,
         )
 
         resultsTime[i, -1] = time.time() - startTime
@@ -349,6 +359,7 @@ def _runSingleSearch3D(
     maxTrees,
     populationSize,
     searchMode,
+    probBudget,
 ):
 
     history = []
@@ -371,6 +382,7 @@ def _runSingleSearch3D(
         historyCallback=historyCallback,
         searchMode=searchMode,
         travelTime=travelTime,
+        probBudget=probBudget,
     )
 
     return {
@@ -389,9 +401,11 @@ def runSpanningTreeEvolution3D(
     availableTime,
     maxTrees,
     populationSize: int,
+    epsilon=None,
+    probBudget=200,
 ):
 
-    scene, G, D, startNodes, cellpriors, travelTime = build3DEnvironment(sceneName)
+    scene, G, D, startNodes, cellpriors, travelTime = build3DEnvironment(sceneName, epsilon=epsilon)
 
     graphSearchFn = APPROACH_FUNCS_3D[approachName]
 
@@ -399,12 +413,14 @@ def runSpanningTreeEvolution3D(
         graphSearchFn, G, startNodes, cellpriors, D, travelTime,
         availableRobots, availableTime, maxTrees, populationSize,
         searchMode="evolutionary",
+        probBudget=probBudget,
     )
 
     random_ = _runSingleSearch3D(
         graphSearchFn, G, startNodes, cellpriors, D, travelTime,
         availableRobots, availableTime, maxTrees, populationSize,
         searchMode="random",
+        probBudget=probBudget,
     )
 
     return {

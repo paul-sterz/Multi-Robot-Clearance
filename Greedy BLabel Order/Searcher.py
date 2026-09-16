@@ -1090,9 +1090,6 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
             )
 
             redistributedRatio = avgRedistributedPrior / avgEdgeTimeRemaining
-            print("------------------------------------------------")
-            print( " RedispituedRatio "+str(redistributedRatio) + " vs." + " Globale Ratio: " +str(avgPriorAll / avgEdgeTimeAll))
-            print("------------------------------------------------")
             sparRobots = availableRobots - candidate["opponents"]
 
             score = (
@@ -1105,9 +1102,6 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
             candidate["ratio"] = score
 
         dedupedCandidates.sort(key=lambda candidate: candidate["ratio"], reverse=True)
-        print("------------------------------------------------")
-        print( " Kandidat "+str(dedupedCandidates[0]["ratio"]) + " vs." + " Globale Ratio: " +str(globalRatio))
-        print("------------------------------------------------")
         # ------------------------------------------------
         # 4) DROP CANDIDATES WORSE THAN THE BASELINE
         # A candidate that would not even keep pace with plain

@@ -86,6 +86,10 @@ class RunRequest(PriorsRequest):
     start_vertices: list[int] = []
     available_robots: int = Field(gt=0)
     stopping: Stopping
+    # FHPE_SA's probabilistic search budget - every move it plans arrives at
+    # its target by t = prob_budget at the latest (same meaning as
+    # graphSearch()'s probBudget kwarg). NOT a wall-clock/compute-time limit.
+    prob_budget: float = Field(default=200, gt=0)
 
 
 class HotspotConfig(PriorsRequest):
@@ -186,7 +190,7 @@ def load_hotspot_config(scene_name: str):
     _get_scene(scene_name)  # 404s on an unknown scene name
     path = _hotspot_config_path(scene_name)
     if not os.path.isfile(path):
-        return {"hotspots": [], "start_vertices": [], "prior_l": None, "prior_radius_m": None}
+        return {"hotspots": [], "start_vertices": [], "prior_l": None, "prior_radius_m": None, "epsilon": None}
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
 
@@ -200,6 +204,7 @@ def save_hotspot_config(scene_name: str, req: HotspotConfig):
         "start_vertices": req.start_vertices,
         "prior_l": req.prior_l,
         "prior_radius_m": req.prior_radius_m,
+        "epsilon": req.epsilon,
     }
     with open(_hotspot_config_path(scene_name), "w", encoding="utf-8") as f:
         json.dump(payload, f, indent=2)
@@ -244,6 +249,7 @@ def run_strategy(req: RunRequest):
         G, available_time, req.available_robots, start_nodes,
         None, None, None, cellpriors, D,
         maxTrees=max_trees, travelTime=travel_time, horizon=fhpe_horizon,
+        probBudget=req.prob_budget,
     )
     elapsed_s = time.time() - t0
 

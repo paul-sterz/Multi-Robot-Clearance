@@ -284,7 +284,7 @@ GRAPH_PRIOR_SIGMA = 2.860054369471078
 GRAPH_ALPHA = 1
 
 
-def approachTest(detecRad : int, numOfRuns : int, availableRobots : int, availableTime, maxTrees):
+def approachTest(detecRad : int, numOfRuns : int, availableRobots : int, availableTime, maxTrees, epsilon=0.05, probBudget=200):
 
     #-------------------------------------------------------------------
     # STEP 1: ALLOCATION
@@ -301,6 +301,7 @@ def approachTest(detecRad : int, numOfRuns : int, availableRobots : int, availab
         GRAPH_PRIOR_L,
         GRAPH_PRIOR_SIGMA,
         GRAPH_ALPHA,
+        epsilon,
     )
 
     distanceMap = computeObstacleDistance(obstacles)
@@ -342,6 +343,7 @@ def approachTest(detecRad : int, numOfRuns : int, availableRobots : int, availab
                 priors,
                 D,
                 maxTrees=maxTrees,
+                probBudget=probBudget,
             )
 
             resultsTime[i, approachIdx] = time.time() - startTime

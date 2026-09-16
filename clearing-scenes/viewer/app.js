@@ -206,6 +206,7 @@ function init() {
   };
   $("#c-prior-l").oninput = schedulePriorsPreview;
   $("#c-prior-radius").oninput = schedulePriorsPreview;
+  $("#c-epsilon").oninput = schedulePriorsPreview;
 
   addEventListener("keydown", (e) => {
     if (e.key === "r" || e.key === "R") frame();
@@ -822,6 +823,7 @@ async function saveHotspots() {
         start_vertices: startVertices.map((s) => s.vertex),
         prior_l: parseFloat($("#c-prior-l").value),
         prior_radius_m: parseFloat($("#c-prior-radius").value),
+        epsilon: parseFloat($("#c-epsilon").value),
       }),
     });
     const data = await res.json();
@@ -862,6 +864,7 @@ async function loadSavedHotspots() {
     }
     if (data.prior_l != null) $("#c-prior-l").value = data.prior_l;
     if (data.prior_radius_m != null) $("#c-prior-radius").value = data.prior_radius_m;
+    if (data.epsilon != null) $("#c-epsilon").value = data.epsilon;
 
     if (hotspots.length || startVertices.length) {
       rebuildMarkers();
@@ -887,6 +890,8 @@ async function runStrategy() {
     },
     prior_l: parseFloat($("#c-prior-l").value),
     prior_radius_m: parseFloat($("#c-prior-radius").value),
+    epsilon: parseFloat($("#c-epsilon").value),
+    prob_budget: parseFloat($("#c-prob-budget").value),
   };
 
   $("#c-run").disabled = true;
@@ -1154,6 +1159,7 @@ async function refreshPriorsPreview() {
     hotspots: hotspotsPayload(),
     prior_l: parseFloat($("#c-prior-l").value),
     prior_radius_m: parseFloat($("#c-prior-radius").value),
+    epsilon: parseFloat($("#c-epsilon").value),
   };
   try {
     const res = await fetch("/api/priors", {

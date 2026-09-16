@@ -219,6 +219,14 @@ with st.sidebar:
         6,
     )
 
+    prob_budget = st.slider(
+        "FHPE+SA probabilistic search budget",
+        10,
+        1000,
+        200,
+        step=10,
+    )
+
     alpha = st.slider(
         "Alpha",
         0.1,
@@ -246,6 +254,14 @@ with st.sidebar:
         1,
         10,
         3,
+    )
+
+    epsilon = st.slider(
+        "Epsilon (GraphBuilder uncertainty floor)",
+        0.0,
+        0.5,
+        0.05,
+        step=0.01,
     )
 
     st.markdown("---")
@@ -604,6 +620,7 @@ if run:
                 prior_l,
                 sigma,
                 alpha,
+                epsilon,
             )
         )
 
@@ -632,6 +649,7 @@ if run:
             cellpriors,
             D,
             maxTrees=max_trees,
+            probBudget=prob_budget,
         )
 
     st.session_state.no_clearance_found = (fitness == np.inf)

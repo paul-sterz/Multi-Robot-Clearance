@@ -120,6 +120,27 @@ if is3D:
         "comparable across the many repeats these tests do."
     )
 
+# GraphBuilder's uncertainty floor and FHPE_SA's probabilistic search budget -
+# shared across all three modes and both environment sources below, exactly
+# like env_source itself.
+epsilon = st.slider(
+    "Epsilon (GraphBuilder uncertainty floor)",
+    0.0,
+    0.5,
+    0.05,
+    step=0.01,
+    key="epsilon",
+)
+
+prob_budget = st.slider(
+    "FHPE+SA probabilistic search budget",
+    10,
+    1000,
+    200,
+    step=10,
+    key="prob_budget",
+)
+
 st.markdown("---")
 
 
@@ -217,7 +238,7 @@ H, W = obstacles.shape
 
 
 @st.cache_data(show_spinner="Computing priors...")
-def computeCellPriors(detection_radius):
+def computeCellPriors(detection_radius, epsilon):
 
     _, _, _, _, cellpriors = graphBuilder(
         obstacles,
@@ -227,12 +248,13 @@ def computeCellPriors(detection_radius):
         GRAPH_PRIOR_L,
         GRAPH_PRIOR_SIGMA,
         GRAPH_ALPHA,
+        epsilon,
     )
 
     return cellpriors
 
 
-cellpriors = computeCellPriors(detection_radius)
+cellpriors = computeCellPriors(detection_radius, epsilon)
 
 
 # ==================================================
@@ -682,6 +704,8 @@ if app_mode == "Approach Test":
                     availableRobots=available_robots,
                     availableTime=computation_time,
                     maxTrees=max_trees,
+                    epsilon=epsilon,
+                    probBudget=prob_budget,
                 )
                 simG = simResult["G"]
                 simPriors = simResult["priors"]
@@ -706,6 +730,8 @@ if app_mode == "Approach Test":
                     availableRobots=available_robots,
                     availableTime=computation_time,
                     maxTrees=max_trees,
+                    epsilon=epsilon,
+                    probBudget=prob_budget,
                 )
 
         st.session_state.simulation_results = {
@@ -946,6 +972,8 @@ elif app_mode == "Baseline Test":
                     thirdApproachName=baseline_third_approach,
                     availableTime=baseline_computation_time,
                     maxTrees=baseline_max_trees,
+                    epsilon=epsilon,
+                    probBudget=prob_budget,
                 )
             else:
                 baselineResults = baselineTest(
@@ -955,6 +983,8 @@ elif app_mode == "Baseline Test":
                     thirdApproachName=baseline_third_approach,
                     availableTime=baseline_computation_time,
                     maxTrees=baseline_max_trees,
+                    epsilon=epsilon,
+                    probBudget=prob_budget,
                 )
 
         st.session_state.baseline_simulation_results = {
@@ -1195,6 +1225,8 @@ else:
                     availableTime=evo_computation_time,
                     maxTrees=evo_max_trees,
                     populationSize=evo_population_size,
+                    epsilon=epsilon,
+                    probBudget=prob_budget,
                 )
             else:
                 evolution = runSpanningTreeEvolution(
@@ -1204,6 +1236,8 @@ else:
                     availableTime=evo_computation_time,
                     maxTrees=evo_max_trees,
                     populationSize=evo_population_size,
+                    epsilon=epsilon,
+                    probBudget=prob_budget,
                 )
 
         st.session_state.evolution_results = {
