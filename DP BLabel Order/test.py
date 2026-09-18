@@ -118,7 +118,7 @@ def detectionFnc(p, obstacles, radius=3):
 
 
 def computeSigma(prior_radius):
-    sigma = prior_radius / np.sqrt(2 * np.log(50))
+    sigma = prior_radius / np.sqrt(-2 * np.log(0.5))
 
     return sigma
 

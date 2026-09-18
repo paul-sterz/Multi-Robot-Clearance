@@ -150,7 +150,7 @@ def build3DEnvironment(sceneName: str, startVertices=None, epsilon=None):
     if epsilon is None:
         epsilon = PRIOR_EPSILON_3D
 
-    sigma = priorRadiusM / math.sqrt(2 * math.log(50))
+    sigma = priorRadiusM / math.sqrt(-2 * math.log(0.5))
     priors = scene_adapter.compute_priors(
         scene, hotspots, priorL, sigma, epsilon
     )
