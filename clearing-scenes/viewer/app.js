@@ -140,6 +140,11 @@ const HEAT = [[0, [0.06, 0.06, 0.28]], [0.35, [0.32, 0.08, 0.42]],
 
 /* ------------------------------------------------------------------- scene */
 
+// The scene's normal background -- also what "Export image" restores after a
+// transparent/white capture, so it's named once rather than repeated as a
+// literal at both call sites.
+const BG_COLOR = 0x0b0f14;
+
 let renderer, camera, world, raycaster;
 let S = null;               // the loaded scene payload
 let G = {};                 // the THREE objects of the current scene
@@ -155,12 +160,17 @@ let priorsView = null;      // { codes: Uint16Array, min, max } -- last computed
 let priorsPreviewTimer = null;
 
 function init() {
-  renderer = new THREE.WebGLRenderer({ antialias: true });
+  // alpha + preserveDrawingBuffer cost nothing while world.background stays
+  // opaque (which it does for every normal frame), but both are required for
+  // exportScreenshot() below: alpha to make a transparent capture possible at
+  // all, preserveDrawingBuffer so the buffer toDataURL reads isn't already
+  // cleared for the next frame by the time it's called.
+  renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
   $("#view").appendChild(renderer.domElement);
   camera = new THREE.PerspectiveCamera(52, 1, 0.2, 6000);
   world = new THREE.Scene();
-  world.background = new THREE.Color(0x0b0f14);
+  world.background = new THREE.Color(BG_COLOR);
   raycaster = new THREE.Raycaster();
   raycaster.params.Points.threshold = 1.6;
 
@@ -190,6 +200,7 @@ function init() {
     const i = parseInt(btn.dataset.rm.slice(1), 10);
     if (btn.dataset.rm[0] === "h") removeHotspot(i); else removeStart(i);
   };
+  $("#c-export").onclick = exportScreenshot;
   $("#c-save-hotspots").onclick = saveHotspots;
   $("#c-run").onclick = runStrategy;
   $("#c-play").onclick = toggleCompPlay;
@@ -253,6 +264,68 @@ function resize() {
   renderer.setSize(w, h);
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
+}
+
+/** Save the current view as a PNG, at a chosen background and resolution --
+ *  the viewer's own dark scene background is right for orbiting a site
+ *  on-screen but wrong for a figure meant to sit in a paper or slide, so this
+ *  renders one extra frame with the background swapped (or dropped for a
+ *  transparent PNG) and the pixel ratio bumped for supersampling, then puts
+ *  everything back exactly as resize()/init() left it. */
+function exportScreenshot() {
+  if (!S) return;
+  const status = $("#c-export-status");
+  status.textContent = "rendering…";
+
+  try {
+    const w = innerWidth, h = innerHeight;
+    const basePixelRatio = Math.min(devicePixelRatio, 2);
+    const scale = parseFloat($("#c-export-scale").value);
+    const bg = $("#c-export-bg").value;
+
+    if (bg === "transparent") {
+      world.background = null;
+      renderer.setClearColor(0x000000, 0);
+    } else {
+      world.background = new THREE.Color(bg === "white" ? 0xffffff : BG_COLOR);
+    }
+
+    renderer.setPixelRatio(basePixelRatio * scale);
+    renderer.setSize(w, h, false);   // false: keep the on-screen canvas size, grow only the drawing buffer
+    camera.updateProjectionMatrix();
+    renderer.render(world, camera);
+
+    // A blob + object URL downloads reliably everywhere; a bare data: URI on
+    // an <a download> does not -- Safari in particular just navigates to it
+    // instead of saving, and at 4x on a large scene the data: URI can run to
+    // tens of megabytes of base64, which some browsers silently refuse.
+    renderer.domElement.toBlob((blob) => {
+      // Put the canvas back the way resize()/init() left it before anything
+      // else touches it, whether or not the encode below succeeds.
+      world.background = new THREE.Color(BG_COLOR);
+      renderer.setClearColor(0x000000, 1);
+      renderer.setPixelRatio(basePixelRatio);
+      renderer.setSize(w, h, false);
+      camera.updateProjectionMatrix();
+      renderer.render(world, camera);
+
+      if (!blob) {
+        status.textContent = "error: could not encode PNG";
+        return;
+      }
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${S.name}-${bg}-${scale}x.png`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      status.textContent = "saved.";
+    }, "image/png");
+  } catch (err) {
+    status.textContent = "error: " + err.message;
+  }
 }
 
 /* -------------------------------------------------------------- loading */

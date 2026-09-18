@@ -39,6 +39,30 @@
   </fieldset>
 
   <fieldset>
+    <legend>Export image</legend>
+    <label class="field">
+      <span>Background</span>
+      <select id="c-export-bg">
+        <option value="transparent">Transparent</option>
+        <option value="white">White</option>
+        <option value="scene">Scene (dark)</option>
+      </select>
+    </label>
+    <label class="field">
+      <span>Resolution</span>
+      <select id="c-export-scale">
+        <option value="1">1&times; (screen)</option>
+        <option value="2" selected>2&times;</option>
+        <option value="4">4&times;</option>
+      </select>
+    </label>
+    <div class="row">
+      <button id="c-export">Save screenshot (PNG)</button>
+      <span id="c-export-status" class="hint"></span>
+    </div>
+  </fieldset>
+
+  <fieldset>
     <legend>Robot route</legend>
     <label class="field">
       <span>From vertex</span>

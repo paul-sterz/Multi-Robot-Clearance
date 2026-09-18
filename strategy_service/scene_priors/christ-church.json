@@ -1,0 +1,7 @@
+{
+  "hotspots": [],
+  "start_vertices": [],
+  "prior_l": 3.0,
+  "prior_radius_m": 15.0,
+  "epsilon": 0.33
+}
