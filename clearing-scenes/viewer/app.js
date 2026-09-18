@@ -388,20 +388,19 @@ function build(data) {
         pos.push(vertices[3 * v], vertices[3 * v + 1], vertices[3 * v + 2] + lift);
       }
     }
-    const g = new THREE.BufferGeometry();
-    g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
-    const m = new THREE.LineBasicMaterial({
-      color: kind ? 0x7a5c46 : 0xfab04a, transparent: true,
-      opacity: kind ? 0.5 : 0.75,
-    });
-    G[kind ? "shady" : "regular"] = new THREE.LineSegments(g, m);
+    // Width in cellSize units -- the same physical/quantisation scale already
+    // used for the surface point size just above -- rather than in screen
+    // pixels, which the GPU would clamp to 1 regardless of what's asked for.
+    const halfWidth = data.cellSize * (kind ? 0.28 : 0.4);
+    G[kind ? "shady" : "regular"] = ribbon(
+      pos, halfWidth, kind ? 0x9c6b34 : 0xffa100, kind ? 0.7 : 1.0);
   }
   const np = new Float32Array(vertices.length);
   for (let i = 0; i < vertices.length; i += 3) {
     np[i] = vertices[i]; np[i + 1] = vertices[i + 1]; np[i + 2] = vertices[i + 2] + lift;
   }
   S.nodeDraw = np;
-  G.vertices = points(np, null, 2.4, 0xffeca8);
+  G.vertices = points(np, null, 3.4, 0xffe14d);
 
   // the walked routes, one polyline per edge
   S.routePts = dequantise(data.routes);
@@ -530,6 +529,35 @@ function routeBeads(sc, which, spacing, lift) {
     }
   }
   return new Float32Array(out);
+}
+
+/** A LineSegments-alike drawn as flat ribbon triangles instead of GL lines.
+ *  `LineBasicMaterial.linewidth` is silently clamped to 1px on most desktop
+ *  drivers (Windows ANGLE and macOS both do this for core-profile GL
+ *  contexts, which is what WebGL uses) -- no material setting fixes that, the
+ *  width has to be real geometry. The offset is taken in the XY plane
+ *  (perpendicular to each segment's ground projection), which is the right
+ *  ribbon orientation for edges running over near-planar terrain seen mostly
+ *  from above, and keeps this independent of render resolution: it reads the
+ *  same width whether on screen or supersampled for an export PNG. */
+function ribbon(pairs, halfWidth, colour, opacity) {
+  const tri = [];
+  for (let i = 0; i + 5 < pairs.length; i += 6) {
+    const ax = pairs[i], ay = pairs[i + 1], az = pairs[i + 2];
+    const bx = pairs[i + 3], by = pairs[i + 4], bz = pairs[i + 5];
+    let dx = bx - ax, dy = by - ay;
+    const len = Math.hypot(dx, dy) || 1;
+    dx /= len; dy /= len;
+    const px = -dy * halfWidth, py = dx * halfWidth;
+    tri.push(
+      ax + px, ay + py, az, ax - px, ay - py, az, bx + px, by + py, bz,
+      bx + px, by + py, bz, ax - px, ay - py, az, bx - px, by - py, bz,
+    );
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.Float32BufferAttribute(new Float32Array(tri), 3));
+  const m = new THREE.MeshBasicMaterial({ color: colour, transparent: true, opacity, side: THREE.DoubleSide });
+  return new THREE.Mesh(g, m);
 }
 
 function segments(xyz, colour, opacity) {
