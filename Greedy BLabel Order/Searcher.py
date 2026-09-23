@@ -58,6 +58,21 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
     #bestStrategy: A list containing the best strategy where each entry is in the form (source node,target node, amount of Robots)
 
     # ---------------------------------------------------
+    # CELL-PRIOR vs. NODE-PRIOR OBJECTIVE
+    # 3D-scene runs (Streamlit's "3D (real scene)" mode, see 3DTest.py)
+    # always call graphSearch() with obstacles/distanceMap/alpha set to
+    # None - reused here as the signal to never fall back to the cell-prior
+    # objective (summing over cellpriors/D, one term per real-world mesh
+    # cell, of which a scene can have orders of magnitude more than nodes)
+    # and always score strategies via the much cheaper node-prior objective
+    # instead: node.prior is already the pre-summed prior mass of that
+    # node's own detection set (see GraphBuilder.py/adapter.py), so no
+    # per-cell loop is needed at all. computeExpTime()/computeLocalExpTime()
+    # below run once per candidate spanning tree, so this matters a lot.
+    # ---------------------------------------------------
+    useNodePriorObjective = obstacles is None
+
+    # ---------------------------------------------------
     # PRECOMPUTING ALL-PAIRS FLAG DISTANCES
     # obstacles/distanceMap/alpha and the node positions in G never change
     # for the duration of this graphSearch() call, so the aStar step-count
@@ -1166,6 +1181,8 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
             # tried per candidate against each other, so nodes outside
             # nodeSet (which stay at visitedTimes == -1, never actually
             # reached by this local tree) must not be included.
+            if useNodePriorObjective:
+                return sum(G.nodes[idx].prior * visitedTimes[idx] for idx in nodeSet)
             eff = 0
             foundPriors = np.copy(cellpriors)
             orderedNodes = sorted(nodeSet, key=lambda idx: visitedTimes[idx])
@@ -1713,6 +1730,9 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
     # ---------------------------------------------------
     def computeExpTime(visitedTimes, G: Graph):
         #Computing the expected search time
+        if useNodePriorObjective:
+            return sum(node.prior * visitedTimes[node.idx] for node in G.nodes)
+
         eff = 0
         foundPriors = np.copy(cellpriors)
         sortedNodes = sorted(G.nodes, key=lambda node: visitedTimes[node.idx])

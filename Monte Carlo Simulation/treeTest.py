@@ -16,6 +16,8 @@
 # the Streamlit UI (test.py) can plot how each search converges.
 #--------------------------------------------------------
 
+import numpy as np
+
 from approachTest import (
     APPROACH_NAMES,
     APPROACHES,
@@ -147,6 +149,145 @@ def runSpanningTreeEvolution(
         populationSize,
         searchMode="random",
         probBudget=probBudget,
+    )
+
+    return {
+        "G": G,
+        "edgesShady": edges_shady,
+        "priors": priors,
+        "evolutionary": evolutionary,
+        "random": random_,
+    }
+
+
+#--------------------------------------------------------
+# SPANNING TREE EVOLUTION - REPEATED (100 RUNS) COMPARISON
+#
+# Like runSpanningTreeEvolution() above, but instead of tracking one run's
+# tree-by-tree history, it repeats both searchModes ("evolutionary" and
+# "random") numOfRuns times each - all on the exact same graph (built once,
+# same convention as approachTest()/baselineTest()) so the two methods are
+# directly comparable under identical conditions. For each run only the
+# final outcome (checked trees + best objective found) is kept, not the
+# full history, since only the aggregate best/mean/variance across runs is
+# needed here.
+#--------------------------------------------------------
+
+
+def _runSearchModeRepeated(
+    graphSearchFn,
+    G,
+    startNodes,
+    obstacles,
+    distanceMap,
+    priors,
+    D,
+    availableRobots,
+    availableTime,
+    maxTrees,
+    populationSize,
+    searchMode,
+    probBudget,
+    numOfRuns,
+):
+
+    bestFitness = np.zeros(numOfRuns)
+    checkedTrees = np.zeros(numOfRuns)
+
+    for i in range(numOfRuns):
+
+        _, _, treesChecked, fitness = graphSearchFn(
+            G,
+            availableTime,
+            availableRobots,
+            startNodes,
+            obstacles,
+            distanceMap,
+            GRAPH_ALPHA,
+            priors,
+            D,
+            maxTrees=maxTrees,
+            populationSize=populationSize,
+            searchMode=searchMode,
+            probBudget=probBudget,
+        )
+
+        bestFitness[i] = fitness
+        checkedTrees[i] = treesChecked
+
+    return {
+        "bestFitness": bestFitness,
+        "checkedTrees": checkedTrees,
+    }
+
+
+def runSpanningTreeEvolutionRepeated(
+    approachName: str,
+    detecRad: int,
+    availableRobots: int,
+    availableTime,
+    maxTrees,
+    populationSize: int,
+    numOfRuns: int = 100,
+    epsilon=0.05,
+    probBudget=200,
+):
+
+    #-------------------------------------------------------------------
+    # STEP 1: ALLOCATION (identical to approachTest()/runSpanningTreeEvolution())
+    #-------------------------------------------------------------------
+    obstacles, hotspots = buildEnvironment()
+
+    G, edges_shady, D, startNodes, priors = graphBuilder(
+        obstacles,
+        hotspots,
+        lambda p, obs: detectionFnc(p, obs, detecRad),
+        START_REGION,
+        GRAPH_PRIOR_L,
+        GRAPH_PRIOR_SIGMA,
+        GRAPH_ALPHA,
+        epsilon,
+    )
+
+    distanceMap = computeObstacleDistance(obstacles)
+
+    graphSearchFn = APPROACH_FUNCS[approachName]
+
+    #-------------------------------------------------------------------
+    # STEP 2: RUN BOTH SEARCH MODES numOfRuns TIMES EACH, ON THE SAME GRAPH
+    #-------------------------------------------------------------------
+    evolutionary = _runSearchModeRepeated(
+        graphSearchFn,
+        G,
+        startNodes,
+        obstacles,
+        distanceMap,
+        priors,
+        D,
+        availableRobots,
+        availableTime,
+        maxTrees,
+        populationSize,
+        searchMode="evolutionary",
+        probBudget=probBudget,
+        numOfRuns=numOfRuns,
+    )
+
+    random_ = _runSearchModeRepeated(
+        graphSearchFn,
+        G,
+        startNodes,
+        obstacles,
+        distanceMap,
+        priors,
+        D,
+        availableRobots,
+        availableTime,
+        maxTrees,
+        populationSize,
+        searchMode="random",
+        probBudget=probBudget,
+        numOfRuns=numOfRuns,
     )
 
     return {

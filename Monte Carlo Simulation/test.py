@@ -21,7 +21,7 @@ from approachTest import (
 
 from baselineTest import baselineTest, BASELINE_METHOD_NAMES
 
-from treeTest import runSpanningTreeEvolution
+from treeTest import runSpanningTreeEvolution, runSpanningTreeEvolutionRepeated
 
 from closingExitsTest import runClosingExitsComparison
 
@@ -210,6 +210,10 @@ for key, default in [
     ("evo_population_size", 10),
 
     ("evolution_results", None),
+
+    ("evo_repeated_num_of_runs", 100),
+
+    ("evo_repeated_results", None),
 
     ("ce_num_of_runs", 100),
 
@@ -1342,8 +1346,16 @@ elif app_mode == "Spanning Tree Evolution":
                 height=400,
                 margin=dict(l=10, r=10, t=30, b=10),
                 plot_bgcolor="white",
-                xaxis=dict(title="Number of Spanning Trees", gridcolor="#eeeeee"),
-                yaxis=dict(title="Best Objective Value", gridcolor="#eeeeee"),
+                xaxis=dict(
+                    title=dict(text="Number of Spanning Trees", font=dict(size=20)),
+                    tickfont=dict(size=14),
+                    gridcolor="#eeeeee",
+                ),
+                yaxis=dict(
+                    title=dict(text="Best Objective Value", font=dict(size=20)),
+                    tickfont=dict(size=14),
+                    gridcolor="#eeeeee",
+                ),
             )
 
             st.plotly_chart(bestFig, use_container_width=True)
@@ -1366,8 +1378,16 @@ elif app_mode == "Spanning Tree Evolution":
                 height=400,
                 margin=dict(l=10, r=10, t=30, b=10),
                 plot_bgcolor="white",
-                xaxis=dict(title="Number of Spanning Trees", gridcolor="#eeeeee"),
-                yaxis=dict(title="Objective Value", gridcolor="#eeeeee"),
+                xaxis=dict(
+                    title=dict(text="Number of Spanning Trees", font=dict(size=20)),
+                    tickfont=dict(size=14),
+                    gridcolor="#eeeeee",
+                ),
+                yaxis=dict(
+                    title=dict(text="Objective Value", font=dict(size=20)),
+                    tickfont=dict(size=14),
+                    gridcolor="#eeeeee",
+                ),
             )
 
             st.plotly_chart(currentFig, use_container_width=True)
@@ -1430,6 +1450,123 @@ elif app_mode == "Spanning Tree Evolution":
 
         st.dataframe(
             comparisonTable.round(4),
+            use_container_width=True,
+            hide_index=True,
+        )
+
+    # ==================================================
+    # REPEATED (100 RUNS) COMPARISON
+    #
+    # Unlike the single run above (which plots how one search converges
+    # tree by tree), this repeats both searchModes ("evolutionary" and
+    # "random") several times each - always on the exact same graph (built
+    # once) and with the exact same run parameters (approach, stopping
+    # criterion, available robots, population size) chosen above - so the
+    # methods are compared under identical conditions across many repeats,
+    # like the Approach Test / Baseline Test tables.
+    # ==================================================
+
+    st.markdown("---")
+    st.markdown("### 100-Run Comparison: Evolution vs. Random Spanning Trees")
+
+    evo_repeated_num_of_runs = st.slider(
+        "Number of runs per method",
+        2,
+        500,
+        st.session_state.evo_repeated_num_of_runs,
+        key="evo_repeated_num_of_runs_slider",
+    )
+
+    st.session_state.evo_repeated_num_of_runs = evo_repeated_num_of_runs
+
+    st.caption(
+        f"Both methods run {evo_repeated_num_of_runs}× each, on the exact "
+        "same graph and with the same run parameters chosen above "
+        "(approach, stopping criterion, available robots, initial "
+        "generation size)."
+    )
+
+    if st.button(
+        "Run 100x Comparison",
+        use_container_width=True,
+        key="evo_repeated_run_button",
+    ):
+
+        with st.spinner(
+            f"Running {evo_repeated_num_of_runs} runs × 2 methods "
+            f"({evo_approach})..."
+        ):
+
+            if is3D:
+                repeated = threeDTest.runSpanningTreeEvolution3DRepeated(
+                    sceneName=scene_name,
+                    approachName=evo_approach,
+                    availableRobots=evo_available_robots,
+                    availableTime=evo_computation_time,
+                    maxTrees=evo_max_trees,
+                    populationSize=evo_population_size,
+                    numOfRuns=evo_repeated_num_of_runs,
+                    epsilon=epsilon,
+                    probBudget=prob_budget,
+                )
+            else:
+                repeated = runSpanningTreeEvolutionRepeated(
+                    approachName=evo_approach,
+                    detecRad=detection_radius,
+                    availableRobots=evo_available_robots,
+                    availableTime=evo_computation_time,
+                    maxTrees=evo_max_trees,
+                    populationSize=evo_population_size,
+                    numOfRuns=evo_repeated_num_of_runs,
+                    epsilon=epsilon,
+                    probBudget=prob_budget,
+                )
+
+        st.session_state.evo_repeated_results = {
+            "is3D": is3D,
+            "sceneName": scene_name if is3D else None,
+            "approach": evo_approach,
+            "numOfRuns": evo_repeated_num_of_runs,
+            "evolutionary": repeated["evolutionary"],
+            "random": repeated["random"],
+        }
+
+    repeatedResults = st.session_state.evo_repeated_results
+
+    if repeatedResults is not None:
+
+        def buildRepeatedComparisonRow(runResult, methodLabel):
+
+            bestFitness = runResult["bestFitness"]
+            checkedTrees = runResult["checkedTrees"]
+
+            finiteMask = np.isfinite(bestFitness)
+            finiteValues = bestFitness[finiteMask]
+
+            return {
+                "Method": methodLabel,
+                "Runs": repeatedResults["numOfRuns"],
+                "Spanning Trees Checked (avg)": float(np.mean(checkedTrees)),
+                "Best": float(np.min(finiteValues)) if finiteValues.size > 0 else None,
+                "Mean": float(np.mean(finiteValues)) if finiteValues.size > 0 else None,
+                "Variance": float(np.var(finiteValues)) if finiteValues.size > 0 else None,
+                "No Clearance Count": int(np.sum(~finiteMask)),
+            }
+
+        repeatedComparisonTable = pd.DataFrame([
+            buildRepeatedComparisonRow(repeatedResults["evolutionary"], "Evolutionary Search"),
+            buildRepeatedComparisonRow(repeatedResults["random"], "Random Spanning Tree Generation"),
+        ])
+
+        st.caption(
+            f"**{repeatedResults['approach']}** — "
+            f"{repeatedResults['numOfRuns']} runs per method, all on the "
+            "same graph."
+            + (f" Scene: **{repeatedResults['sceneName']}**." if repeatedResults.get("is3D") else "")
+        )
+
+        st.dataframe(
+            repeatedComparisonTable.round(4),
             use_container_width=True,
             hide_index=True,
         )

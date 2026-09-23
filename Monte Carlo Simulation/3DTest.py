@@ -431,3 +431,102 @@ def runSpanningTreeEvolution3D(
         "evolutionary": evolutionary,
         "random": random_,
     }
+
+
+#--------------------------------------------------------
+# SPANNING TREE EVOLUTION (3D) - REPEATED (100 RUNS) COMPARISON
+#
+# Same idea as runSpanningTreeEvolutionRepeated() in treeTest.py: repeats
+# both searchModes numOfRuns times each, on the exact same 3D scene graph
+# (built once), keeping only each run's final outcome (checked trees + best
+# objective found).
+#--------------------------------------------------------
+
+
+def _runSearchModeRepeated3D(
+    graphSearchFn,
+    G,
+    startNodes,
+    cellpriors,
+    D,
+    travelTime,
+    availableRobots,
+    availableTime,
+    maxTrees,
+    populationSize,
+    searchMode,
+    probBudget,
+    numOfRuns,
+):
+
+    bestFitness = np.zeros(numOfRuns)
+    checkedTrees = np.zeros(numOfRuns)
+
+    for i in range(numOfRuns):
+
+        _, _, treesChecked, fitness = graphSearchFn(
+            G,
+            availableTime,
+            availableRobots,
+            startNodes,
+            None,
+            None,
+            None,
+            cellpriors,
+            D,
+            maxTrees=maxTrees,
+            populationSize=populationSize,
+            searchMode=searchMode,
+            travelTime=travelTime,
+            probBudget=probBudget,
+        )
+
+        bestFitness[i] = fitness
+        checkedTrees[i] = treesChecked
+
+    return {
+        "bestFitness": bestFitness,
+        "checkedTrees": checkedTrees,
+    }
+
+
+def runSpanningTreeEvolution3DRepeated(
+    sceneName: str,
+    approachName: str,
+    availableRobots: int,
+    availableTime,
+    maxTrees,
+    populationSize: int,
+    numOfRuns: int = 100,
+    epsilon=None,
+    probBudget=200,
+):
+
+    scene, G, D, startNodes, cellpriors, travelTime = build3DEnvironment(sceneName, epsilon=epsilon)
+
+    graphSearchFn = APPROACH_FUNCS_3D[approachName]
+
+    evolutionary = _runSearchModeRepeated3D(
+        graphSearchFn, G, startNodes, cellpriors, D, travelTime,
+        availableRobots, availableTime, maxTrees, populationSize,
+        searchMode="evolutionary",
+        probBudget=probBudget,
+        numOfRuns=numOfRuns,
+    )
+
+    random_ = _runSearchModeRepeated3D(
+        graphSearchFn, G, startNodes, cellpriors, D, travelTime,
+        availableRobots, availableTime, maxTrees, populationSize,
+        searchMode="random",
+        probBudget=probBudget,
+        numOfRuns=numOfRuns,
+    )
+
+    return {
+        "scene": scene,
+        "G": G,
+        "D": D,
+        "priors": cellpriors,
+        "evolutionary": evolutionary,
+        "random": random_,
+    }
