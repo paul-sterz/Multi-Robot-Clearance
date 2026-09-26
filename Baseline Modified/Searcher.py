@@ -814,10 +814,14 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
                 nodeVisitedTime[target] = tArrival
 
         if useNodePriorObjective:
-            return sum(
+            # float(): see the identical comment in Greedy/DP BLabel
+            # Order's Searcher.py - visitTime traces back to the scene's
+            # float32 travel-time table, so a bare sum() would silently
+            # come back as numpy.float32 instead of a native float.
+            return float(sum(
                 G.nodes[nodeIdx].prior * visitTime
                 for nodeIdx, visitTime in nodeVisitedTime.items()
-            )
+            ))
 
         foundPriors = np.copy(cellpriors)
 

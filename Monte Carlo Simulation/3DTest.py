@@ -37,6 +37,7 @@ from baselineTest import (
     METHODS_WITH_CELL_PRIOR_TIEBREAK,
     COMPARED_APPROACH_NAMES,
 )
+from closingExitsTest import runClosingExitsComparisonOnGraph
 
 CLEARING_SCENES_DIR = os.path.join(REPO_DIR, "clearing-scenes")
 SCENES_DIR = os.path.join(CLEARING_SCENES_DIR, "scenes")
@@ -99,7 +100,11 @@ def loadHotspotConfig(scene, sceneName: str):
     saved for this scene yet, so the caller can fall back to
     default3DHotspots().
 
-    Returns (hotspots, startVertices, priorL, priorRadiusM) or None.
+    Returns (hotspots, startVertices, priorL, priorRadiusM, savedEpsilon) or
+    None. savedEpsilon is None when the scene's saved config predates the
+    viewer saving epsilon at all (see peekSavedEpsilon()) - it can
+    legitimately be 0.0 otherwise, so callers must check "is None", not
+    truthiness.
     """
     path = os.path.join(SCENE_PRIORS_DIR, f"{sceneName}.json")
     if not os.path.isfile(path):
@@ -119,8 +124,26 @@ def loadHotspotConfig(scene, sceneName: str):
     startVertices = config.get("start_vertices") or [0]
     priorL = config.get("prior_l") or PRIOR_L_3D
     priorRadiusM = config.get("prior_radius_m") or PRIOR_RADIUS_M_3D
+    savedEpsilon = config.get("epsilon")
 
-    return hotspots, startVertices, priorL, priorRadiusM
+    return hotspots, startVertices, priorL, priorRadiusM, savedEpsilon
+
+
+def peekSavedEpsilon(sceneName: str):
+    """The epsilon saved for sceneName via the viewer's "Save hotspots"
+    button, without needing a loaded Scene object - just for the Streamlit
+    UI to tell the person their Epsilon slider is about to be overridden
+    for this scene (see build3DEnvironment()). None if nothing was ever
+    saved for it, or its saved config predates epsilon being saved at all.
+    """
+    path = os.path.join(SCENE_PRIORS_DIR, f"{sceneName}.json")
+    if not os.path.isfile(path):
+        return None
+
+    with open(path, "r", encoding="utf-8") as f:
+        config = json.load(f)
+
+    return config.get("epsilon")
 
 
 def build3DEnvironment(sceneName: str, startVertices=None, epsilon=None):
@@ -129,8 +152,13 @@ def build3DEnvironment(sceneName: str, startVertices=None, epsilon=None):
     every method compared - exactly like "NUR EIN GRAPH" in approachTest.py
     and baselineTest.py.
 
-    epsilon: GraphBuilder uncertainty floor passed to compute_priors(),
-        defaulting to PRIOR_EPSILON_3D when not given (None).
+    epsilon: GraphBuilder uncertainty floor passed to compute_priors() -
+        used only as a fallback. A per-scene epsilon saved from the viewer
+        (like prior_l/prior_radius_m already are) always takes priority
+        when present, so that scene's "Prior heatmap" preview in the viewer
+        matches what a Monte Carlo run on it actually uses. Falls back to
+        this parameter, or to PRIOR_EPSILON_3D if that is also None, only
+        when nothing was saved for the scene.
 
     Returns (scene, G, D, startNodes, cellpriors, travelTime).
     """
@@ -138,16 +166,19 @@ def build3DEnvironment(sceneName: str, startVertices=None, epsilon=None):
 
     saved = loadHotspotConfig(scene, sceneName)
     if saved is not None:
-        hotspots, savedStartVertices, priorL, priorRadiusM = saved
+        hotspots, savedStartVertices, priorL, priorRadiusM, savedEpsilon = saved
         if startVertices is None:
             startVertices = savedStartVertices
     else:
         hotspots = default3DHotspots(scene)
         priorL, priorRadiusM = PRIOR_L_3D, PRIOR_RADIUS_M_3D
+        savedEpsilon = None
         if startVertices is None:
             startVertices = [0]
 
-    if epsilon is None:
+    if savedEpsilon is not None:
+        epsilon = savedEpsilon
+    elif epsilon is None:
         epsilon = PRIOR_EPSILON_3D
 
     sigma = priorRadiusM / math.sqrt(-2 * math.log(0.5))
@@ -554,3 +585,51 @@ def runSpanningTreeEvolution3DRepeated(
         "evolutionary": evolutionary,
         "random": random_,
     }
+
+
+# ==================================================
+# CLOSING EXITS TEST (3D)
+# ==================================================
+
+
+def runClosingExitsComparison3D(
+    sceneName: str,
+    numOfRuns: int,
+    availableRobots: int,
+    availableTime,
+    maxTrees,
+    horizon: int,
+    probBudget: float,
+    hurtProbability: float,
+    maxHops: int = 4,
+    recencyLambda=None,
+    dt: float = 1.0,
+    seed=None,
+    epsilon=None,
+):
+
+    scene, G, D, startNodes, cellpriors, travelTime = build3DEnvironment(sceneName, epsilon=epsilon)
+
+    # cellIndices/cellWeights are the 3D equivalent of closingExitsTest.py's
+    # 2D (x, y) grid cells: every real scene cell, as the (cellId, 0)
+    # 2-tuples D's detection sets and cellpriors' (n_cells, 1) shape already
+    # use elsewhere (see any Searcher.py) - the target's redraw distribution
+    # is just cellpriors itself, flattened.
+    n = cellpriors.shape[0]
+    cellIndices = [(cellId, 0) for cellId in range(n)]
+    cellWeights = cellpriors[:, 0].astype(float)
+    cellWeights = cellWeights / cellWeights.sum()
+
+    result = runClosingExitsComparisonOnGraph(
+        G, None, None, startNodes, cellpriors, D,
+        cellIndices, cellWeights,
+        numOfRuns,
+        availableRobots, availableTime, maxTrees,
+        horizon, probBudget, hurtProbability,
+        maxHops=maxHops, recencyLambda=recencyLambda, dt=dt, seed=seed,
+        travelTime=travelTime,
+    )
+
+    result["scene"] = scene
+
+    return result

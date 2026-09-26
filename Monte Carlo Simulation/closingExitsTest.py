@@ -224,16 +224,30 @@ def _cellsAt(startTimes, cellsPerInterval, t):
 # ==================================================
 
 
-def _simulateTargetTrajectory(cellIndices, cellWeights, hurtProbability, probBudget, dt, rng):
+def _simulateTargetTrajectory(cellCumWeights, hurtProbability, probBudget, dt, rng):
     """[(t, cellIdx), ...] for t = 0, dt, 2*dt, ... up to probBudget. Once
     "hurt" triggers (probability hurtProbability, checked once per step
     until it fires), the target freezes at its current cell for every
-    remaining step."""
+    remaining step.
+
+    cellCumWeights: cellWeights.cumsum() - precomputed ONCE by the caller
+    (not per draw, and not even once per run) so drawing a cell here is a
+    single np.searchsorted() (O(log n)), not rng.choice(..., p=cellWeights)
+    recomputing its own cumulative sum from scratch on every single call
+    (O(n) each). For a 2D grid's ~100 cells that redundant O(n) is free, but
+    a real 3D scene can have hundreds of thousands of cells and this runs
+    every dt of simulated time, every run - i.e. exactly the kind of
+    per-iteration O(cells) cost this codebase has repeatedly had to hunt
+    down elsewhere.
+    """
 
     trajectory = []
 
+    def draw():
+        return int(np.searchsorted(cellCumWeights, rng.random(), side="right"))
+
     hurt = False
-    currentCellIdx = rng.choice(len(cellIndices), p=cellWeights)
+    currentCellIdx = draw()
 
     t = 0.0
     while t <= probBudget:
@@ -246,7 +260,7 @@ def _simulateTargetTrajectory(cellIndices, cellWeights, hurtProbability, probBud
             if rng.random() < hurtProbability:
                 hurt = True
             else:
-                currentCellIdx = rng.choice(len(cellIndices), p=cellWeights)
+                currentCellIdx = draw()
 
     return trajectory
 
@@ -320,7 +334,8 @@ def _runOneComparison(
     G, obstacles, distanceMap, startNodes, priors, D,
     availableRobots, availableTime, maxTrees,
     horizon, recencyLambda, probBudget, maxHops,
-    cellIndices, cellWeights, hurtProbability, dt, rng,
+    cellIndices, cellCumWeights, hurtProbability, dt, rng,
+    travelTime=None,
 ):
 
     clearedRegions = []
@@ -332,6 +347,7 @@ def _runOneComparison(
         horizon=horizon, recencyLambda=recencyLambda,
         probBudget=probBudget, maxHops=maxHops,
         clearedRegionsOut=clearedRegions,
+        travelTime=travelTime,
     )
 
     root = strategyCE[0][1]
@@ -343,6 +359,7 @@ def _runOneComparison(
         horizon=horizon, recencyLambda=recencyLambda,
         probBudget=probBudget, maxHops=maxHops,
         skipTreeSearch=True, startRootOverride=root,
+        travelTime=travelTime,
     )
 
     liveStartTimesCE, liveCellsCE = _liveDetectionTimeline(strategyCE, D)
@@ -357,7 +374,7 @@ def _runOneComparison(
     clearedStartTimesFHPE, clearedCellsFHPE = [0.0], [frozenset()]
 
     trajectory = _simulateTargetTrajectory(
-        cellIndices, cellWeights, hurtProbability, probBudget, dt, rng
+        cellCumWeights, hurtProbability, probBudget, dt, rng
     )
 
     findTimeCE = _findTime(
@@ -398,8 +415,9 @@ def _summarize(findTimes):
     return meanTime, varianceTime, p90Time, timeoutRate
 
 
-def runClosingExitsComparison(
-    detecRad: int,
+def runClosingExitsComparisonOnGraph(
+    G, obstacles, distanceMap, startNodes, priors, D,
+    cellIndices, cellWeights,
     numOfRuns: int,
     availableRobots: int,
     availableTime,
@@ -411,24 +429,28 @@ def runClosingExitsComparison(
     recencyLambda=None,
     dt: float = 1.0,
     seed=None,
+    travelTime=None,
 ):
+    """The shared Monte Carlo comparison loop, given an already-built graph
+    (2D synthetic grid or a real 3D scene - see runClosingExitsComparison()
+    below for the 2D entry point, and 3DTest.py's
+    runClosingExitsComparison3D() for the 3D one). Both just build their own
+    environment/cellIndices/cellWeights and hand them to this.
 
-    #-------------------------------------------------------------------
-    # STEP 1: ALLOCATION (identical 2D grid every other test here uses -
-    # NUR EIN GRAPH: built once, reused for every run)
-    #-------------------------------------------------------------------
-    obstacles, G, edges_shady, D, startNodes, priors, distanceMap = buildClosingExitsEnvironment(detecRad)
+    cellIndices: every valid cell, as whatever 2-tuple D's detection sets
+        use - (x, y) grid coordinates for the 2D grid, (cellId, 0) for a 3D
+        scene (matching cellpriors[cell[0], cell[1]]'s convention - see any
+        Searcher.py). cellWeights: matching per-cell prior mass, summing to
+        1 (the target's redraw distribution).
+    """
 
-    H, W = obstacles.shape
-    cellIndices = [(r, c) for r in range(H) for c in range(W) if obstacles[r, c] == 0]
-    cellWeights = np.array([priors[r, c] for (r, c) in cellIndices], dtype=float)
-    cellWeights = cellWeights / cellWeights.sum()
+    cellCumWeights = np.cumsum(cellWeights)
 
     rng = np.random.default_rng(seed)
 
     #------------------------------------------------------------------
-    # STEP 2: RUN BOTH STRATEGIES ON THE SAME GRAPH, numOfRuns TIMES,
-    # EACH TIME AGAINST THE SAME DRAWN TARGET TRAJECTORY
+    # RUN BOTH STRATEGIES ON THE SAME GRAPH, numOfRuns TIMES, EACH TIME
+    # AGAINST THE SAME DRAWN TARGET TRAJECTORY
     #------------------------------------------------------------------
     findTimesCE = []
     findTimesFHPE = []
@@ -441,7 +463,8 @@ def runClosingExitsComparison(
             G, obstacles, distanceMap, startNodes, priors, D,
             availableRobots, availableTime, maxTrees,
             horizon, recencyLambda, probBudget, maxHops,
-            cellIndices, cellWeights, hurtProbability, dt, rng,
+            cellIndices, cellCumWeights, hurtProbability, dt, rng,
+            travelTime=travelTime,
         )
 
         findTimesCE.append(findTimeCE)
@@ -482,3 +505,39 @@ def runClosingExitsComparison(
         "resultsTrees": resultsTrees,
         "summary": summary,
     }
+
+
+def runClosingExitsComparison(
+    detecRad: int,
+    numOfRuns: int,
+    availableRobots: int,
+    availableTime,
+    maxTrees,
+    horizon: int,
+    probBudget: float,
+    hurtProbability: float,
+    maxHops: int = 4,
+    recencyLambda=None,
+    dt: float = 1.0,
+    seed=None,
+):
+
+    #-------------------------------------------------------------------
+    # ALLOCATION (identical 2D grid every other test here uses - NUR EIN
+    # GRAPH: built once, reused for every run)
+    #-------------------------------------------------------------------
+    obstacles, G, edges_shady, D, startNodes, priors, distanceMap = buildClosingExitsEnvironment(detecRad)
+
+    H, W = obstacles.shape
+    cellIndices = [(r, c) for r in range(H) for c in range(W) if obstacles[r, c] == 0]
+    cellWeights = np.array([priors[r, c] for (r, c) in cellIndices], dtype=float)
+    cellWeights = cellWeights / cellWeights.sum()
+
+    return runClosingExitsComparisonOnGraph(
+        G, obstacles, distanceMap, startNodes, priors, D,
+        cellIndices, cellWeights,
+        numOfRuns,
+        availableRobots, availableTime, maxTrees,
+        horizon, probBudget, hurtProbability,
+        maxHops=maxHops, recencyLambda=recencyLambda, dt=dt, seed=seed,
+    )

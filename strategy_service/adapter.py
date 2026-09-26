@@ -44,14 +44,22 @@ from strategy_service.approaches import Graph  # noqa: E402
 # The scene's cell lattice (topology + edge lengths) never changes once
 # loaded, only the hotspot source cells do -- so the sparse adjacency matrix
 # is built once per scene and reused, rather than re-assembled from
-# `evader_edges` on every /api/priors preview call. Keyed by id(scene) since
-# server.py already caches one Scene object per name for the process
-# lifetime; nothing here needs to survive past that.
-_adjacency_cache: dict[int, "scipy.sparse.csr_matrix"] = {}
+# `evader_edges` on every /api/priors preview call. Keyed by scene.name, NOT
+# id(scene): server.py's own long-lived process does cache one Scene object
+# per name for its whole lifetime, but "Monte Carlo Simulation/3DTest.py"
+# (loaded via importlib, not a normal import registered in sys.modules) gets
+# re-exec'd from scratch on every Streamlit rerun, so its own Scene objects
+# are garbage-collected and recreated constantly. CPython then happily
+# reuses a freed Scene's memory address (== its id()) for the next one
+# loaded - so a later, DIFFERENT scene can collide with a still-cached entry
+# built for an earlier one with a different n_cells, causing an "IndexError:
+# boolean index did not match indexed array" far downstream in
+# compute_priors(). scene.name has no such lifetime dependency.
+_adjacency_cache: dict[str, "scipy.sparse.csr_matrix"] = {}
 
 
 def _cell_adjacency(scene) -> "scipy.sparse.csr_matrix | None":
-    key = id(scene)
+    key = scene.name
     if key not in _adjacency_cache:
         a, b = scene.evader_edges
         if a.size:
@@ -72,12 +80,13 @@ def _cell_adjacency(scene) -> "scipy.sparse.csr_matrix | None":
 # location in each). A click in the viewer can only be turned into a real
 # Scene cell id via its 3D position, not by reusing whatever index the
 # viewer's own raycast happened to hit. One KD-tree per scene, cached like
-# the adjacency matrix above.
-_kdtree_cache: dict[int, cKDTree] = {}
+# the adjacency matrix above - keyed by scene.name, not id(scene), for the
+# exact same reason (see _adjacency_cache's comment).
+_kdtree_cache: dict[str, cKDTree] = {}
 
 
 def _cell_kdtree(scene) -> cKDTree:
-    key = id(scene)
+    key = scene.name
     if key not in _kdtree_cache:
         _kdtree_cache[key] = cKDTree(scene.cell_xyz)
     return _kdtree_cache[key]

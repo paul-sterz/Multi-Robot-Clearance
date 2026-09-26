@@ -135,6 +135,19 @@ epsilon = st.slider(
     key="epsilon",
 )
 
+# A per-scene epsilon saved from the viewer (strategy_service's "Save
+# hotspots for this scene" button) always overrides this slider for that
+# scene - see build3DEnvironment()'s own comment. Surfaced here so the
+# slider's own value isn't silently ignored without explanation.
+if is3D:
+    _savedEpsilon = threeDTest.peekSavedEpsilon(scene_name)
+    if _savedEpsilon is not None:
+        st.caption(
+            f"⚠️ **{scene_name}** has its own saved epsilon "
+            f"(**{_savedEpsilon}**, set in the viewer) - it overrides the "
+            "slider above for this scene."
+        )
+
 prob_budget = st.slider(
     "FHPE+SA probabilistic search budget",
     10,
@@ -1563,16 +1576,10 @@ elif app_mode == "Closing Exits Test":
     # baseline that skips local clearing entirely and starts from the exact
     # same root. Both are scored by simulating a randomly moving, possibly
     # "hurt"-and-frozen target - see closingExitsTest.py's module docstring
-    # for the exact model. Always runs on the 2D synthetic grid - the
-    # comparison itself has nothing scene-specific about it.
+    # for the exact model. Runs on the 2D synthetic grid or a real 3D scene,
+    # same as every other mode - the comparison itself has nothing
+    # scene-specific about it, only the graph/priors it runs on differs.
     # ==================================================
-
-
-    if is3D:
-        st.info(
-            "The Closing Exits test always runs on the 2D synthetic grid - "
-            "the 3D scene selection above is ignored here."
-        )
 
 
     st.markdown("### Run Parameters")
@@ -1679,19 +1686,34 @@ elif app_mode == "Closing Exits Test":
             f"Running {ce_num_of_runs} target-search simulations..."
         ):
 
-            ceResult = runClosingExitsComparison(
-                detecRad=detection_radius,
-                numOfRuns=ce_num_of_runs,
-                availableRobots=ce_available_robots,
-                availableTime=ce_computation_time,
-                maxTrees=ce_max_trees,
-                horizon=ce_horizon,
-                probBudget=ce_prob_budget,
-                hurtProbability=ce_hurt_probability,
-            )
+            if is3D:
+                ceResult = threeDTest.runClosingExitsComparison3D(
+                    sceneName=scene_name,
+                    numOfRuns=ce_num_of_runs,
+                    availableRobots=ce_available_robots,
+                    availableTime=ce_computation_time,
+                    maxTrees=ce_max_trees,
+                    horizon=ce_horizon,
+                    probBudget=ce_prob_budget,
+                    hurtProbability=ce_hurt_probability,
+                    epsilon=epsilon,
+                )
+            else:
+                ceResult = runClosingExitsComparison(
+                    detecRad=detection_radius,
+                    numOfRuns=ce_num_of_runs,
+                    availableRobots=ce_available_robots,
+                    availableTime=ce_computation_time,
+                    maxTrees=ce_max_trees,
+                    horizon=ce_horizon,
+                    probBudget=ce_prob_budget,
+                    hurtProbability=ce_hurt_probability,
+                )
 
         st.session_state.ce_simulation_results = {
             **ceResult,
+            "is3D": is3D,
+            "sceneName": scene_name if is3D else None,
             "available_robots": ce_available_robots,
             "horizon": ce_horizon,
             "prob_budget": ce_prob_budget,
@@ -1710,17 +1732,21 @@ elif app_mode == "Closing Exits Test":
 
         st.markdown("### Environment")
 
-        st.plotly_chart(
-            buildEnvironmentFigure(
-                obstacles,
-                ceResults["priors"],
-                H,
-                W,
-                G=ceResults["G"],
-                regularEdges=list(ceResults["G"].edges.keys()),
-            ),
-            use_container_width=True,
-        )
+        if ceResults.get("is3D"):
+            st.caption(f"Scene: **{ceResults['sceneName']}**")
+            renderSceneScreenshot(ceResults["sceneName"])
+        else:
+            st.plotly_chart(
+                buildEnvironmentFigure(
+                    obstacles,
+                    ceResults["priors"],
+                    H,
+                    W,
+                    G=ceResults["G"],
+                    regularEdges=list(ceResults["G"].edges.keys()),
+                ),
+                use_container_width=True,
+            )
 
         st.markdown("### Target-Finding Comparison")
 

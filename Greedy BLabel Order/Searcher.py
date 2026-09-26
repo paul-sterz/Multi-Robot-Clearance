@@ -73,6 +73,41 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
     useNodePriorObjective = obstacles is None
 
     # ---------------------------------------------------
+    # WALL-CLOCK SAFETY VALVE
+    # startingTime is set here, at the very top, rather than just before the
+    # main tree-search loop below, so that EVERY fallback path (including
+    # skipTreeSearch's early return) has it available, and so the whole
+    # call's wall-clock cost - not just the main loop's - counts against
+    # availableTime.
+    #
+    # shouldStop() (defined further below, next to the main loop) governs
+    # the main tree-search loop itself and is exact: availableTime is a
+    # real wall-clock budget there. But once no full clearance was found,
+    # computeClosingExits()/FHPE_SA() take over, and NEITHER is bounded by
+    # availableTime at all by design - FHPE_SA's own loop runs until
+    # probBudget (simulated time) is exhausted, and its per-round path
+    # enumeration (bestPathForSearcher) can be combinatorially expensive
+    # depending on the graph's branching factor, independent of wall-clock
+    # time entirely. On some scene/robot-count combinations this can take
+    # far longer in real time than availableTime would suggest, with no
+    # relation to how much of probBudget's SIMULATED time was actually
+    # covered. overBudget() gives that fallback machinery its own generous
+    # but finite grace period (2x the original wall-clock budget, measured
+    # from the very start of this call) before it cuts its losses and
+    # returns whatever plan it has built so far - only when a real time
+    # budget was given at all (maxTrees-only runs have no time reference to
+    # bound against, and keep their previous behaviour).
+    # ---------------------------------------------------
+    startingTime = time.monotonic()
+    checkedTreesCounter = 0
+
+    def overBudget():
+        return (
+            availableTime is not None
+            and time.monotonic() - startingTime >= availableTime * 2
+        )
+
+    # ---------------------------------------------------
     # PRECOMPUTING ALL-PAIRS FLAG DISTANCES
     # obstacles/distanceMap/alpha and the node positions in G never change
     # for the duration of this graphSearch() call, so the aStar step-count
@@ -1052,6 +1087,16 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
 
     def computeClosingExits(root, localCandidates, G):
 
+        # computeClosingExits() only runs once the main search already
+        # exhausted its own availableTime/maxTrees budget (shouldStop() is
+        # already True) without finding a full clearance - its own cost
+        # (up to 10 random local spanning trees tried per recorded
+        # candidate, over potentially hundreds of candidates when many
+        # trees failed fast, plus the final FHPE_SA continuation for
+        # whatever is left over) is NOT itself time-boxed by that budget at
+        # all. overBudget() (defined at the top of graphSearch, shared with
+        # FHPE_SA) is the safety valve for that - see its own comment.
+
         # ------------------------------------------------
         # 1) DEDUPLICATE
         # Two candidates covering the exact same node set (found via
@@ -1182,7 +1227,11 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
             # nodeSet (which stay at visitedTimes == -1, never actually
             # reached by this local tree) must not be included.
             if useNodePriorObjective:
-                return sum(G.nodes[idx].prior * visitedTimes[idx] for idx in nodeSet)
+                # float(): see the identical comment in computeExpTime()
+                # below - visitedTimes traces back to the scene's float32
+                # travel-time table, so a bare sum() would silently come
+                # back as numpy.float32 instead of a native float.
+                return float(sum(G.nodes[idx].prior * visitedTimes[idx] for idx in nodeSet))
             eff = 0
             foundPriors = np.copy(cellpriors)
             orderedNodes = sorted(nodeSet, key=lambda idx: visitedTimes[idx])
@@ -1227,7 +1276,7 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
 
         pending = feasibleCandidates
 
-        while pending:
+        while pending and not overBudget():
 
             candidate = pending.pop(0)
 
@@ -1256,6 +1305,8 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
 
             bestLocal = None
             for _ in range(10):
+                if overBudget():
+                    break
                 localTree = computeRandomSpanningTree(localGraph, candidate["root"])
                 localStrategy, localClearance, localVisitedTimes, localFinalStates = treeSearch(
                     localTree, candidate["root"], localRobots, localGraph,
@@ -1579,9 +1630,30 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
         # maxHops remains an independent, additional tractability cap on
         # top of it (whichever of the two is smaller effectively wins) -
         # brute-forcing every path only stays tractable with a hard limit
-        # on branching depth regardless of how horizon itself is set.
+        # on branching depth regardless of how horizon itself is set. Even
+        # so, branching_factor^hopsLeft candidate paths (each scored by an
+        # O(len(G.nodes)) objective() call) can still be a lot of work for
+        # a single call on a densely-connected real 3D scene's guard graph
+        # - overBudget() alone (checked only between whole FHPE_SA rounds,
+        # each round calling this once per robot) is too coarse-grained to
+        # catch that: one call can itself already run far past the budget
+        # before the round it belongs to ever finishes.
+        #
+        # Checking every single call (not e.g. every 256th) is deliberate:
+        # this is a DFS over an exponential tree, so most calls sit at the
+        # deepest, cheapest levels - gating the check on a call counter
+        # mostly ends up pruning small, already-cheap subtrees near the
+        # leaves rather than the expensive upper branches, which barely
+        # moves total wall-clock time at all (confirmed empirically). Once
+        # overBudget() actually flips to True, checking on every call
+        # prunes ALL of it immediately - every remaining call, at every
+        # depth, returns right away instead of recursing further.
+        # time.monotonic() itself is cheap enough (a vDSO call, no syscall
+        # trap) that doing this on every one of potentially hundreds of
+        # thousands of calls is still negligible next to objective()'s own
+        # O(len(G.nodes)) cost per call.
         def visit(node, t, path, times, hopsLeft):
-            if hopsLeft <= 0:
+            if hopsLeft <= 0 or overBudget():
                 return
             for neighbour in G.adj[G.nodes[node]]:
                 newT = t + G.edges[(node, neighbour.idx)].time
@@ -1660,7 +1732,16 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
                 return path[:k], times[:k]
             return path[:k + 1], times[:k + 1]
 
-        while min(robotTime) < probBudget: #As long as there is time
+        # min(robotTime) < probBudget alone is a SIMULATED-time criterion
+        # only - each round's bestPathForSearcher() call is a combinatorial
+        # path enumeration (branching factor ^ min(horizon, maxHops)) whose
+        # REAL wall-clock cost has no relation to how much of probBudget it
+        # actually covers. overBudget() (see graphSearch's top) is what
+        # keeps a pathological graph/horizon/branching combination from
+        # running far longer in real time than availableTime would
+        # suggest - whatever has been planned in previous rounds is kept
+        # and returned as-is.
+        while min(robotTime) < probBudget and not overBudget(): #As long as there is time
 
             horizonVisited = {} #Format Node: horizonVisitedTime
             roundPaths = [] #Every robot's full planned (path, times) this horizon iteration
@@ -1731,7 +1812,18 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
     def computeExpTime(visitedTimes, G: Graph):
         #Computing the expected search time
         if useNodePriorObjective:
-            return sum(node.prior * visitedTimes[node.idx] for node in G.nodes)
+            # float(): node.prior is a plain Python float, but
+            # visitedTimes[...] traces back to the scene's own
+            # travel-time table, which real 3D scenes store as float32 -
+            # left as a bare sum(), the result would silently come back
+            # as a numpy.float32 scalar instead of a native float
+            # (unlike cellpriors, which is always float64). FastAPI's
+            # jsonable_encoder can serialize numpy.float64 (it happens to
+            # subclass Python float) but not numpy.float32, so an
+            # unwrapped float32 fitness crashes /api/run's JSON response
+            # with an opaque 500 whenever a full clearance is actually
+            # found.
+            return float(sum(node.prior * visitedTimes[node.idx] for node in G.nodes))
 
         eff = 0
         foundPriors = np.copy(cellpriors)
@@ -1942,14 +2034,16 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
     # THE REAL GRAPH SEARCH ALGORITHIM USING EVERYTHING FROM ABOVE
     # ------------------------------------------------------------
 
-    startingTime = time.monotonic()
+    # startingTime/checkedTreesCounter are already initialized at the very
+    # top of this function (see "WALL-CLOCK SAFETY VALVE" above) - not
+    # reset here, so shouldStop() and overBudget() keep measuring from the
+    # same original starting point.
     bestFitness = np.inf
     bestStrategy = None
     bestTree = None
     bestVisitedTimes = None
     counter = [0] * startNodes
     currGen = []
-    checkedTreesCounter = 0
 
     # Tracks whether ANY clearance strategy has been found so far - not just
     # whether the current bestFitness is finite - so treeSearch (see below)
