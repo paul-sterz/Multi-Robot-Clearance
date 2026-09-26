@@ -35,7 +35,7 @@ from baselineTest import (
     BASELINE_METHOD_NAMES,
     BASELINE_SEARCHERS,
     METHODS_WITH_CELL_PRIOR_TIEBREAK,
-    computeCellPriorObjective,
+    COMPARED_APPROACH_NAMES,
 )
 
 CLEARING_SCENES_DIR = os.path.join(REPO_DIR, "clearing-scenes")
@@ -233,8 +233,7 @@ def approachTest3D(sceneName: str, numOfRuns: int, availableRobots: int, availab
 def baselineTest3D(
     sceneName: str,
     numOfRuns: int,
-    robotIncreasePercent: float,
-    thirdApproachName: str,
+    availableRobots: int,
     availableTime,
     maxTrees,
     epsilon=None,
@@ -243,25 +242,35 @@ def baselineTest3D(
 
     scene, G, D, startNodes, cellpriors, travelTime = build3DEnvironment(sceneName, epsilon=epsilon)
 
-    thirdApproachIdx = APPROACH_NAMES.index(thirdApproachName)
-    thirdApproachSearchFn = APPROACHES[thirdApproachIdx]
+    comparedApproachSearchFns = [
+        APPROACHES[APPROACH_NAMES.index(name)] for name in COMPARED_APPROACH_NAMES
+    ]
 
-    methodNames = BASELINE_METHOD_NAMES + [thirdApproachName]
+    methodNames = BASELINE_METHOD_NAMES + COMPARED_APPROACH_NAMES
+    numBaselineMethods = len(BASELINE_METHOD_NAMES)
     numMethods = len(methodNames)
 
     resultsCellPrior = np.zeros((numOfRuns, numMethods))
-    resultsRobots = np.zeros((numOfRuns, numMethods))
+    resultsRobots = np.full((numOfRuns, numMethods), availableRobots, dtype=float)
     resultsTrees = np.zeros((numOfRuns, numMethods))
     resultsTime = np.zeros((numOfRuns, numMethods))
 
+    # All 4 methods below get the exact same fixed availableRobots budget -
+    # resultsRobots is filled with that constant up front (above) rather
+    # than per-method below, since it no longer varies by method or run.
     for i in range(numOfRuns):
-
-        runRobotCounts = {}
 
         for methodIdx, methodName in enumerate(BASELINE_METHOD_NAMES):
 
             searchFn = BASELINE_SEARCHERS[methodIdx]
 
+            # obstacles=None below is also what makes each baseline
+            # Searcher.py's own tiebreak (when it accepts cellpriors/D)
+            # use the cheap node-prior objective instead of summing over
+            # cellpriors/D - see "CELL-PRIOR vs. NODE-PRIOR" in their
+            # Searcher.py. availableRobots there is a hard cap - a run
+            # without a feasible tree within maxTrees/availableTime comes
+            # back with strategy=None.
             tiebreakKwargs = (
                 {"cellpriors": cellpriors, "D": D}
                 if methodName in METHODS_WITH_CELL_PRIOR_TIEBREAK
@@ -273,6 +282,7 @@ def baselineTest3D(
             strategy, tree, checkedTrees, robotsNeeded = searchFn(
                 G,
                 availableTime,
+                availableRobots,
                 startNodes,
                 None,
                 None,
@@ -284,44 +294,58 @@ def baselineTest3D(
 
             resultsTime[i, methodIdx] = time.time() - startTime
             resultsTrees[i, methodIdx] = checkedTrees
-            resultsRobots[i, methodIdx] = robotsNeeded
 
-            resultsCellPrior[i, methodIdx] = computeCellPriorObjective(
-                strategy, startNodes, D, cellpriors
+            # Unlike baselineTest()'s 2D path, this NEVER calls
+            # baselineTest.py's computeCellPriorObjective() (the expensive
+            # sum over cellpriors/D, one term per real-world mesh cell) -
+            # a real scene can have orders of magnitude more cells than
+            # nodes, and this runs once per run per baseline method.
+            # approachTest.py's computeNodePriorObjective() gives the same
+            # kind of "prior mass times first-visit time" score, just summed
+            # over nodes (node.prior already is the pre-summed prior mass of
+            # that node's own detection set - see adapter.py) instead of
+            # cells.
+            resultsCellPrior[i, methodIdx] = (
+                computeNodePriorObjective(strategy, G, startNodes)
+                if strategy is not None else np.inf
             )
-
-            runRobotCounts[methodName] = robotsNeeded
 
             print(methodName + " beendet")
 
-        baseRobots = max(runRobotCounts.values())
-        thirdApproachRobots = max(
-            1, math.ceil(baseRobots * (1 + robotIncreasePercent / 100))
-        )
+        # ---- COMPARED APPROACHES (Greedy BLabel Order, DP BLabel Order):
+        # ---- same fixed availableRobots budget as the baseline methods.
+        for approachOffset, (approachName, searchFn) in enumerate(
+            zip(COMPARED_APPROACH_NAMES, comparedApproachSearchFns)
+        ):
 
-        startTime = time.time()
+            columnIdx = numBaselineMethods + approachOffset
 
-        strategy, tree, checkedTrees, cellPriorFitness = thirdApproachSearchFn(
-            G,
-            availableTime,
-            thirdApproachRobots,
-            startNodes,
-            None,
-            None,
-            None,
-            cellpriors,
-            D,
-            maxTrees=maxTrees,
-            travelTime=travelTime,
-            probBudget=probBudget,
-        )
+            startTime = time.time()
 
-        resultsTime[i, -1] = time.time() - startTime
-        resultsTrees[i, -1] = checkedTrees
-        resultsRobots[i, -1] = thirdApproachRobots
-        resultsCellPrior[i, -1] = cellPriorFitness
+            # Greedy BLabel Order / DP BLabel Order's own graphSearch()
+            # already only ever uses the node-prior objective in 3D (same
+            # obstacles=None signal, see their Searcher.py), so the fitness
+            # they return directly is already cheap to compute.
+            strategy, tree, checkedTrees, cellPriorFitness = searchFn(
+                G,
+                availableTime,
+                availableRobots,
+                startNodes,
+                None,
+                None,
+                None,
+                cellpriors,
+                D,
+                maxTrees=maxTrees,
+                travelTime=travelTime,
+                probBudget=probBudget,
+            )
 
-        print(thirdApproachName + " beendet")
+            resultsTime[i, columnIdx] = time.time() - startTime
+            resultsTrees[i, columnIdx] = checkedTrees
+            resultsCellPrior[i, columnIdx] = cellPriorFitness
+
+            print(approachName + " beendet")
 
         print("Run Nummer " + str(i) + " beendet!")
 

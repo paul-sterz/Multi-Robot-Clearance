@@ -183,6 +183,13 @@ with st.sidebar:
 
         computation_time = None
 
+    available_robots = st.slider(
+        "Available Robots",
+        1,
+        50,
+        6,
+    )
+
     alpha = st.slider(
         "Alpha",
         0.1,
@@ -487,6 +494,7 @@ if run:
         strategy, T, checkedTreeCounter, robotsNeeded = graphSearch(
             G,
             computation_time,
+            available_robots,
             startNodes,
             obstacles,
             distanceMap,

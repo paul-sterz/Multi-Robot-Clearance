@@ -1,6 +1,5 @@
 import os
 import sys
-import math
 import importlib.util
 import time
 
@@ -22,29 +21,30 @@ from approachTest import (
 
 
 # ==================================================
-# LOADING THE 4 BASELINE METHODS
+# LOADING THE 2 BASELINE METHODS
 # ==================================================
-# "Baseline", "Baseline Modified", "Baseline2" and "Baseline2 Modified" are
-# not Python packages and define their own Graph.py / TrajectoryPlanning.py
-# / Searcher.py using plain, unqualified imports (e.g. "from Graph import
-# Graph"). Their Graph.py and TrajectoryPlanning.py are identical across all
-# four folders, so the shared modules are loaded once (from the "Baseline"
-# folder) and only Searcher.py is loaded separately for each method - same
-# pattern as approachTest.py.
+# "Baseline" and "Baseline Modified" are not Python packages and define
+# their own Graph.py / TrajectoryPlanning.py / Searcher.py using plain,
+# unqualified imports (e.g. "from Graph import Graph"). Their Graph.py and
+# TrajectoryPlanning.py are identical across both folders, so the shared
+# modules are loaded once (from the "Baseline" folder) and only Searcher.py
+# is loaded separately for each method - same pattern as approachTest.py.
+# ("Baseline2"/"Baseline2 Modified" used to be loaded here too, but are no
+# longer part of this comparison.)
 #
 # IMPORTANT: none of these folders' own GraphBuilderV2.py is ever loaded
 # here. It builds its own graph via a random free-space partitioning that is
 # independent of (and structurally different from - different node/edge
-# count) the one approachTest.py's graphBuilder() builds for the 4
-# DP/Greedy-style approaches. Comparing the baseline methods against the 3rd
-# approach on different graphs would be meaningless, so instead all methods
-# run on the exact same graph (built once via approachTest.py's
-# graphBuilder(), see baselineTest() below). This works because none of the
-# baseline Searcher.py files read anything graph-specific beyond
-# G.nodes[i].pos / G.adj[...] (checked directly in Searcher.py: none of them
-# touch a node's .prior or an edge's .time/.robotType, and each internally
+# count) the one approachTest.py's graphBuilder() builds for the compared
+# approaches (Greedy BLabel Order, DP BLabel Order). Comparing the baseline
+# methods against them on different graphs would be meaningless, so instead
+# all methods run on the exact same graph (built once via approachTest.py's
+# graphBuilder(), see baselineTest() below). This works because neither
+# baseline Searcher.py reads anything graph-specific beyond G.nodes[i].pos /
+# G.adj[...] and (only "Baseline Modified", only for its 3D-scene node-prior
+# tiebreak - see its Searcher.py) G.nodes[i].prior, and each internally
 # rebuilds its own spanning-tree copy using its own bound Graph() class
-# regardless of what G it was given) - they only need a Graph object shaped
+# regardless of what G it was given - they only need a Graph object shaped
 # like their own, not literally built by GraphBuilderV2.
 #
 # Because approachTest.py has already registered its own "Graph" and
@@ -59,17 +59,26 @@ BASELINE_SHARED_DIR = os.path.join(REPO_DIR, "Baseline")
 BASELINE_METHOD_DIRS = {
     "Baseline": os.path.join(REPO_DIR, "Baseline"),
     "Baseline Modified": os.path.join(REPO_DIR, "Baseline Modified"),
-    "Baseline2": os.path.join(REPO_DIR, "Baseline2"),
-    "Baseline2 Modified": os.path.join(REPO_DIR, "Baseline2 Modified"),
 }
 
 BASELINE_METHOD_NAMES = list(BASELINE_METHOD_DIRS.keys())
 
-# The "Modified" variants' graphSearch() additionally accepts cellpriors/D
-# to break ties (same neededRobots) by cell-prior objective instead of
-# keeping whichever tree was found first - see the "TEST" comments in their
-# Searcher.py files. "Baseline" and "Baseline2" don't accept these kwargs.
-METHODS_WITH_CELL_PRIOR_TIEBREAK = {"Baseline Modified", "Baseline2 Modified"}
+# "Baseline Modified"'s graphSearch() additionally accepts cellpriors/D to
+# break ties (same neededRobots) by a prior-based objective instead of
+# keeping whichever tree was found first - see the "CELL-PRIOR vs.
+# NODE-PRIOR" comments in its Searcher.py. "Baseline" doesn't accept these
+# kwargs.
+METHODS_WITH_CELL_PRIOR_TIEBREAK = {"Baseline Modified"}
+
+# The 2 fixed DP/Greedy-style approaches "Baseline"/"Baseline Modified" are
+# compared against - always both, no longer a single user-selectable "3rd
+# approach". All 4 methods now run with the exact same fixed availableRobots
+# budget (see baselineTest() below) - "Baseline"/"Baseline Modified" no
+# longer self-determine their own minimum robot count (their Searcher.py's
+# availableRobots is a hard cap, not a target to search for - see the
+# "CELL-PRIOR vs. NODE-PRIOR" comments in their Searcher.py), so there is no
+# baseline-derived count left to scale the compared approaches' budget from.
+COMPARED_APPROACH_NAMES = ["Greedy BLabel Order", "DP BLabel Order"]
 
 
 def _loadModule(name, path):
@@ -97,7 +106,7 @@ def _loadWithTemporarySysModules(overrides, name, path):
                 del sys.modules[overrideName]
 
 
-# Shared modules (identical across all 4 baseline folders) - loaded once
+# Shared modules (identical across both baseline folders) - loaded once
 # from "Baseline", only so that each Searcher.py's own "from Graph import
 # Graph" / "from TrajectoryPlanning import aStar" resolve correctly.
 _baselineGraphModule = _loadModule(
@@ -120,7 +129,7 @@ def _loadBaselineSearcher(methodDir, uniqueSuffix):
     return module.graphSearch
 
 
-# The 4 baseline search methods, in the same fixed order as
+# The 2 baseline search methods, in the same fixed order as
 # BASELINE_METHOD_NAMES
 BASELINE_SEARCHERS = [
     _loadBaselineSearcher(BASELINE_METHOD_DIRS[name], name.replace(" ", "_"))
@@ -129,19 +138,26 @@ BASELINE_SEARCHERS = [
 
 
 # ==================================================
-# CELL PRIOR OBJECTIVE FOR THE 4 BASELINE METHODS
+# CELL PRIOR OBJECTIVE FOR THE 2 BASELINE METHODS
 #
-# Unlike the 4 approaches loaded in approachTest.py (whose Searcher.py
-# already returns the cell-prior objective directly as bestFitness, computed
-# internally against the graph's priors/detection sets), none of the 4
-# baseline Searcher.py files know anything about priors - they only ever
-# track/minimize the number of robots needed - so the cell-prior objective
-# for a winning strategy has to be computed here instead, by walking the
+# Unlike the compared approaches loaded from approachTest.py (whose
+# Searcher.py already returns its own objective directly as bestFitness,
+# computed internally against the graph's priors/detection sets), "Baseline"
+# knows nothing about priors at all, and "Baseline Modified" only uses them
+# internally to pick its own best tree (see its Searcher.py) - neither
+# returns a prior-based objective value directly, so the cell-prior
+# objective for a winning strategy has to be computed here instead, by walking the
 # strategy exactly like DP's internal computeExpTime()/approachTest.py's
 # computeNodePriorObjective(): every node's first-visit time is determined
 # from the strategy's moves, nodes are processed in ascending visit-time
 # order, and each detected cell only ever contributes its prior once - to
 # whichever node reaches it first.
+#
+# NOTE: this is the expensive cell-sum version, only safe to call on the 2D
+# synthetic grid (small cellpriors/D). The 3D-scene equivalent
+# (3DTest.py's baselineTest3D()) uses approachTest.py's
+# computeNodePriorObjective() instead, to avoid ever summing over a real
+# scene's (potentially huge) cell count - see its own comment.
 # ==================================================
 
 
@@ -187,8 +203,7 @@ def computeCellPriorObjective(strategy, startNodes, D, cellpriors):
 def baselineTest(
     detecRad: int,
     numOfRuns: int,
-    robotIncreasePercent: float,
-    thirdApproachName: str,
+    availableRobots: int,
     availableTime,
     maxTrees,
     epsilon=0.05,
@@ -201,9 +216,11 @@ def baselineTest(
     obstacles, hotspots = buildEnvironment()
 
     # ONLY ONE GRAPH: built once (DP-style, with priors) and reused for every
-    # run and every one of the 5 compared methods below - the 4 baseline
-    # methods run on it exactly like the 4 approaches in approachTest.py do,
-    # see the module-level comment above for why that is safe.
+    # run and every one of the 4 compared methods below (Baseline, Baseline
+    # Modified, Greedy BLabel Order, DP BLabel Order) - the 2 baseline
+    # methods run on it exactly like the compared approaches in
+    # approachTest.py do, see the module-level comment above for why that is
+    # safe.
     G, edges_shady, D, startNodes, priors = graphBuilder(
         obstacles,
         hotspots,
@@ -217,27 +234,32 @@ def baselineTest(
 
     distanceMap = computeObstacleDistance(obstacles)
 
-    thirdApproachIdx = APPROACH_NAMES.index(thirdApproachName)
-    thirdApproachSearchFn = APPROACHES[thirdApproachIdx]
+    comparedApproachSearchFns = [
+        APPROACHES[APPROACH_NAMES.index(name)] for name in COMPARED_APPROACH_NAMES
+    ]
 
-    methodNames = BASELINE_METHOD_NAMES + [thirdApproachName]
+    methodNames = BASELINE_METHOD_NAMES + COMPARED_APPROACH_NAMES
+    numBaselineMethods = len(BASELINE_METHOD_NAMES)
     numMethods = len(methodNames)
 
     resultsCellPrior = np.zeros((numOfRuns, numMethods))
-    resultsRobots = np.zeros((numOfRuns, numMethods))
+    resultsRobots = np.full((numOfRuns, numMethods), availableRobots, dtype=float)
     resultsTrees = np.zeros((numOfRuns, numMethods))
     resultsTime = np.zeros((numOfRuns, numMethods))
 
     #------------------------------------------------------------------
     # STEP 2: EVALUATE THE METHODS AND STORE THE RESULTS
+    #
+    # All 4 methods below get the exact same fixed availableRobots budget -
+    # resultsRobots is filled with that constant up front (above) rather
+    # than per-method here, since it no longer varies by method or run.
     #------------------------------------------------------------------
 
     for i in range(numOfRuns):
 
-        runRobotCounts = {}
-
-        # ---- All 4 baseline methods: always use their own minimum number
-        # ---- of robots, computed internally.
+        # ---- Both baseline methods: availableRobots is a hard cap for
+        # ---- them (see their Searcher.py) - a run without a feasible tree
+        # ---- within maxTrees/availableTime comes back with strategy=None.
         for methodIdx, methodName in enumerate(BASELINE_METHOD_NAMES):
 
             searchFn = BASELINE_SEARCHERS[methodIdx]
@@ -253,6 +275,7 @@ def baselineTest(
             strategy, tree, checkedTrees, robotsNeeded = searchFn(
                 G,
                 availableTime,
+                availableRobots,
                 startNodes,
                 obstacles,
                 distanceMap,
@@ -263,45 +286,42 @@ def baselineTest(
 
             resultsTime[i, methodIdx] = time.time() - startTime
             resultsTrees[i, methodIdx] = checkedTrees
-            resultsRobots[i, methodIdx] = robotsNeeded
 
             resultsCellPrior[i, methodIdx] = computeCellPriorObjective(
                 strategy, startNodes, D, priors
             )
 
-            runRobotCounts[methodName] = robotsNeeded
-
             print(methodName + " beendet")
 
-        # ---- 3rd approach: gets the (rounded up) minimum robots needed by
-        # ---- the baselines this run, scaled by the chosen percentage.
-        baseRobots = max(runRobotCounts.values())
-        thirdApproachRobots = max(
-            1, math.ceil(baseRobots * (1 + robotIncreasePercent / 100))
-        )
+        # ---- COMPARED APPROACHES (Greedy BLabel Order, DP BLabel Order):
+        # ---- same fixed availableRobots budget as the baseline methods.
+        for approachOffset, (approachName, searchFn) in enumerate(
+            zip(COMPARED_APPROACH_NAMES, comparedApproachSearchFns)
+        ):
 
-        startTime = time.time()
+            columnIdx = numBaselineMethods + approachOffset
 
-        strategy, tree, checkedTrees, cellPriorFitness = thirdApproachSearchFn(
-            G,
-            availableTime,
-            thirdApproachRobots,
-            startNodes,
-            obstacles,
-            distanceMap,
-            GRAPH_ALPHA,
-            priors,
-            D,
-            maxTrees=maxTrees,
-            probBudget=probBudget,
-        )
+            startTime = time.time()
 
-        resultsTime[i, -1] = time.time() - startTime
-        resultsTrees[i, -1] = checkedTrees
-        resultsRobots[i, -1] = thirdApproachRobots
-        resultsCellPrior[i, -1] = cellPriorFitness
+            strategy, tree, checkedTrees, cellPriorFitness = searchFn(
+                G,
+                availableTime,
+                availableRobots,
+                startNodes,
+                obstacles,
+                distanceMap,
+                GRAPH_ALPHA,
+                priors,
+                D,
+                maxTrees=maxTrees,
+                probBudget=probBudget,
+            )
 
-        print(thirdApproachName + " beendet")
+            resultsTime[i, columnIdx] = time.time() - startTime
+            resultsTrees[i, columnIdx] = checkedTrees
+            resultsCellPrior[i, columnIdx] = cellPriorFitness
+
+            print(approachName + " beendet")
 
         print("Run Nummer " + str(i) + " beendet!")
 

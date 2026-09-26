@@ -5,19 +5,27 @@ from TrajectoryPlanning import aStar
 import time
 import copy
 
-def graphSearch(G : Graph, availableTime, startNodes, obstacles, distanceMap, alpha, maxTrees=None, travelTime=None):
+def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles, distanceMap, alpha, maxTrees=None, travelTime=None):
     #INPUT:
     # G: a Graph object repesenting the given Graph
     # availableTime: the available computation time budget in seconds (ignored if maxTrees is given)
+    # availableRobots: a fixed robot budget - a hard cap, not a target to
+    #          minimize. A tree whose B-label formula needs more robots than
+    #          this is infeasible and skipped (like "no clearance possible"
+    #          for the DP/Greedy approaches, which this method has no
+    #          FHPE_SA-style fallback for); a feasible tree always uses
+    #          every one of the availableRobots for maximum parallelism, so
+    #          the actual robot count is never below this.
     # startNodes: an integer representing that all nodes from 0 to startNodes-1 are valid roots
     # maxTrees: if given (not None), stop after evaluating exactly this many spanning trees instead of using availableTime
 
     #OUTPUT:
     #bestStrategy: list of moves. First entry is (None, root, totalRobots), all following
-    #              entries are (source, target, robots, t_departure, t_arrival)
-    #bestTree: the spanning tree (as a Graph) that produced bestStrategy
+    #              entries are (source, target, robots, t_departure, t_arrival). None if
+    #              no random tree tried within budget was feasible with availableRobots.
+    #bestTree: the spanning tree (as a Graph) that produced bestStrategy, or None
     #checkedTreesCounter: how many random spanning trees were evaluated
-    #minCost: the number of robots needed by bestStrategy
+    #robotsNeeded: availableRobots if a feasible tree was found, otherwise np.inf
 
 
     #Calculating the distance matrix for all nodes
@@ -184,12 +192,19 @@ def graphSearch(G : Graph, availableTime, startNodes, obstacles, distanceMap, al
 
 
         explorePath(root, None)
-        robotCost = labels[(None, root)]
 
-        return transformStrategy(strategy, labels, robotCost, root)
-        
+        # labels[(None, root)] is this tree's own theoretical B-label
+        # minimum - a hard lower bound, so a tree that already needs more
+        # than the fixed availableRobots budget can never be feasible and
+        # is rejected here, before running the (much more expensive) LBAP /
+        # level-distribution machinery below at all.
+        if labels[(None, root)] > availableRobots:
+            return None, None
 
-    def transformStrategy(strategy, labels, minRobots, root):
+        return transformStrategy(strategy, labels, availableRobots, root)
+
+
+    def transformStrategy(strategy, labels, availableRobots, root):
         """
         strategy:
             [(node, releaseIndex), ...]
@@ -383,7 +398,13 @@ def graphSearch(G : Graph, availableTime, startNodes, obstacles, distanceMap, al
         # LEVEL DISTRIBUTION
         # ============================================================
 
-        def levelDistribution(strategy, minRobots):
+        def levelDistribution(strategy, robotBudget):
+            # robotBudget (== availableRobots) is a hard cap here, not a
+            # target to search upward from: unlike the old
+            # "recurse with minRobots + 1" behaviour, running out of
+            # capacity now means this tree is infeasible with the given
+            # robot budget - signalled by returning None - rather than
+            # silently trying with more robots than were actually given.
 
             levels = []
             currentLevel = []
@@ -409,14 +430,11 @@ def graphSearch(G : Graph, availableTime, startNodes, obstacles, distanceMap, al
                 if not currentLevel:
 
                     levelCapacity = (
-                        minRobots - len(activeGuards)
+                        robotBudget - len(activeGuards)
                     )
 
                     if levelCapacity < 1:
-                        return levelDistribution(
-                            strategy,
-                            minRobots + 1
-                        )
+                        return None
 
                 # ----------------------------------------------------
                 # No more robots available inside this level
@@ -428,14 +446,11 @@ def graphSearch(G : Graph, availableTime, startNodes, obstacles, distanceMap, al
                     currentLevel = []
 
                     levelCapacity = (
-                        minRobots - len(activeGuards)
+                        robotBudget - len(activeGuards)
                     )
 
                     if levelCapacity < 1:
-                        return levelDistribution(
-                            strategy,
-                            minRobots + 1
-                        )
+                        return None
 
                 # Store global strategy index as well!
                 currentLevel.append(
@@ -487,17 +502,25 @@ def graphSearch(G : Graph, availableTime, startNodes, obstacles, distanceMap, al
             if currentLevel:
                 levels.append(currentLevel)
 
-            return levels, minRobots
+            return levels, robotBudget
 
 
         # ============================================================
         # CREATE LEVELS
         # ============================================================
 
-        # If labels[(None, root)] is your B-label / minimum robot count:
-        initialRobotNumber = minRobots
+        # availableRobots is used directly and in full (not the tree's own
+        # B-label minimum) - every feasible tree parallelizes with the
+        # entire given robot budget.
+        levelResult = levelDistribution(strategy, availableRobots)
 
-        levels, robotsNeeded = levelDistribution(strategy, initialRobotNumber)
+        if levelResult is None:
+            # Structurally infeasible with this many robots, even though
+            # labels[(None, root)] alone (checked earlier, in treeSearch)
+            # suggested it might fit.
+            return None, None
+
+        levels, robotsNeeded = levelResult
 
 
         # ============================================================
@@ -743,9 +766,20 @@ def graphSearch(G : Graph, availableTime, startNodes, obstacles, distanceMap, al
 
     # ------------------------------------------------------------
     # THE REAL GRAPH SEARCH ALGORITHIM USING EVERYTHING FROM ABOVE
+    #
+    # availableRobots is now a fixed input, not something to search for the
+    # minimum of - every feasible tree uses exactly availableRobots, so
+    # there is nothing left to rank candidate trees on: the FIRST feasible
+    # (random-tree, root) pair found is kept and never replaced. The search
+    # still spends the full availableTime/maxTrees budget on further trees
+    # regardless (not stopping the moment one is found) - not because that
+    # changes the result, but because Baseline Modified/Greedy BLabel
+    # Order/DP BLabel Order all do too, and stopping early here would make
+    # "Spanning Trees Checked"/"Used Time" wildly incomparable across
+    # methods in a Monte Carlo comparison run under otherwise-identical
+    # conditions (baselineTest.py's whole point).
     # ------------------------------------------------------------
     startingTime = time.monotonic()
-    minCost = np.inf
     bestStrategy = None
     bestTree = None
     checkedTreesCounter = 0
@@ -754,11 +788,12 @@ def graphSearch(G : Graph, availableTime, startNodes, obstacles, distanceMap, al
         checkedTreesCounter += 1
         root = random.randint(0,startNodes-1)
         T = computeRandomSpanningTree(G,root)
-        strat, neededRobots = treeSearch(T,root)
-        if neededRobots < minCost:
-            minCost = neededRobots
+        strat, _ = treeSearch(T,root)
+        if strat is not None and bestStrategy is None:
             bestStrategy = strat
             bestTree = T
 
-    return bestStrategy, bestTree, checkedTreesCounter, minCost
+    robotsNeeded = availableRobots if bestStrategy is not None else np.inf
+
+    return bestStrategy, bestTree, checkedTreesCounter, robotsNeeded
 
