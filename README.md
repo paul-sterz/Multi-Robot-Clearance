@@ -7,6 +7,10 @@ This project investigates how multiple robots can **systematically search and cl
 The goal is to combine the guarantees of **graph-based search and clearance algorithms** with the efficiency of **probabilistic search strategies**. The resulting approach aims to coordinate multiple robots in complex environments while minimizing the expected time required to find a hidden target.
 
 ---
+## 🎥 Visualization
+
+The following video shows the developed multi-robot clearance algorithm in action
+---
 
 ## 🛠️ Technologies & Methods
 
@@ -200,11 +204,4 @@ Once the server has started, open [**http://localhost:8000**](http://localhost:8
 4. **Run the algorithm** — Click **Run** to compute the clearance strategy.
 5. **Visualize the result** — The computed strategy is automatically played back in the 3D environment, allowing the multi-robot exploration to be observed in real time.
 
----
-
-## 🎥 Visualization
-
-The following video shows the developed multi-robot clearance algorithm in action.
-
-<!-- Replace with embedded video / GIF / link -->
 
