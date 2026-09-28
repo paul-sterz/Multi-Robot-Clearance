@@ -9,7 +9,11 @@ The goal is to combine the guarantees of **graph-based search and clearance algo
 ---
 ## 🎥 Visualization
 
-The following video shows the developed multi-robot clearance algorithm in action
+
+
+
+
+
 ---
 
 ## 🛠️ Technologies & Methods
