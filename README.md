@@ -173,42 +173,32 @@ Overall, extending the framework beyond the modelling assumptions and structural
 
 ## ▶️ Running the Project
 
-### Requirements
+#### Requirements
 
-* MATLAB [version]
-* [Additional dependencies]
-* [Required toolboxes]
-
-### Installation
-
-Clone the repository:
+- Python 3.10+ (developed and tested with Python 3.14)
+- Install the required dependencies:
 
 ```bash
-git clone https://github.com/paul-sterz/multi-robot-clearance.git
-cd multi-robot-clearance
+pip install -r strategy_service/requirements.txt -r clearing-scenes/requirements.txt
 ```
 
-### Running an Experiment
+#### Start the Server
 
-[Describe the main entry point here.]
+From the repository root, run:
 
-For example:
-
-```matlab
-[main script / function]
+```bash
+python -m strategy_service.server
 ```
 
-The repository contains implementations of the different approaches in the following directories:
+Once the server has started, open [**http://localhost:8000**](http://localhost:8000) in your browser.
 
-```text
-Baseline/
-Modified Baseline/
-My Approach/
-Monte Carlo Simulation/
-Sydney-Decomposition Approach/
-```
+#### Usage
 
-Further information about the individual experiments can be found in the corresponding directories.
+1. **Select a scene** — Choose one of the available real-world environments, such as Christ Church, Blenheim Palace, or the Bodleian Library.
+2. **Define the search problem** — Place hotspots and starting vertices directly on the 3D surface.
+3. **Configure the strategy** — Select an approach (DP, DP B-Label Order, Greedy, or Greedy B-Label Order) and specify the available robot and time budget.
+4. **Run the algorithm** — Click **Run** to compute the clearance strategy.
+5. **Visualize the result** — The computed strategy is automatically played back in the 3D environment, allowing the multi-robot exploration to be observed in real time.
 
 ---
 
