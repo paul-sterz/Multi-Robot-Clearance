@@ -139,27 +139,35 @@ This project provided practical experience at the intersection of mathematical t
 
 ## 🚀 How It Can Be Improved
 
-There are several directions in which the approach could be extended.
+Despite the promising results, several limitations remain and provide interesting directions for future work.
 
-### More Efficient Search
+### More Realistic Target and Sensor Models
 
-The current approach evaluates a potentially large number of candidate exploration strategies. More sophisticated search and optimization methods could reduce the computational effort.
+The current framework assumes **perfect sensing**, a **static spatial prior**, and a target with **unbounded speed**. Future work could incorporate temporally changing and correlated priors to model target movement and recency effects, as well as probabilistic sensor models to account for imperfect detection.
 
-### Dynamic Priors
+### Continuous Robot Trajectories
 
-The current framework primarily considers static prior information. A future system could update the probability distribution dynamically as robots collect new information.
+The current GSST framework only considers detection at graph nodes. Robots cannot detect parts of the environment while moving along edges.
 
-### Larger Robot Teams
+Extending the framework to **continuous robot trajectories** could therefore lead to more efficient strategies by allowing robots to detect their surroundings while travelling. This would require a more detailed treatment of trajectories, visibility, and potential recontamination during movement.
 
-The optimization of exploration orders becomes increasingly difficult as the number of robots grows. More scalable approaches could be investigated for larger teams.
+### Non-Monotone Search
 
-### Real-World Deployment
+GSST is restricted to **monotone search strategies**, which means that previously cleared regions cannot become contaminated again. As a result, some environments may require more robots than are actually necessary for clearance.
 
-The current evaluation is simulation-based. An important next step would be to transfer the approach to physical robots and investigate the effects of sensor noise, localization errors, communication delays, and imperfect motion.
+Extending the approach to **non-monotone strategies** could enable additional environments to be cleared with fewer robots. However, this would substantially increase the complexity of strategy generation and execution.
 
-### Learning-Based Approaches
+### Improved Local Clearance Decisions
 
-Machine learning could be investigated as an additional mechanism for predicting promising exploration strategies or learning search policies from previously solved environments.
+The current local clearance strategy uses a heuristic to determine when performing local clearance is beneficial.
+
+This decision could be improved by developing a more principled analytical criterion based on the **additional guaranteed probability mass** obtained through clearance relative to the additional time required. Alternatively, a **learned decision model** could predict when local clearance is advantageous based on properties of the environment and its prior distribution.
+
+### More Accurate Objective Functions
+
+The current objective is based on node probabilities and does not fully account for **overlapping detection sets**. Incorporating the actual probability mass covered by each detection set could provide a more accurate estimate of expected search performance.
+
+Overall, extending the framework beyond the modelling assumptions and structural constraints of GSST could lead to more realistic, efficient, and flexible multi-robot search strategies.
 
 ---
 
@@ -210,12 +218,3 @@ The following video shows the developed multi-robot clearance algorithm in actio
 
 <!-- Replace with embedded video / GIF / link -->
 
-[▶️ Watch the visualization](VIDEO_LINK)
-
-The visualization demonstrates the coordinated exploration of the environment and the resulting clearance strategy.
-
----
-
-## 📄 License
-
-[Add license if applicable.]
