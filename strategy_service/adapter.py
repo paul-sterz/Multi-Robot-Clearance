@@ -46,7 +46,7 @@ from strategy_service.approaches import Graph  # noqa: E402
 # is built once per scene and reused, rather than re-assembled from
 # `evader_edges` on every /api/priors preview call. Keyed by scene.name, NOT
 # id(scene): server.py's own long-lived process does cache one Scene object
-# per name for its whole lifetime, but "Monte Carlo Simulation/3DTest.py"
+# per name for its whole lifetime, but "monte-carlo-simulation/3DTest.py"
 # (loaded via importlib, not a normal import registered in sys.modules) gets
 # re-exec'd from scratch on every Streamlit rerun, so its own Scene objects
 # are garbage-collected and recreated constantly. CPython then happily

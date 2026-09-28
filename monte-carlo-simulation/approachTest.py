@@ -9,28 +9,30 @@ import numpy as np
 # ==================================================
 # LOADING THE 4 APPROACHES
 # ==================================================
-# The approach folders ("DP", "DP BLabel Order", "Greedy", "Greedy BLabel
-# Order") are not Python packages (some names contain spaces) and each one
-# defines its own Graph.py / GraphBuilder.py / TrajectoryPlanning.py /
-# Searcher.py using plain, unqualified imports (e.g. "from Graph import
-# Graph"). Graph.py, GraphBuilder.py and TrajectoryPlanning.py are
-# identical across all approaches, only Searcher.py differs. So the shared
-# modules are loaded once (from the DP folder) and only Searcher.py is
-# loaded separately - and under a unique module name - for every approach.
+# The approach folders (on disk: "dp", "dp-blabel-order", "greedy",
+# "greedy-blabel-order" - the keys below are the display/approach names
+# used everywhere else in this codebase, not the folder names) are not
+# Python packages and each one defines its own Graph.py / GraphBuilder.py /
+# TrajectoryPlanning.py / Searcher.py using plain, unqualified imports
+# (e.g. "from Graph import Graph"). Graph.py, GraphBuilder.py and
+# TrajectoryPlanning.py are identical across all approaches, only
+# Searcher.py differs. So the shared modules are loaded once (from the dp
+# folder) and only Searcher.py is loaded separately - and under a unique
+# module name - for every approach.
 
 REPO_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 APPROACH_DIRS = {
-    "DP": os.path.join(REPO_DIR, "DP"),
-    "DP BLabel Order": os.path.join(REPO_DIR, "DP BLabel Order"),
-    "Greedy": os.path.join(REPO_DIR, "Greedy"),
-    "Greedy BLabel Order": os.path.join(REPO_DIR, "Greedy BLabel Order"),
+    "DP": os.path.join(REPO_DIR, "dp"),
+    "DP BLabel Order": os.path.join(REPO_DIR, "dp-blabel-order"),
+    "Greedy": os.path.join(REPO_DIR, "greedy"),
+    "Greedy BLabel Order": os.path.join(REPO_DIR, "greedy-blabel-order"),
 }
 
 # Shared modules (Graph.py, GraphBuilder.py, TrajectoryPlanning.py) are
-# loaded once from the DP folder; DP's own Searcher.py is still loaded
+# loaded once from the dp folder; dp's own Searcher.py is still loaded
 # separately below, alongside the other approaches.
-_SHARED_MODULES_DIR = os.path.join(REPO_DIR, "DP")
+_SHARED_MODULES_DIR = os.path.join(REPO_DIR, "dp")
 
 
 def _loadModule(name, path):

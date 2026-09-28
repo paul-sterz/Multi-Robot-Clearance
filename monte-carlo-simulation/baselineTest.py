@@ -54,11 +54,11 @@ from approachTest import (
 # these Searcher.py files, and restored again immediately afterwards - so
 # nothing outside this loading block ever observes the swap.
 
-BASELINE_SHARED_DIR = os.path.join(REPO_DIR, "Baseline")
+BASELINE_SHARED_DIR = os.path.join(REPO_DIR, "baseline")
 
 BASELINE_METHOD_DIRS = {
-    "Baseline": os.path.join(REPO_DIR, "Baseline"),
-    "Baseline Modified": os.path.join(REPO_DIR, "Baseline Modified"),
+    "Baseline": os.path.join(REPO_DIR, "baseline"),
+    "Baseline Modified": os.path.join(REPO_DIR, "baseline-modified"),
 }
 
 BASELINE_METHOD_NAMES = list(BASELINE_METHOD_DIRS.keys())

@@ -1,15 +1,15 @@
-"""Dynamic loader for the 4 approach folders (DP / DP BLabel Order / Greedy /
-Greedy BLabel Order).
+"""Dynamic loader for the 4 approach folders (dp / dp-blabel-order / greedy /
+greedy-blabel-order).
 
-Those folders are not Python packages -- two of the names contain spaces --
-and each defines its own Graph.py / GraphBuilder.py / TrajectoryPlanning.py /
-Searcher.py with plain, unqualified imports (e.g. "from Graph import Graph").
-Graph.py and TrajectoryPlanning.py are byte-identical across all four
-folders, only Searcher.py differs (allocation/scheduling logic). So the
-shared modules are loaded once from the DP folder, and each approach's own
-Searcher.py is loaded separately under a unique module name.
+Those folders are not Python packages and each defines its own Graph.py /
+GraphBuilder.py / TrajectoryPlanning.py / Searcher.py with plain,
+unqualified imports (e.g. "from Graph import Graph"). Graph.py and
+TrajectoryPlanning.py are byte-identical across all four folders, only
+Searcher.py differs (allocation/scheduling logic). So the shared modules
+are loaded once from the dp folder, and each approach's own Searcher.py is
+loaded separately under a unique module name.
 
-Same pattern as "Monte Carlo Simulation/approachTest.py", reused here so the
+Same pattern as "monte-carlo-simulation/approachTest.py", reused here so the
 scene-backed service and the existing Monte Carlo harness stay independent
 (neither imports the other).
 """
@@ -21,10 +21,10 @@ import sys
 REPO_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 APPROACH_DIRS = {
-    "dp": os.path.join(REPO_DIR, "DP"),
-    "dp-blabel": os.path.join(REPO_DIR, "DP BLabel Order"),
-    "greedy": os.path.join(REPO_DIR, "Greedy"),
-    "greedy-blabel": os.path.join(REPO_DIR, "Greedy BLabel Order"),
+    "dp": os.path.join(REPO_DIR, "dp"),
+    "dp-blabel": os.path.join(REPO_DIR, "dp-blabel-order"),
+    "greedy": os.path.join(REPO_DIR, "greedy"),
+    "greedy-blabel": os.path.join(REPO_DIR, "greedy-blabel-order"),
 }
 
 APPROACH_LABELS = {
