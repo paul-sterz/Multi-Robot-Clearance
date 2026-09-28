@@ -1,93 +1,231 @@
-# Multi Robot Clearance
+# 🤖 Guaranteed Multi-Robot Clearance with Probabilistic Priors
 
+**Bachelor Thesis Project · TU Darmstadt**
 
+This project investigates how multiple robots can **systematically search and clear an environment while taking probabilistic information about the target's location into account**.
 
-## Getting started
+The goal is to combine the guarantees of **graph-based search and clearance algorithms** with the efficiency of **probabilistic search strategies**. The resulting approach aims to coordinate multiple robots in complex environments while minimizing the expected time required to find a hidden target.
 
-To make it easy for you to get started with GitLab, here's a list of recommended next steps.
+---
 
-Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
+## 🛠️ Technologies & Methods
 
-## Add your files
+The project combines concepts from mathematics, computer science, robotics, and optimization.
 
-* [Create](https://docs.gitlab.com/user/project/repository/web_editor/#create-a-file) or [upload](https://docs.gitlab.com/user/project/repository/web_editor/#upload-a-file) files
-* [Add files using the command line](https://docs.gitlab.com/topics/git/add_files/#add-files-to-a-git-repository) or push an existing Git repository with the following command:
+### Programming & Tools
 
+* **Python** — algorithm implementation and simulation
+* **Three.js (WebGL)** — interactive 3D visualization of real-world clearing 
+* **Git** — version control
+* **LaTeX** — scientific documentation
+
+### Mathematical & Algorithmic Foundations
+
+* **Graph Theory** — representation of environments as graphs
+* **Guaranteed Search with Spanning Trees** — guaranteed exploration and clearance on trees
+* **Probability & Statistical Modeling** — representation of prior information about the target location
+* **Optimization of the Exploration Order** — optimization of the order in which regions are explored
+* **Evolutionary Algorithms for Spanning Tree Generation** — generation and optimization of promising spanning trees
+* **Raycasting & Bresenham's Algorithm** — visibility and sensor detection
+* **Multi-Robot Coordination** — coordination of multiple robots during exploration
+
+---
+
+## 🔄 The Process
+
+The project builds upon the **Graph Search and Spanning Tree (GSST)** framework for guaranteed graph-based clearance and extends it with **probabilistic target priors and multi-robot exploration optimization**.
+
+The overall process can be summarized as:
+
+```text
+Environment
+     ↓
+Graph Representation
+     ↓
+Probabilistic Prior Model
+     ↓
+Spanning Tree Generation
+     ↓
+Exploration Order Optimization
+     ↓
+Exploration Strategy
+     ↓
+Clearance Feasibility Check
+     ↓
+Evaluation
 ```
-cd existing_repo
-git remote add origin https://git.sim.informatik.tu-darmstadt.de/corobwatch/multi-robot-clearance.git
-git branch -M main
-git push -uf origin main
+
+### 1. Environment Representation
+
+The environment is represented as a graph in which nodes correspond to spatial cells and edges represent possible movements between neighboring cells.
+
+For 3D environments, the graph is constructed from the underlying spatial representation while taking obstacles into account. Sensor visibility is modeled using raycasting to determine which cells can be detected from each robot position.
+
+### 2. Probabilistic Prior
+
+Instead of assuming that the target is equally likely to be located anywhere in the environment, the search incorporates a **probabilistic prior** describing where the target is expected to be found.
+
+The prior is modeled using a **mixture of Gaussian distributions**, allowing spatial information to be represented by multiple regions of increased probability.
+
+The prior influences the exploration objective: regions with a higher probability of containing the target should ideally be explored earlier.
+
+### 3. Spanning Tree Generation
+
+The graph is transformed into spanning trees that define possible systematic exploration strategies.
+
+Different spanning trees result in different exploration paths and therefore different clearance and search times. Several strategies for generating spanning trees are investigated, including an **evolutionary approach** designed to identify promising trees efficiently.
+
+### 4. Exploration Order Optimization
+
+For multiple robots, determining **which parts of the environment should be explored first** introduces an additional optimization problem.
+
+The exploration order is optimized with respect to the probabilistic prior and the time at which individual regions are first explored.
+
+One of the objectives considered in the project is the expected search time:
+
+$$
+\mathbb{E}[T]
+=
+\sum_{v \in V} p(v)\,t_{\mathrm{first}}(v),
+$$
+
+where \(p(v)\) denotes the prior probability of the target being located at node \(v\), and \(t_{\mathrm{first}}(v)\) denotes the time at which node \(v\) is first cleared.
+
+### 5. Exploration Strategy
+
+The optimized exploration order defines a sequence of tasks that must be assigned to the available robots.
+
+This results in a **multi-level assignment problem**, which is approximated by repeatedly solving **Linear Bottleneck Assignment Problems (LBAPs)**. This provides an efficient way of distributing exploration tasks among multiple robots while accounting for their current positions and travel times.
+
+### 6. Clearance Feasibility
+
+Guaranteed clearance is not always feasible with the available number of robots. If the required clearance strategy cannot be executed with the given robot team, the algorithm switches to a **probabilistic clearance approach**.
+
+This allows the robots to continue searching even when guaranteed clearance cannot be maintained, while prioritizing regions according to the underlying probability distribution.
+
+### 7. Evaluation
+
+The developed algorithms are evaluated through simulation experiments in both **custom-built and real-world environments**.
+
+The experiments investigate the behavior and performance of the different approaches with respect to factors such as the number of robots, environment structure, probabilistic priors, and exploration strategy.
+
+
+
+---
+
+## 🧠 What I Learned
+
+This project provided practical experience at the intersection of mathematical theory, algorithm development, and simulation.
+
+### Algorithm Development
+
+* Translating mathematical ideas into working algorithms
+* Designing and modifying graph-search algorithms
+* Working with complex interacting algorithmic components
+* Handling edge cases and infeasible clearance situations
+
+### Optimization
+
+* Formulating exploration strategies as optimization problems
+* Designing objective functions based on probabilistic information
+* Working with evolutionary algorithms
+* Comparing different search and optimization strategies
+
+### Robotics & Simulation
+
+* Modeling robot motion in structured environments
+* Coordinating multiple robots
+* Representing obstacles and sensor visibility
+* Extending algorithms from 2D to 3D environments
+
+### Research
+
+* Designing experiments to evaluate algorithmic approaches
+* Interpreting simulation results
+* Identifying limitations of theoretical assumptions
+* Iteratively improving an algorithm based on experimental observations
+
+---
+
+## 🚀 How It Can Be Improved
+
+There are several directions in which the approach could be extended.
+
+### More Efficient Search
+
+The current approach evaluates a potentially large number of candidate exploration strategies. More sophisticated search and optimization methods could reduce the computational effort.
+
+### Dynamic Priors
+
+The current framework primarily considers static prior information. A future system could update the probability distribution dynamically as robots collect new information.
+
+### Larger Robot Teams
+
+The optimization of exploration orders becomes increasingly difficult as the number of robots grows. More scalable approaches could be investigated for larger teams.
+
+### Real-World Deployment
+
+The current evaluation is simulation-based. An important next step would be to transfer the approach to physical robots and investigate the effects of sensor noise, localization errors, communication delays, and imperfect motion.
+
+### Learning-Based Approaches
+
+Machine learning could be investigated as an additional mechanism for predicting promising exploration strategies or learning search policies from previously solved environments.
+
+---
+
+## ▶️ Running the Project
+
+### Requirements
+
+* MATLAB [version]
+* [Additional dependencies]
+* [Required toolboxes]
+
+### Installation
+
+Clone the repository:
+
+```bash
+git clone https://github.com/paul-sterz/multi-robot-clearance.git
+cd multi-robot-clearance
 ```
 
-## Integrate with your tools
+### Running an Experiment
 
-* [Set up project integrations](https://git.sim.informatik.tu-darmstadt.de/corobwatch/multi-robot-clearance/-/settings/integrations)
+[Describe the main entry point here.]
 
-## Collaborate with your team
+For example:
 
-* [Invite team members and collaborators](https://docs.gitlab.com/user/project/members/)
-* [Create a new merge request](https://docs.gitlab.com/user/project/merge_requests/creating_merge_requests/)
-* [Automatically close issues from merge requests](https://docs.gitlab.com/user/project/issues/managing_issues/#closing-issues-automatically)
-* [Enable merge request approvals](https://docs.gitlab.com/user/project/merge_requests/approvals/)
-* [Set auto-merge](https://docs.gitlab.com/user/project/merge_requests/auto_merge/)
+```matlab
+[main script / function]
+```
 
-## Test and Deploy
+The repository contains implementations of the different approaches in the following directories:
 
-Use the built-in continuous integration in GitLab.
+```text
+Baseline/
+Modified Baseline/
+My Approach/
+Monte Carlo Simulation/
+Sydney-Decomposition Approach/
+```
 
-* [Get started with GitLab CI/CD](https://docs.gitlab.com/ci/quick_start/)
-* [Analyze your code for known vulnerabilities with Static Application Security Testing (SAST)](https://docs.gitlab.com/user/application_security/sast/)
-* [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/topics/autodevops/requirements/)
-* [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/user/clusters/agent/)
-* [Set up protected environments](https://docs.gitlab.com/ci/environments/protected_environments/)
+Further information about the individual experiments can be found in the corresponding directories.
 
-***
+---
 
-# Editing this README
+## 🎥 Visualization
 
-When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!). Thanks to [makeareadme.com](https://www.makeareadme.com/) for this template.
+The following video shows the developed multi-robot clearance algorithm in action.
 
-## Suggestions for a good README
+<!-- Replace with embedded video / GIF / link -->
 
-Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
+[▶️ Watch the visualization](VIDEO_LINK)
 
-## Name
-Choose a self-explaining name for your project.
+The visualization demonstrates the coordinated exploration of the environment and the resulting clearance strategy.
 
-## Description
-Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
+---
 
-## Badges
-On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
+## 📄 License
 
-## Visuals
-Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
-
-## Installation
-Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
-
-## Usage
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
-
-## Support
-Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
-
-## Roadmap
-If you have ideas for releases in the future, it is a good idea to list them in the README.
-
-## Contributing
-State if you are open to contributions and what your requirements are for accepting them.
-
-For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
-
-You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
-
-## Authors and acknowledgment
-Show your appreciation to those who have contributed to the project.
-
-## License
-For open source projects, say how it is licensed.
-
-## Project status
-If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
+[Add license if applicable.]
