@@ -8,12 +8,7 @@ The goal is to combine the guarantees of **graph-based search and clearance algo
 
 ---
 ## 🎥 Visualization
-
-
-
-
-
-
+[▶️ Watch the visualization](https://github.com/user-attachments/assets/d878f0a1-149f-4a70-b808-1960ef865dd3)
 ---
 
 ## 🛠️ Technologies & Methods
