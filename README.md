@@ -81,16 +81,6 @@ For multiple robots, determining **which parts of the environment should be expl
 
 The exploration order is optimized with respect to the probabilistic prior and the time at which individual regions are first explored.
 
-One of the objectives considered in the project is the expected search time:
-
-$$
-\mathbb{E}[T]
-=
-\sum_{v \in V} p(v)\,t_{\mathrm{first}}(v),
-$$
-
-where \(p(v)\) denotes the prior probability of the target being located at node \(v\), and \(t_{\mathrm{first}}(v)\) denotes the time at which node \(v\) is first cleared.
-
 ### 5. Exploration Strategy
 
 The optimized exploration order defines a sequence of tasks that must be assigned to the available robots.
