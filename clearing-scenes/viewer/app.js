@@ -156,7 +156,7 @@ let startVertices = [];     // { vertex, xyz: [x,y,z] }
 let computed = null;        // the /api/run response, or null
 let compLabelPool = new Map();  // pack key -> id sprite, reused while stable
 let compPlaying = false, compLastMs = 0, compSpeed = 1, compTime = 0;
-let priorsView = null;      // { codes: Uint16Array, min, max } -- last computed/previewed priors
+let priorsView = null;      // { codes: Uint16Array, min, max, lo, hi } -- last computed/previewed priors
 let priorsPreviewTimer = null;
 
 function init() {
@@ -295,11 +295,24 @@ function exportScreenshot() {
     camera.updateProjectionMatrix();
     renderer.render(world, camera);
 
+    // With the prior heatmap showing, its colour scale goes into the image
+    // too: composite the WebGL frame and the legend onto a 2D canvas (the
+    // drawing buffer is preserved, so reading it back here is safe).
+    let out = renderer.domElement;
+    if (!$("#prior-legend").classList.contains("hidden")) {
+      out = document.createElement("canvas");
+      out.width = renderer.domElement.width;
+      out.height = renderer.domElement.height;
+      const ctx = out.getContext("2d");
+      ctx.drawImage(renderer.domElement, 0, 0);
+      drawPriorLegend(ctx, out.width / w, bg === "scene");
+    }
+
     // A blob + object URL downloads reliably everywhere; a bare data: URI on
     // an <a download> does not -- Safari in particular just navigates to it
     // instead of saving, and at 4x on a large scene the data: URI can run to
     // tens of megabytes of base64, which some browsers silently refuse.
-    renderer.domElement.toBlob((blob) => {
+    out.toBlob((blob) => {
       // Put the canvas back the way resize()/init() left it before anything
       // else touches it, whether or not the encode below succeeds.
       world.background = new THREE.Color(BG_COLOR);
@@ -444,6 +457,7 @@ function build(data) {
   compLabelPool = new Map();
   priorsView = null;
   clearTimeout(priorsPreviewTimer);
+  setPriorLegend(false);
   G.hotspots = points(new Float32Array(0), new Float32Array(0), 3.6);
   G.starts = points(new Float32Array(0), new Float32Array(0), 3.6);
 
@@ -606,10 +620,19 @@ function dset(v) {
  *  any strategy, computed or otherwise. */
 function paint() {
   const col = G.surface.geometry.attributes.color.array;
-  col.set(S.surfBase);
-
   const v = parseInt($("#vertex").value, 10);
   let held = [];
+
+  // No vertex picked: the surface shows whatever updateSurfaceView() says
+  // (prior heatmap + legend, computed strategy, or the height ramp).
+  if (v < 0) {
+    compPaintKey = null;
+    updateSurfaceView();
+    if (computed) return;  // paintComputed() already placed its own markers
+  } else {
+    col.set(S.surfBase);
+    setPriorLegend(false);
+  }
 
   if (v >= 0) {
     const m = dset(v);
@@ -1164,7 +1187,7 @@ function paintComputed(t) {
   for (const [v, n] of robotCountsAt(t)) if (n > 0) heldNow.push(v);
   heldNow.sort((a, b) => a - b);
 
-  const showPriors = $("#c-show-priors").checked && priorsView;
+  const showPriors = priorsShown();
   const showDetection = $("#c-show-detection").checked;
   const mode = showPriors ? "H" : (showDetection ? "W" : "C");
   const key = mode + "|" + held.join(",") + "|" + heldNow.join(",");
@@ -1175,6 +1198,7 @@ function paintComputed(t) {
     if (showPriors) {
       paintPriorHeatmap();
     } else {
+      setPriorLegend(false);
       col.set(S.surfBase);
       const cleared = new Uint8Array(S.nCells);
       for (const v of held) {
@@ -1213,7 +1237,103 @@ function paintComputed(t) {
 /* -------------------------------------------------------- prior heatmap */
 
 function decodedPriors(packed) {
-  return { codes: decode(packed.q, Uint16Array), min: packed.min, max: packed.max };
+  return { codes: decode(packed.q, Uint16Array), min: packed.min, max: packed.max,
+           lo: packed.lo, hi: packed.hi };
+}
+
+/** Gradient stops and labelled ticks of the heatmap's colour scale, shared by
+ *  the on-screen legend and the one drawn into exported screenshots. The ramp
+ *  is log-scaled server-side (see _quantize_priors): code 0 is the prior
+ *  value `lo`, code 65535 is `hi`, so a value p sits at
+ *  t = (ln p - ln lo) / (ln hi - ln lo). Ticks are the two ends plus every
+ *  power of ten in between (thinned out if there are many). */
+function priorLegendSpec() {
+  const fmt = (v) => v.toExponential(1);
+  const { lo, hi, max } = priorsView;
+  const ticks = [];
+  if (lo == null) {
+    // A strategy service started before the legend existed sends no
+    // `lo`/`hi` -- only the top of the ramp (the max) is known then.
+    ticks.push([0, "low"], [1, fmt(max)]);
+  } else if (!(hi > lo)) {
+    ticks.push([0.5, fmt(hi)]);
+  } else {
+    const span = Math.log(hi) - Math.log(lo);
+    const tOf = (v) => (Math.log(v) - Math.log(lo)) / span;
+    ticks.push([0, "\u2264 " + fmt(lo)], [1, fmt(hi)]);
+    const k0 = Math.ceil(Math.log10(lo)), k1 = Math.floor(Math.log10(hi));
+    const step = Math.max(1, Math.ceil((k1 - k0 + 1) / 6));
+    for (let k = k0; k <= k1; k += step) {
+      const t = tOf(10 ** k);
+      if (t > 0.08 && t < 0.92) ticks.push([t, "1e" + k]);
+    }
+  }
+  const stops = HEAT.map(([t, c]) => [t, `rgb(${c.map((v) => Math.round(v * 255)).join(",")})`]);
+  return { ticks, stops, stale: lo == null };
+}
+
+/** Show (or hide) the colour-scale legend next to the heatmap. */
+function setPriorLegend(visible) {
+  const box = $("#prior-legend");
+  box.classList.toggle("hidden", !visible);
+  if (!visible) return;
+
+  const { ticks, stops, stale } = priorLegendSpec();
+  box.querySelector(".bar").style.background = "linear-gradient(to top, " +
+    stops.map(([t, c]) => `${c} ${(t * 100).toFixed(1)}%`).join(", ") + ")";
+  box.querySelector(".ticks").innerHTML = ticks
+    .map(([t, label]) => `<div style="bottom:${(t * 100).toFixed(1)}%">${label}</div>`)
+    .join("");
+  box.querySelector(".stale").hidden = !stale;
+}
+
+/** Draw the on-screen legend into a 2D canvas context for exportScreenshot(),
+ *  at the same spot and size as the DOM element (`k` = canvas px per CSS px),
+ *  in light colours unless the export keeps the dark scene background. */
+function drawPriorLegend(ctx, k, dark) {
+  const box = $("#prior-legend").getBoundingClientRect();
+  const bar = $("#prior-legend .bar").getBoundingClientRect();
+  const { ticks, stops } = priorLegendSpec();
+  const ink = dark ? ["#121820", "#24303d", "#dfe5ec", "#8b98a8"]
+                   : ["#ffffff", "#c8ccd2", "#1d232b", "#5f6b7a"];
+  const [fill, line, text, dim] = ink;
+
+  ctx.save();
+  ctx.scale(k, k);
+  ctx.fillStyle = fill;
+  ctx.strokeStyle = line;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.roundRect(box.left + 0.5, box.top + 0.5, box.width - 1, box.height - 1, 4);
+  ctx.fill();
+  ctx.stroke();
+
+  const font = getComputedStyle(document.body).fontFamily;
+  const title = $("#prior-legend .title").getBoundingClientRect();
+  ctx.textBaseline = "top";
+  ctx.fillStyle = text;
+  ctx.font = `11px ${font}`;
+  ctx.fillText("Prior per cell", title.left, title.top);
+  ctx.fillStyle = dim;
+  ctx.fillText("log scale", title.left, title.top + 14.3);
+
+  const grad = ctx.createLinearGradient(0, bar.bottom, 0, bar.top);
+  for (const [t, c] of stops) grad.addColorStop(t, c);
+  ctx.fillStyle = grad;
+  ctx.fillRect(bar.left, bar.top, bar.width, bar.height);
+  ctx.strokeStyle = line;
+  ctx.strokeRect(bar.left + 0.5, bar.top + 0.5, bar.width - 1, bar.height - 1);
+
+  ctx.font = "10.5px ui-monospace, Menlo, monospace";
+  ctx.textBaseline = "middle";
+  for (const [t, label] of ticks) {
+    const y = bar.bottom - t * bar.height;
+    ctx.fillStyle = dim;
+    ctx.fillRect(bar.right + 1, y - 0.5, 5, 1);
+    ctx.fillStyle = text;
+    ctx.fillText(label, bar.right + 10, y);
+  }
+  ctx.restore();
 }
 
 function paintPriorHeatmap() {
@@ -1224,6 +1344,14 @@ function paintPriorHeatmap() {
     col[3 * i] = c[0]; col[3 * i + 1] = c[1]; col[3 * i + 2] = c[2];
   }
   G.surface.geometry.attributes.color.needsUpdate = true;
+  setPriorLegend(true);
+}
+
+/** The heatmap (and its legend) is on whenever the scene has hotspots and
+ *  "Prior heatmap" is ticked (the default) -- without hotspots the priors are
+ *  just the uniform floor, nothing worth a colour scale. */
+function priorsShown() {
+  return $("#c-show-priors").checked && priorsView !== null && hotspots.length > 0;
 }
 
 /** Repaint the surface from whatever is currently available: a computed
@@ -1234,9 +1362,10 @@ function updateSurfaceView() {
     paintComputed(compTime);
     return;
   }
-  if ($("#c-show-priors").checked && priorsView) {
+  if (priorsShown()) {
     paintPriorHeatmap();
   } else {
+    setPriorLegend(false);
     const col = G.surface.geometry.attributes.color.array;
     col.set(S.surfBase);
     G.surface.geometry.attributes.color.needsUpdate = true;

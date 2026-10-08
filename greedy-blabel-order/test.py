@@ -1133,9 +1133,20 @@ HEATMAP_RED_SOLID = "#d62828"
 fig = go.Figure()
 
 
+# Fixed width sized to the grid (square cells), so the figure is only as
+# wide as grid + axis labels (+ prior colorbar) and the colorbar ends up
+# right beside the grid - easy to capture both in one screenshot. Any slack
+# is absorbed on the left (xaxis constraintoward="right"); the plot call
+# below passes use_container_width=False so Streamlit keeps this width.
+plotHeight = 650 - 30 - 10 - 45  # minus top/bottom margins and legend row
+figWidth = int(plotHeight * W / H) + 70 + (120 if show_heatmap else 30)
+
+
 fig.update_layout(
 
     height=650,
+
+    width=figWidth,
 
     margin=dict(
         l=10,
@@ -1152,8 +1163,8 @@ fig.update_layout(
         orientation="h",
         yanchor="bottom",
         y=1.02,
-        xanchor="left",
-        x=0,
+        xanchor="right",
+        x=1,
     ),
 
     xaxis=dict(
@@ -1171,6 +1182,7 @@ fig.update_layout(
         zeroline=False,
         fixedrange=True,
         constrain="domain",
+        constraintoward="right",
     ),
 
     yaxis=dict(
@@ -1314,6 +1326,52 @@ if (
             name="Prior heatmap",
         )
     )
+
+    # Colour scale for the heatmap: an invisible trace that only carries
+    # the colorbar. The cell fill above is red at opacity
+    # 0.08 + 0.72 * norm over a white background, so the bar uses that
+    # same blend, made opaque, from prior 0 up to max_prior.
+    if max_prior > 0:
+
+        def blendedRed(alpha):
+            r, g, b = (round(255 * (1 - alpha) + c * alpha) for c in (214, 40, 40))
+            return f"rgb({r}, {g}, {b})"
+
+        fig.add_trace(
+            go.Scatter(
+
+                x=[None],
+                y=[None],
+
+                mode="markers",
+
+                marker=dict(
+                    color=[0.0],
+                    cmin=0.0,
+                    cmax=max_prior,
+                    colorscale=[
+                        [0.0, blendedRed(0.08)],
+                        [1.0, blendedRed(0.80)],
+                    ],
+                    showscale=True,
+                    colorbar=dict(
+                        title=dict(text="Prior", side="right"),
+                        tickformat=".2e",
+                        x=1,
+                        xanchor="left",
+                        xpad=12,
+                        len=0.9,
+                        thickness=16,
+                        outlinewidth=1,
+                        outlinecolor="lightgray",
+                    ),
+                ),
+
+                showlegend=False,
+
+                hoverinfo="skip",
+            )
+        )
 
 
 # ==================================================
@@ -2271,7 +2329,7 @@ if (
 
 st.plotly_chart(
     fig,
-    use_container_width=True,
+    use_container_width=False,
 )
 
 

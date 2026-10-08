@@ -123,3 +123,27 @@ kbd { padding: 1px 4px; border: 1px solid var(--line); border-radius: 3px;
   background: var(--panel); color: var(--dim);
 }
 #loading.hidden { display: none; }
+
+#prior-legend {
+  position: fixed; right: 16px; bottom: 16px;
+  padding: 10px 12px;
+  border: 1px solid var(--line); border-radius: 4px;
+  background: color-mix(in srgb, var(--panel) 92%, transparent);
+  backdrop-filter: blur(6px);
+  pointer-events: none;
+}
+#prior-legend.hidden { display: none; }
+#prior-legend .title { font-size: 11px; line-height: 1.3; margin-bottom: 8px; }
+#prior-legend .title span { color: var(--dim); }
+#prior-legend .stale { margin-top: 8px; color: var(--accent); font-size: 10.5px; line-height: 1.3; }
+#prior-legend .scale { position: relative; display: flex; gap: 6px; height: 220px; }
+#prior-legend .bar { width: 14px; border: 1px solid var(--line); border-radius: 2px; }
+#prior-legend .ticks { position: relative; width: 70px; }
+#prior-legend .ticks div {
+  position: absolute; left: 0; transform: translateY(50%);
+  font: 10.5px/1 ui-monospace, monospace; color: var(--text); white-space: nowrap;
+}
+#prior-legend .ticks div::before {
+  content: ""; display: inline-block; width: 5px; height: 1px;
+  margin: 0 4px 0 -6px; vertical-align: middle; background: var(--dim);
+}

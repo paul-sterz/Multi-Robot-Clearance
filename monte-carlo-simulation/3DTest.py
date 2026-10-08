@@ -146,6 +146,33 @@ def peekSavedEpsilon(sceneName: str):
     return config.get("epsilon")
 
 
+def viewerPriorScale(sceneName: str):
+    """The real prior values at the two ends of the 3D viewer's heatmap
+    colour ramp for this scene's saved hotspot config - i.e. what the
+    viewer's own colour-scale legend shows next to a screenshot taken of it.
+    Mirrors strategy_service/server.py exactly (its sigma-from-radius and
+    _quantize_priors' log-space range), NOT build3DEnvironment() above,
+    because the screenshot's colours come from the viewer.
+
+    Returns (lo, hi) - code 0 / the top of the ramp - or None when nothing
+    is saved for the scene (then the screenshot's settings are unknown).
+    """
+    scene = loadScene3D(sceneName)
+    saved = loadHotspotConfig(scene, sceneName)
+    if saved is None:
+        return None
+    hotspots, _, priorL, priorRadiusM, savedEpsilon = saved
+    epsilon = PRIOR_EPSILON_3D if savedEpsilon is None else savedEpsilon
+
+    sigma = priorRadiusM / math.sqrt(2 * math.log(50))
+    priors = scene_adapter.compute_priors(scene, hotspots, priorL, sigma, epsilon)
+
+    positive = priors[priors > 0]
+    floor = float(positive.min()) if positive.size else 1.0
+    logp = np.log(np.maximum(priors, floor * 1e-3))
+    return float(np.exp(np.percentile(logp, 1))), float(np.exp(logp.max()))
+
+
 def build3DEnvironment(sceneName: str, startVertices=None, epsilon=None):
     """The 3D equivalent of calling graphBuilder() in the 2D tests: builds
     the graph/detection sets/priors once, to be reused for every run and

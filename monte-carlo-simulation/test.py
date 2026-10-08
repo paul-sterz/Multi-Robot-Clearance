@@ -1,4 +1,5 @@
 import importlib.util
+import math
 import os
 
 import numpy as np
@@ -50,12 +51,110 @@ _spec.loader.exec_module(threeDTest)
 SCENE_SCREENSHOTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "scene_screenshots")
 
 
+# The 3D viewer's heatmap ramp (HEAT in clearing-scenes/viewer/app.js):
+# dark blue -> violet -> red -> amber -> pale yellow, log-scaled.
+VIEWER_HEAT = [
+    (0.0, (0.06, 0.06, 0.28)),
+    (0.35, (0.32, 0.08, 0.42)),
+    (0.6, (0.77, 0.15, 0.18)),
+    (0.85, (0.98, 0.55, 0.12)),
+    (1.0, (1.0, 0.96, 0.35)),
+]
+
+
+@st.cache_data(show_spinner="Computing prior scale...")
+def scenePriorScale(sceneName: str, configMtime: float):
+    # configMtime only keys the cache, so re-saving hotspots in the viewer
+    # refreshes the legend.
+    return threeDTest.viewerPriorScale(sceneName)
+
+
+def buildViewerPriorLegend(lo, hi, height):
+    """A colorbar-only figure with the same ramp and tick labels as the 3D
+    viewer's own legend: both ends plus every power of ten in between."""
+
+    span = math.log(hi) - math.log(lo) if hi > lo else 0.0
+    tickvals, ticktext = [], []
+    if span > 0:
+        tickvals += [0.0, 1.0]
+        ticktext += [f"≤ {lo:.1e}", f"{hi:.1e}"]
+        k0, k1 = math.ceil(math.log10(lo)), math.floor(math.log10(hi))
+        step = max(1, math.ceil((k1 - k0 + 1) / 6))
+        for k in range(k0, k1 + 1, step):
+            t = (k * math.log(10) - math.log(lo)) / span
+            if 0.08 < t < 0.92:
+                tickvals.append(t)
+                ticktext.append(f"1e{k}")
+    else:
+        tickvals, ticktext = [0.5], [f"{hi:.1e}"]
+
+    fig = go.Figure(
+        go.Scatter(
+            x=[None],
+            y=[None],
+            mode="markers",
+            marker=dict(
+                color=[0.0],
+                cmin=0.0,
+                cmax=1.0,
+                colorscale=[
+                    [t, "rgb({}, {}, {})".format(*(round(v * 255) for v in c))]
+                    for t, c in VIEWER_HEAT
+                ],
+                showscale=True,
+                colorbar=dict(
+                    title=dict(text="Prior per cell (log)", side="right"),
+                    tickvals=tickvals,
+                    ticktext=ticktext,
+                    x=0,
+                    xanchor="left",
+                    len=1,
+                    thickness=16,
+                    outlinewidth=1,
+                    outlinecolor="lightgray",
+                ),
+            ),
+            hoverinfo="skip",
+        )
+    )
+    fig.update_layout(
+        height=height,
+        width=130,
+        margin=dict(l=0, r=0, t=10, b=10),
+        xaxis=dict(visible=False),
+        yaxis=dict(visible=False),
+        plot_bgcolor="rgba(0,0,0,0)",
+        paper_bgcolor="rgba(0,0,0,0)",
+    )
+    return fig
+
+
 def renderSceneScreenshot(sceneName: str):
 
     for ext in (".png", ".jpg", ".jpeg"):
         path = os.path.join(SCENE_SCREENSHOTS_DIR, sceneName + ext)
         if os.path.isfile(path):
-            st.image(path, caption=sceneName, use_container_width=True)
+
+            # Colour scale of the viewer's prior heatmap next to the
+            # screenshot, for the hotspot config saved for this scene.
+            configPath = os.path.join(threeDTest.SCENE_PRIORS_DIR, f"{sceneName}.json")
+            scale = (
+                scenePriorScale(sceneName, os.path.getmtime(configPath))
+                if os.path.isfile(configPath) else None
+            )
+            if scale is None:
+                st.image(path, caption=sceneName, use_container_width=True)
+                return
+
+            imageCol, legendCol = st.columns([12, 1.4], vertical_alignment="center")
+            with imageCol:
+                st.image(path, caption=sceneName, use_container_width=True)
+            with legendCol:
+                st.plotly_chart(
+                    buildViewerPriorLegend(*scale, height=520),
+                    use_container_width=False,
+                    config={"displayModeBar": False},
+                )
             return
 
     st.caption(
@@ -315,9 +414,19 @@ def buildEnvironmentFigure(obstacles, cellpriors, H, W, G=None, regularEdges=Non
 
     fig = go.Figure()
 
+    # Fixed width sized to the grid (square cells), so the figure is only as
+    # wide as grid + axis labels + prior colorbar and the colorbar ends up
+    # right beside the grid - easy to capture both in one screenshot. The
+    # callers pass use_container_width=False so Streamlit keeps this width.
+    # Any slack is absorbed on the left (xaxis constraintoward="right").
+    plotHeight = 650 - 30 - 10 - 45  # minus top/bottom margins and legend row
+    figWidth = int(plotHeight * W / H) + 70 + 120  # + y-axis labels + colorbar
+
     fig.update_layout(
 
         height=650,
+
+        width=figWidth,
 
         margin=dict(
             l=10,
@@ -334,8 +443,8 @@ def buildEnvironmentFigure(obstacles, cellpriors, H, W, G=None, regularEdges=Non
             orientation="h",
             yanchor="bottom",
             y=1.02,
-            xanchor="left",
-            x=0,
+            xanchor="right",
+            x=1,
         ),
 
         xaxis=dict(
@@ -353,6 +462,10 @@ def buildEnvironmentFigure(obstacles, cellpriors, H, W, G=None, regularEdges=Non
             zeroline=False,
             fixedrange=True,
             constrain="domain",
+            # The square-cell aspect ratio shrinks the x domain; keep the
+            # grid's right edge where it is (instead of centring it) so the
+            # prior colorbar sits right next to it, legend aligned above.
+            constraintoward="right",
         ),
 
         yaxis=dict(
@@ -487,6 +600,52 @@ def buildEnvironmentFigure(obstacles, cellpriors, H, W, G=None, regularEdges=Non
         )
     )
 
+    # Colour scale for the heatmap: an invisible trace that only carries the
+    # colorbar. The cell fill above is red at opacity 0.08 + 0.72 * norm over
+    # a white background, so the bar uses that same blend, made opaque, from
+    # prior 0 up to max_prior.
+    if max_prior > 0:
+
+        def blendedRed(alpha):
+            r, g, b = (round(255 * (1 - alpha) + c * alpha) for c in (214, 40, 40))
+            return f"rgb({r}, {g}, {b})"
+
+        fig.add_trace(
+            go.Scatter(
+
+                x=[None],
+                y=[None],
+
+                mode="markers",
+
+                marker=dict(
+                    color=[0.0],
+                    cmin=0.0,
+                    cmax=max_prior,
+                    colorscale=[
+                        [0.0, blendedRed(0.08)],
+                        [1.0, blendedRed(0.80)],
+                    ],
+                    showscale=True,
+                    colorbar=dict(
+                        title=dict(text="Prior", side="right"),
+                        tickformat=".2e",
+                        x=1,
+                        xanchor="left",
+                        xpad=12,
+                        len=0.9,
+                        thickness=16,
+                        outlinewidth=1,
+                        outlinecolor="lightgray",
+                    ),
+                ),
+
+                showlegend=False,
+
+                hoverinfo="skip",
+            )
+        )
+
     # --------------------------------------------------
     # NAVIGATION GRAPH (only once a graph has actually been built)
     # --------------------------------------------------
@@ -599,7 +758,7 @@ if not is3D:
 
     st.plotly_chart(
         buildEnvironmentFigure(obstacles, cellpriors, H, W),
-        use_container_width=True,
+        use_container_width=False,
     )
 
     # ==================================================
@@ -809,7 +968,7 @@ if app_mode == "Approach Test":
                     G=results["G"],
                     regularEdges=results["regularEdges"],
                 ),
-                use_container_width=True,
+                use_container_width=False,
             )
 
         # --------------------------------------------------
@@ -1057,7 +1216,7 @@ elif app_mode == "Baseline Test":
                     G=baselineResultsState["G"],
                     regularEdges=baselineResultsState["regularEdges"],
                 ),
-                use_container_width=True,
+                use_container_width=False,
             )
 
         # --------------------------------------------------
@@ -1292,7 +1451,7 @@ elif app_mode == "Spanning Tree Evolution":
                     G=evoResults["G"],
                     regularEdges=evoResults["regularEdges"],
                 ),
-                use_container_width=True,
+                use_container_width=False,
             )
 
         def renderRunCaption(runResult, methodLabel):
@@ -1745,7 +1904,7 @@ elif app_mode == "Closing Exits Test":
                     G=ceResults["G"],
                     regularEdges=list(ceResults["G"].edges.keys()),
                 ),
-                use_container_width=True,
+                use_container_width=False,
             )
 
         st.markdown("### Target-Finding Comparison")

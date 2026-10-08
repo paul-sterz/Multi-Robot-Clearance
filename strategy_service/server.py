@@ -159,10 +159,14 @@ def _quantize_priors(priors: np.ndarray, remap: np.ndarray | None = None) -> dic
     # its own to do.
     if remap is not None:
         q = q[remap]
+    # `lo`/`hi` are the actual prior values at code 0 / code 65535, so the
+    # viewer's colour-scale legend can label the log ramp in real numbers.
     return {
         "q": base64.b64encode(q.tobytes()).decode("ascii"),
         "min": float(priors.min()),
         "max": float(priors.max()),
+        "lo": float(np.exp(lo)),
+        "hi": float(np.exp(hi)),
     }
 
 
@@ -284,6 +288,16 @@ def run_strategy(req: RunRequest):
             "compute_seconds": elapsed_s,
         },
     }
+
+
+@app.middleware("http")
+async def no_stale_viewer(request, call_next):
+    # Make the browser revalidate the viewer's html/js/css on every load, so
+    # an edited app.js is never served from a stale cache.
+    response = await call_next(request)
+    if not request.url.path.startswith("/api/"):
+        response.headers["Cache-Control"] = "no-cache"
+    return response
 
 
 # Static viewer last: it defines "/", which would otherwise shadow /api/*.
