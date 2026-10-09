@@ -7,16 +7,11 @@ import numpy as np
 
 from approachTest import (
     REPO_DIR,
-    buildEnvironment,
-    detectionFnc,
-    graphBuilder,
+    loadEnvironment,
+    buildEnvironmentGraph,
     computeObstacleDistance,
     APPROACH_NAMES,
     APPROACHES,
-    START_REGION,
-    GRAPH_PRIOR_L,
-    GRAPH_PRIOR_SIGMA,
-    GRAPH_ALPHA,
 )
 
 
@@ -213,7 +208,9 @@ def baselineTest(
     #-------------------------------------------------------------------
     # STEP 1: ALLOCATION
     #-------------------------------------------------------------------
-    obstacles, hotspots = buildEnvironment()
+    env = loadEnvironment(detecRad, epsilon)
+    obstacles = env["obstacles"]
+    alpha = env["alpha"]
 
     # ONLY ONE GRAPH: built once (DP-style, with priors) and reused for every
     # run and every one of the 4 compared methods below (Baseline, Baseline
@@ -221,16 +218,7 @@ def baselineTest(
     # methods run on it exactly like the compared approaches in
     # approachTest.py do, see the module-level comment above for why that is
     # safe.
-    G, edges_shady, D, startNodes, priors = graphBuilder(
-        obstacles,
-        hotspots,
-        lambda p, obs: detectionFnc(p, obs, detecRad),
-        START_REGION,
-        GRAPH_PRIOR_L,
-        GRAPH_PRIOR_SIGMA,
-        GRAPH_ALPHA,
-        epsilon,
-    )
+    G, edges_shady, D, startNodes, priors = buildEnvironmentGraph(env)
 
     distanceMap = computeObstacleDistance(obstacles)
 
@@ -279,7 +267,7 @@ def baselineTest(
                 startNodes,
                 obstacles,
                 distanceMap,
-                GRAPH_ALPHA,
+                alpha,
                 maxTrees=maxTrees,
                 **tiebreakKwargs,
             )
@@ -310,7 +298,7 @@ def baselineTest(
                 startNodes,
                 obstacles,
                 distanceMap,
-                GRAPH_ALPHA,
+                alpha,
                 priors,
                 D,
                 maxTrees=maxTrees,

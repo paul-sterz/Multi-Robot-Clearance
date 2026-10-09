@@ -6,7 +6,7 @@ from TrajectoryPlanning import aStar, computeObstacleDistance, dijkstra, pathLen
 
 
 
-def graphBuilder(obstacles, hotspots, detectionFnc, startRegion, l, sigma, alpha, epsilon = 0.05):
+def graphBuilder(obstacles, hotspots, detectionFnc, startRegion, l, sigma, alpha, epsilon = 0.05, nodePositions = None, numStartNodes = None):
     # INPUT:
     # obstacles: (H,W) dimensional numpy array that represents the enviroment, 1=obstacle, 0=free
     # hotspots: List of hotspots in format (pos, low/medium/high) beeing ((x,y),0/1/2)
@@ -14,6 +14,8 @@ def graphBuilder(obstacles, hotspots, detectionFnc, startRegion, l, sigma, alpha
     # startRegion: set of tuples of point where the robots can start
     # k: factor of how much eache hotspot category increases probability
     # alpha: Constant needed for a-star algorithim
+    # nodePositions: optional fixed list of node positions (e.g. from a saved environment), used instead of the random vertex generation
+    # numStartNodes: number of start nodes at the beginning of nodePositions (only together with nodePositions)
 
     # OUTPUT:
     # G: a Graph object representing the created Graph using only the regular edges
@@ -100,48 +102,68 @@ def graphBuilder(obstacles, hotspots, detectionFnc, startRegion, l, sigma, alpha
     G = Graph()
     D = []   # detection sets
 
-    covered = set()
-    uncovered = E
-    k = 0
-    #Adding start region
-    while len(startRegion & uncovered) > 0:
-        root = random.choice(tuple(startRegion & uncovered))
-        Di = set(detectionFnc(root, obstacles))
-        Di = Di & E 
-        D.append(Di)
-        p = 0
-        for (x,y) in Di:
-            p += priors[x,y]
-        G.add_node(k,root, p)
-        covered = covered | Di 
-        uncovered = uncovered - Di
-        k += 1
+    if nodePositions is not None:
+        # Fixed vertices: same nodes (and order) every time, no randomness
+        covered = set()
+        for k, pos in enumerate(nodePositions):
+            pos = tuple(pos)
+            Di = set(detectionFnc(pos, obstacles))
+            Di = Di & E
+            D.append(Di)
+            p = 0
+            for (x,y) in Di:
+                p += priors[x,y]
+            G.add_node(k, pos, p)
+            covered = covered | Di
 
-    startNodes = k
+        if len(E - covered) > 0:
+            raise ValueError("Fixed node positions do not cover the whole free space (different obstacles or detection radius?)")
 
-    i = startNodes
+        startNodes = numStartNodes
 
-    while len(uncovered) > 0:
+    else:
+        covered = set()
+        uncovered = E
+        k = 0
+        #Adding start region
+        while len(startRegion & uncovered) > 0:
+            root = random.choice(tuple(startRegion & uncovered))
+            Di = set(detectionFnc(root, obstacles))
+            Di = Di & E 
+            D.append(Di)
+            p = 0
+            for (x,y) in Di:
+                p += priors[x,y]
+            G.add_node(k,root, p)
+            covered = covered | Di 
+            uncovered = uncovered - Di
+            k += 1
 
-        pi = random.choice(tuple(uncovered))
+        startNodes = k
 
-        if obstacles[pi[0]][pi[1]] == 1:
-            continue
+        i = startNodes
 
-        Di = set(detectionFnc(pi, obstacles))
-        Di = Di & E  # Only consider intersection with traversable points
+        while len(uncovered) > 0:
 
-        D.append(Di)
+            pi = random.choice(tuple(uncovered))
 
-        # Prior of node is the sum over the detection set
-        p = 0
-        for (x,y) in Di:
-            p += priors[x,y]
+            if obstacles[pi[0]][pi[1]] == 1:
+                continue
 
-        G.add_node(i,pi, p)
-        covered = covered | Di #Joining covered with Di
-        uncovered = uncovered - Di #Difference uncovered with Di
-        i += 1
+            Di = set(detectionFnc(pi, obstacles))
+            Di = Di & E  # Only consider intersection with traversable points
+
+            D.append(Di)
+
+            # Prior of node is the sum over the detection set
+            p = 0
+            for (x,y) in Di:
+                p += priors[x,y]
+
+            G.add_node(i,pi, p)
+            covered = covered | Di #Joining covered with Di
+            uncovered = uncovered - Di #Difference uncovered with Di
+            i += 1
 
     # ---------------------------------------------------
     # PART 3: BOUNDARY COMPUTATION

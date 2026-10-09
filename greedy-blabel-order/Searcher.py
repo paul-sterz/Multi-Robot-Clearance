@@ -1178,7 +1178,7 @@ def graphSearch(G : Graph, availableTime, availableRobots, startNodes, obstacles
 
             score = (
                 localMass
-                + (probBudget - clearanceTime) * redistributedRatio * sparRobots + (probBudget - clearanceTime) * localMass * (1 - np.exp(-1 / lam))
+                + (probBudget - clearanceTime) * redistributedRatio * sparRobots + (probBudget - clearanceTime) * localMass * (1 - np.exp(-avgEdgeTimeAll / lam))
             )
 
             candidate["globalBaselineRatio"] = globalRatio

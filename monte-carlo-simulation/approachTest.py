@@ -1,6 +1,7 @@
 import os
 import sys
 import importlib.util
+import json
 import time
 
 import numpy as np
@@ -71,12 +72,26 @@ APPROACHES = [_loadGraphSearch(APPROACH_DIRS[name]) for name in APPROACH_NAMES]
 # ==================================================
 # ENVIRONMENT
 # ==================================================
-# Shared between approachTest() and the Streamlit UI (test.py), so the
+# Shared between all 2D tests and the Streamlit UI (test.py), so the
 # environment (without a graph) can be visualized independently of running
 # a search.
+#
+# If an environment was saved via the "Save environment" button in one of
+# the approaches' test.py UIs, that one is used for every 2D Monte Carlo
+# test: its grid, priors, start region, its GraphBuilder parameters
+# (detection radius, prior l / sigma, alpha, epsilon - these override the
+# Monte Carlo UI's own values) and its node positions, so the graph always
+# has exactly the same nodes instead of new random ones. Otherwise the fixed
+# default grid below is used (with random node positions, as before). The
+# file is re-read on every call (not cached at import), so a newly saved
+# environment is picked up without restarting Streamlit.
+
+SAVED_ENVIRONMENT_PATH = os.path.join(
+    REPO_DIR, "monte-carlo-simulation", "saved_environment.json"
+)
 
 
-def buildEnvironment():
+def _defaultEnvironment():
 
     obstacles = np.zeros((10, 10))
     obstacles[0, 4] = 1
@@ -98,7 +113,72 @@ def buildEnvironment():
 
     hotspots = [((8,1),2), ((9,3),2), ((9,9),1), ((1,5),0), ((2,9),0)]
 
-    return obstacles, hotspots
+    startRegion = {(0, 0)}
+
+    return obstacles, hotspots, startRegion
+
+
+def hasSavedEnvironment():
+    return os.path.exists(SAVED_ENVIRONMENT_PATH)
+
+
+def loadEnvironment(detecRad, epsilon=0.05):
+    """Returns the environment every 2D test runs on, as a dict. detecRad and
+    epsilon are only used for the default environment - a saved one brings
+    its own."""
+
+    if not hasSavedEnvironment():
+
+        obstacles, hotspots, startRegion = _defaultEnvironment()
+
+        return {
+            "saved": False,
+            "obstacles": obstacles,
+            "hotspots": hotspots,
+            "startRegion": startRegion,
+            "detecRad": detecRad,
+            "priorL": GRAPH_PRIOR_L,
+            "priorSigma": GRAPH_PRIOR_SIGMA,
+            "alpha": GRAPH_ALPHA,
+            "epsilon": epsilon,
+            "nodePositions": None,
+            "numStartNodes": None,
+        }
+
+    with open(SAVED_ENVIRONMENT_PATH) as f:
+        data = json.load(f)
+
+    return {
+        "saved": True,
+        "obstacles": np.array(data["obstacles"], dtype=float),
+        "hotspots": [((r, c), category) for r, c, category in data["hotspots"]],
+        "startRegion": {(r, c) for r, c in data["start_region"]} or {(0, 0)},
+        "detecRad": data["detection_radius"],
+        "priorL": data["prior_l"],
+        "priorSigma": data["prior_sigma"],
+        "alpha": data["alpha"],
+        "epsilon": data["epsilon"],
+        "nodePositions": [tuple(pos) for pos in data["node_positions"]],
+        "numStartNodes": data["num_start_nodes"],
+    }
+
+
+def buildEnvironmentGraph(env):
+    """graphBuilder() on a loadEnvironment() environment - with its fixed
+    node positions if it is a saved one."""
+
+    return graphBuilder(
+        env["obstacles"],
+        env["hotspots"],
+        lambda p, obs: detectionFnc(p, obs, env["detecRad"]),
+        env["startRegion"],
+        env["priorL"],
+        env["priorSigma"],
+        env["alpha"],
+        env["epsilon"],
+        nodePositions=env["nodePositions"],
+        numStartNodes=env["numStartNodes"],
+    )
 
 
 # ==================================================
@@ -280,7 +360,6 @@ def computeNodePriorObjective(strategy, G : Graph, startNodes):
 
 # Fixed GraphBuilder prior/A* parameters, shared between approachTest() and
 # the Streamlit UI (test.py) so both use the exact same prior computation.
-START_REGION = {(0, 0)}
 GRAPH_PRIOR_L = 2
 GRAPH_PRIOR_SIGMA = 2.860054369471078
 GRAPH_ALPHA = 1
@@ -291,20 +370,11 @@ def approachTest(detecRad : int, numOfRuns : int, availableRobots : int, availab
     #-------------------------------------------------------------------
     # STEP 1: ALLOCATION
     #-------------------------------------------------------------------
-    obstacles, hotspots = buildEnvironment()
+    env = loadEnvironment(detecRad, epsilon)
+    obstacles = env["obstacles"]
+    alpha = env["alpha"]
 
-    # Graphbuilder method with obstacles, hotspots, detectionFnc, startRegion = (0,0), l = 2, sigma=2.860054369471078 , alpha = 1
-
-    G, edges_shady, D, startNodes, priors = graphBuilder(
-        obstacles,
-        hotspots,
-        lambda p, obs: detectionFnc(p, obs, detecRad),
-        START_REGION,
-        GRAPH_PRIOR_L,
-        GRAPH_PRIOR_SIGMA,
-        GRAPH_ALPHA,
-        epsilon,
-    )
+    G, edges_shady, D, startNodes, priors = buildEnvironmentGraph(env)
 
     distanceMap = computeObstacleDistance(obstacles)
 
@@ -341,7 +411,7 @@ def approachTest(detecRad : int, numOfRuns : int, availableRobots : int, availab
                 startNodes,
                 obstacles,
                 distanceMap,
-                GRAPH_ALPHA,
+                alpha,
                 priors,
                 D,
                 maxTrees=maxTrees,

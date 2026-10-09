@@ -1391,8 +1391,6 @@ highlight_robots = (
 
 node_colors = []
 node_sizes = []
-node_text = []
-node_text_colors = []
 
 
 for i in V:
@@ -1414,15 +1412,6 @@ for i in V:
         else 16
     )
 
-    node_text.append(
-        str(i)
-    )
-
-    node_text_colors.append(
-        "black"
-        if has_robots
-        else "#555555"
-    )
 
 
 fig.add_trace(
@@ -1431,7 +1420,7 @@ fig.add_trace(
         x=node_x,
         y=node_y,
 
-        mode="markers+text",
+        mode="markers",
 
         marker=dict(
 
@@ -1443,15 +1432,6 @@ fig.add_trace(
                 color="black",
                 width=1,
             ),
-        ),
-
-        text=node_text,
-
-        textposition="middle center",
-
-        textfont=dict(
-            size=7,
-            color=node_text_colors,
         ),
 
         name="Node",

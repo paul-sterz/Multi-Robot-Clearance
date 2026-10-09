@@ -21,14 +21,9 @@ import numpy as np
 from approachTest import (
     APPROACH_NAMES,
     APPROACHES,
-    buildEnvironment,
-    detectionFnc,
-    graphBuilder,
+    loadEnvironment,
+    buildEnvironmentGraph,
     computeObstacleDistance,
-    START_REGION,
-    GRAPH_PRIOR_L,
-    GRAPH_PRIOR_SIGMA,
-    GRAPH_ALPHA,
 )
 
 
@@ -51,6 +46,7 @@ def _runSingleSearch(
     populationSize,
     searchMode,
     probBudget,
+    alpha,
 ):
 
     history = []
@@ -65,7 +61,7 @@ def _runSingleSearch(
         startNodes,
         obstacles,
         distanceMap,
-        GRAPH_ALPHA,
+        alpha,
         priors,
         D,
         maxTrees=maxTrees,
@@ -98,18 +94,11 @@ def runSpanningTreeEvolution(
     #-------------------------------------------------------------------
     # STEP 1: ALLOCATION (identical to approachTest())
     #-------------------------------------------------------------------
-    obstacles, hotspots = buildEnvironment()
+    env = loadEnvironment(detecRad, epsilon)
+    obstacles = env["obstacles"]
+    alpha = env["alpha"]
 
-    G, edges_shady, D, startNodes, priors = graphBuilder(
-        obstacles,
-        hotspots,
-        lambda p, obs: detectionFnc(p, obs, detecRad),
-        START_REGION,
-        GRAPH_PRIOR_L,
-        GRAPH_PRIOR_SIGMA,
-        GRAPH_ALPHA,
-        epsilon,
-    )
+    G, edges_shady, D, startNodes, priors = buildEnvironmentGraph(env)
 
     distanceMap = computeObstacleDistance(obstacles)
 
@@ -133,6 +122,7 @@ def runSpanningTreeEvolution(
         populationSize,
         searchMode="evolutionary",
         probBudget=probBudget,
+        alpha=alpha,
     )
 
     random_ = _runSingleSearch(
@@ -149,6 +139,7 @@ def runSpanningTreeEvolution(
         populationSize,
         searchMode="random",
         probBudget=probBudget,
+        alpha=alpha,
     )
 
     return {
@@ -189,6 +180,7 @@ def _runSearchModeRepeated(
     searchMode,
     probBudget,
     numOfRuns,
+    alpha,
 ):
 
     bestFitness = np.zeros(numOfRuns)
@@ -203,7 +195,7 @@ def _runSearchModeRepeated(
             startNodes,
             obstacles,
             distanceMap,
-            GRAPH_ALPHA,
+            alpha,
             priors,
             D,
             maxTrees=maxTrees,
@@ -236,18 +228,11 @@ def runSpanningTreeEvolutionRepeated(
     #-------------------------------------------------------------------
     # STEP 1: ALLOCATION (identical to approachTest()/runSpanningTreeEvolution())
     #-------------------------------------------------------------------
-    obstacles, hotspots = buildEnvironment()
+    env = loadEnvironment(detecRad, epsilon)
+    obstacles = env["obstacles"]
+    alpha = env["alpha"]
 
-    G, edges_shady, D, startNodes, priors = graphBuilder(
-        obstacles,
-        hotspots,
-        lambda p, obs: detectionFnc(p, obs, detecRad),
-        START_REGION,
-        GRAPH_PRIOR_L,
-        GRAPH_PRIOR_SIGMA,
-        GRAPH_ALPHA,
-        epsilon,
-    )
+    G, edges_shady, D, startNodes, priors = buildEnvironmentGraph(env)
 
     distanceMap = computeObstacleDistance(obstacles)
 
@@ -271,6 +256,7 @@ def runSpanningTreeEvolutionRepeated(
         searchMode="evolutionary",
         probBudget=probBudget,
         numOfRuns=numOfRuns,
+        alpha=alpha,
     )
 
     random_ = _runSearchModeRepeated(
@@ -288,6 +274,7 @@ def runSpanningTreeEvolutionRepeated(
         searchMode="random",
         probBudget=probBudget,
         numOfRuns=numOfRuns,
+        alpha=alpha,
     )
 
     return {

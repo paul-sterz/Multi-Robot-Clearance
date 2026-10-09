@@ -9,15 +9,12 @@ import plotly.graph_objects as go
 
 
 from approachTest import (
-    buildEnvironment,
-    detectionFnc,
-    graphBuilder,
+    loadEnvironment,
+    buildEnvironmentGraph,
     approachTest,
     APPROACH_NAMES,
-    START_REGION,
-    GRAPH_PRIOR_L,
-    GRAPH_PRIOR_SIGMA,
-    GRAPH_ALPHA,
+    hasSavedEnvironment,
+    SAVED_ENVIRONMENT_PATH,
 )
 
 from baselineTest import baselineTest, BASELINE_METHOD_NAMES, COMPARED_APPROACH_NAMES
@@ -366,29 +363,38 @@ detection_radius = ENVIRONMENT_SIZES[
 # ==================================================
 
 
-obstacles, hotspots = buildEnvironment()
+# A saved environment (see approachTest.py's loadEnvironment()) brings its
+# own detection radius / epsilon, which override the size selection and
+# epsilon slider for every 2D test.
+environment = loadEnvironment(detection_radius, epsilon)
+
+obstacles = environment["obstacles"]
+start_region = environment["startRegion"]
 
 H, W = obstacles.shape
 
+# Part of computePreviewGraph()'s cache key, so re-saving the environment
+# from one of the approaches' test.py UIs invalidates the cached preview.
+environment_version = (
+    os.path.getmtime(SAVED_ENVIRONMENT_PATH)
+    if hasSavedEnvironment()
+    else None
+)
 
-@st.cache_data(show_spinner="Computing priors...")
-def computeCellPriors(detection_radius, epsilon):
 
-    _, _, _, _, cellpriors = graphBuilder(
-        obstacles,
-        hotspots,
-        lambda p, obs: detectionFnc(p, obs, detection_radius),
-        START_REGION,
-        GRAPH_PRIOR_L,
-        GRAPH_PRIOR_SIGMA,
-        GRAPH_ALPHA,
-        epsilon,
+# cache_resource (not cache_data): the Graph object can't be pickled, and
+# the preview only reads it.
+@st.cache_resource(show_spinner="Computing priors...")
+def computePreviewGraph(detection_radius, epsilon, environment_version):
+
+    G, _, _, _, cellpriors = buildEnvironmentGraph(
+        loadEnvironment(detection_radius, epsilon)
     )
 
-    return cellpriors
+    return G, cellpriors
 
 
-cellpriors = computeCellPriors(detection_radius, epsilon)
+previewG, cellpriors = computePreviewGraph(detection_radius, epsilon, environment_version)
 
 
 # ==================================================
@@ -684,15 +690,13 @@ def buildEnvironmentFigure(obstacles, cellpriors, H, W, G=None, regularEdges=Non
 
         node_x = [node.pos[1] for node in G.nodes]
         node_y = [node.pos[0] for node in G.nodes]
-        node_text = [str(node.idx) for node in G.nodes]
-
         fig.add_trace(
             go.Scatter(
 
                 x=node_x,
                 y=node_y,
 
-                mode="markers+text",
+                mode="markers",
 
                 marker=dict(
                     size=16,
@@ -703,18 +707,11 @@ def buildEnvironmentFigure(obstacles, cellpriors, H, W, G=None, regularEdges=Non
                     ),
                 ),
 
-                text=node_text,
-
-                textposition="middle center",
-
-                textfont=dict(
-                    size=7,
-                    color="#555555",
-                ),
-
                 name="Node",
 
-                hovertemplate="Node %{text}<extra></extra>",
+                customdata=[node.idx for node in G.nodes],
+
+                hovertemplate="Node %{customdata}<extra></extra>",
             )
         )
 
@@ -722,8 +719,8 @@ def buildEnvironmentFigure(obstacles, cellpriors, H, W, G=None, regularEdges=Non
     # START REGION
     # --------------------------------------------------
 
-    start_xs = [y for (x, y) in START_REGION]
-    start_ys = [x for (x, y) in START_REGION]
+    start_xs = [y for (x, y) in start_region]
+    start_ys = [x for (x, y) in start_region]
 
     fig.add_trace(
         go.Scatter(
@@ -757,42 +754,83 @@ def buildEnvironmentFigure(obstacles, cellpriors, H, W, G=None, regularEdges=Non
 
 if not is3D:
 
+    if environment["saved"]:
+        st.caption(
+            f"Using the saved {H}x{W} environment ({SAVED_ENVIRONMENT_PATH}) "
+            f"with its fixed {len(environment['nodePositions'])} nodes "
+            "(shown below) - save a different one via "
+            "\"💾 Save environment\" in one of the approaches' test.py UIs."
+        )
+    else:
+        st.caption(
+            "Using the default 10x10 environment with random nodes - no "
+            "environment saved yet (\"💾 Save environment\" in one of the "
+            "approaches' test.py UIs)."
+        )
+
     st.plotly_chart(
-        buildEnvironmentFigure(obstacles, cellpriors, H, W),
+        buildEnvironmentFigure(
+            obstacles,
+            cellpriors,
+            H,
+            W,
+            G=previewG if environment["saved"] else None,
+            regularEdges=(
+                list(previewG.edges.keys())
+                if environment["saved"]
+                else None
+            ),
+        ),
         use_container_width=False,
+        key="env_preview",
     )
 
-    # ==================================================
-    # ENVIRONMENT SIZE SELECTION
-    # ==================================================
+    if environment["saved"]:
 
-    st.markdown("### Environment Size")
+        st.markdown("### Saved Environment Parameters")
 
-    size_cols = st.columns(3)
+        st.caption(
+            f"detection radius = {environment['detecRad']}, "
+            f"epsilon = {environment['epsilon']}, "
+            f"prior l = {environment['priorL']}, "
+            f"prior sigma = {environment['priorSigma']:.3f}, "
+            f"alpha = {environment['alpha']} - these override the size "
+            "selection and the epsilon slider for all 2D tests."
+        )
 
-    for col, size_name in zip(size_cols, ENVIRONMENT_SIZES):
+    else:
 
-        with col:
+        # ==================================================
+        # ENVIRONMENT SIZE SELECTION
+        # ==================================================
 
-            is_selected = (
-                st.session_state.environment_size == size_name
-            )
+        st.markdown("### Environment Size")
 
-            if st.button(
-                size_name,
-                key=f"size_{size_name}",
-                type="primary" if is_selected else "secondary",
-                use_container_width=True,
-            ):
+        size_cols = st.columns(3)
 
-                st.session_state.environment_size = size_name
+        for col, size_name in zip(size_cols, ENVIRONMENT_SIZES):
 
-                st.rerun()
+            with col:
 
-    st.caption(
-        f"Selected: **{st.session_state.environment_size}** "
-        f"(detection radius = {detection_radius})"
-    )
+                is_selected = (
+                    st.session_state.environment_size == size_name
+                )
+
+                if st.button(
+                    size_name,
+                    key=f"size_{size_name}",
+                    type="primary" if is_selected else "secondary",
+                    use_container_width=True,
+                ):
+
+                    st.session_state.environment_size = size_name
+
+                    st.rerun()
+
+        st.caption(
+            f"Selected: **{st.session_state.environment_size}** "
+            f"(detection radius = {detection_radius})"
+        )
 
 else:
 
@@ -970,6 +1008,7 @@ if app_mode == "Approach Test":
                     regularEdges=results["regularEdges"],
                 ),
                 use_container_width=False,
+                key="env_approach_results",
             )
 
         # --------------------------------------------------
@@ -1218,6 +1257,7 @@ elif app_mode == "Baseline Test":
                     regularEdges=baselineResultsState["regularEdges"],
                 ),
                 use_container_width=False,
+                key="env_baseline_results",
             )
 
         # --------------------------------------------------
@@ -1453,6 +1493,7 @@ elif app_mode == "Spanning Tree Evolution":
                     regularEdges=evoResults["regularEdges"],
                 ),
                 use_container_width=False,
+                key="env_tree_evolution_results",
             )
 
         def renderRunCaption(runResult, methodLabel):
@@ -1906,6 +1947,7 @@ elif app_mode == "Closing Exits Test":
                     regularEdges=list(ceResults["G"].edges.keys()),
                 ),
                 use_container_width=False,
+                key="env_closing_exits_results",
             )
 
         st.markdown("### Target-Finding Comparison")

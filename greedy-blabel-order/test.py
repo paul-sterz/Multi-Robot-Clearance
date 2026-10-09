@@ -1,3 +1,5 @@
+import json
+import os
 import time
 
 import numpy as np
@@ -121,6 +123,71 @@ def computeSigma(prior_radius):
     sigma = prior_radius / np.sqrt(-2 * np.log(0.5))
 
     return sigma
+
+
+# ==================================================
+# SAVED ENVIRONMENT
+# Every "Run" keeps a snapshot of the environment it used (grid, priors,
+# start region, parameters and the generated node positions). The
+# "Save environment" button writes that snapshot to this file. The Monte
+# Carlo tests (monte-carlo-simulation/approachTest.py's loadEnvironment())
+# load it, so every 2D Monte Carlo run uses exactly this environment and
+# exactly these nodes instead of generating new random ones.
+# ==================================================
+
+
+SAVED_ENVIRONMENT_PATH = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    "monte-carlo-simulation",
+    "saved_environment.json",
+)
+
+
+def buildEnvironmentSnapshot(
+    obstacles,
+    hotspots,
+    start_region,
+    G,
+    startNodes,
+    detection_radius,
+    prior_l,
+    prior_radius,
+    sigma,
+    alpha,
+    epsilon,
+):
+
+    return {
+        "obstacles": obstacles.astype(int).tolist(),
+        # (row, col, category) with category 0 = low, 1 = medium, 2 = high
+        "hotspots": [
+            [int(r), int(c), int(category)]
+            for (r, c), category in hotspots
+        ],
+        "start_region": [
+            [int(r), int(c)]
+            for (r, c) in sorted(start_region)
+        ],
+        "detection_radius": int(detection_radius),
+        "prior_l": float(prior_l),
+        "prior_radius": int(prior_radius),
+        "prior_sigma": float(sigma),
+        "alpha": float(alpha),
+        "epsilon": float(epsilon),
+        # Node positions in node index order - the first num_start_nodes
+        # of them are the start nodes.
+        "node_positions": [
+            [int(node.pos[0]), int(node.pos[1])]
+            for node in G.nodes
+        ],
+        "num_start_nodes": int(startNodes),
+    }
+
+
+def saveEnvironment(snapshot):
+
+    with open(SAVED_ENVIRONMENT_PATH, "w") as f:
+        json.dump(snapshot, f, indent=2)
 
 
 # ==================================================
@@ -289,6 +356,33 @@ with st.sidebar:
 
         st.rerun()
 
+    if st.button(
+        "💾 Save environment",
+        use_container_width=True,
+        help=(
+            "Saves the environment of the last Run (grid, priors, "
+            "start region, parameters and the generated nodes) for "
+            "all 2D Monte Carlo tests."
+        ),
+    ):
+
+        if st.session_state.get("environment_snapshot") is None:
+
+            st.warning(
+                "Run first - the nodes of the last Run are saved."
+            )
+
+        else:
+
+            saveEnvironment(
+                st.session_state.environment_snapshot
+            )
+
+            st.success(
+                "Environment of the last Run saved for the "
+                "Monte Carlo tests."
+            )
+
     st.markdown("---")
 
     st.markdown("## Edit Mode")
@@ -400,6 +494,10 @@ for key, default in [
     ("total_time", 0),
 
     ("graph_data", None),
+
+    # Environment + nodes of the last Run, written to disk by the
+    # "Save environment" button.
+    ("environment_snapshot", None),
 
     ("strategy", None),
 
@@ -623,6 +721,22 @@ if run:
                 epsilon,
             )
         )
+
+    st.session_state.environment_snapshot = (
+        buildEnvironmentSnapshot(
+            obstacles,
+            hotspots,
+            root,
+            G,
+            startNodes,
+            detection_radius,
+            prior_l,
+            prior_radius,
+            sigma,
+            alpha,
+            epsilon,
+        )
+    )
 
     with st.spinner(
         "Computing distance map..."
@@ -1690,8 +1804,6 @@ highlight_robots = (
 
 node_colors = []
 node_sizes = []
-node_text = []
-node_text_colors = []
 
 
 for i in V:
@@ -1713,15 +1825,6 @@ for i in V:
         else 16
     )
 
-    node_text.append(
-        str(i)
-    )
-
-    node_text_colors.append(
-        "black"
-        if has_robots
-        else "#555555"
-    )
 
 
 fig.add_trace(
@@ -1730,7 +1833,7 @@ fig.add_trace(
         x=node_x,
         y=node_y,
 
-        mode="markers+text",
+        mode="markers",
 
         marker=dict(
 
@@ -1742,15 +1845,6 @@ fig.add_trace(
                 color="black",
                 width=1,
             ),
-        ),
-
-        text=node_text,
-
-        textposition="middle center",
-
-        textfont=dict(
-            size=7,
-            color=node_text_colors,
         ),
 
         name="Node",

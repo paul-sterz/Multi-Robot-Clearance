@@ -40,13 +40,9 @@ import numpy as np
 from approachTest import (
     APPROACH_NAMES,
     APPROACHES,
-    START_REGION,
-    GRAPH_PRIOR_L,
-    GRAPH_PRIOR_SIGMA,
     GRAPH_ALPHA,
-    buildEnvironment,
-    detectionFnc,
-    graphBuilder,
+    loadEnvironment,
+    buildEnvironmentGraph,
     computeObstacleDistance,
 )
 
@@ -61,21 +57,15 @@ _GREEDY_BLABEL_ORDER_SEARCH = APPROACHES[APPROACH_NAMES.index("Greedy BLabel Ord
 
 def buildClosingExitsEnvironment(detecRad: int):
 
-    obstacles, hotspots = buildEnvironment()
+    env = loadEnvironment(detecRad)
+    obstacles = env["obstacles"]
+    alpha = env["alpha"]
 
-    G, edges_shady, D, startNodes, priors = graphBuilder(
-        obstacles,
-        hotspots,
-        lambda p, obs: detectionFnc(p, obs, detecRad),
-        START_REGION,
-        GRAPH_PRIOR_L,
-        GRAPH_PRIOR_SIGMA,
-        GRAPH_ALPHA,
-    )
+    G, edges_shady, D, startNodes, priors = buildEnvironmentGraph(env)
 
     distanceMap = computeObstacleDistance(obstacles)
 
-    return obstacles, G, edges_shady, D, startNodes, priors, distanceMap
+    return obstacles, G, edges_shady, D, startNodes, priors, distanceMap, alpha
 
 
 # ==================================================
@@ -336,13 +326,14 @@ def _runOneComparison(
     horizon, recencyLambda, probBudget, maxHops,
     cellIndices, cellCumWeights, hurtProbability, dt, rng,
     travelTime=None,
+    alpha=GRAPH_ALPHA,
 ):
 
     clearedRegions = []
 
     strategyCE, _, checkedTreesCE, fitnessCE = _GREEDY_BLABEL_ORDER_SEARCH(
         G, availableTime, availableRobots, startNodes,
-        obstacles, distanceMap, GRAPH_ALPHA, priors, D,
+        obstacles, distanceMap, alpha, priors, D,
         maxTrees=maxTrees,
         horizon=horizon, recencyLambda=recencyLambda,
         probBudget=probBudget, maxHops=maxHops,
@@ -355,7 +346,7 @@ def _runOneComparison(
     # Plain FHPE_SA baseline - same root, no local clearing at all first.
     strategyFHPE, _, _, _ = _GREEDY_BLABEL_ORDER_SEARCH(
         G, availableTime, availableRobots, startNodes,
-        obstacles, distanceMap, GRAPH_ALPHA, priors, D,
+        obstacles, distanceMap, alpha, priors, D,
         horizon=horizon, recencyLambda=recencyLambda,
         probBudget=probBudget, maxHops=maxHops,
         skipTreeSearch=True, startRootOverride=root,
@@ -430,6 +421,7 @@ def runClosingExitsComparisonOnGraph(
     dt: float = 1.0,
     seed=None,
     travelTime=None,
+    alpha=GRAPH_ALPHA,
 ):
     """The shared Monte Carlo comparison loop, given an already-built graph
     (2D synthetic grid or a real 3D scene - see runClosingExitsComparison()
@@ -465,6 +457,7 @@ def runClosingExitsComparisonOnGraph(
             horizon, recencyLambda, probBudget, maxHops,
             cellIndices, cellCumWeights, hurtProbability, dt, rng,
             travelTime=travelTime,
+            alpha=alpha,
         )
 
         findTimesCE.append(findTimeCE)
@@ -526,7 +519,7 @@ def runClosingExitsComparison(
     # ALLOCATION (identical 2D grid every other test here uses - NUR EIN
     # GRAPH: built once, reused for every run)
     #-------------------------------------------------------------------
-    obstacles, G, edges_shady, D, startNodes, priors, distanceMap = buildClosingExitsEnvironment(detecRad)
+    obstacles, G, edges_shady, D, startNodes, priors, distanceMap, alpha = buildClosingExitsEnvironment(detecRad)
 
     H, W = obstacles.shape
     cellIndices = [(r, c) for r in range(H) for c in range(W) if obstacles[r, c] == 0]
@@ -540,4 +533,5 @@ def runClosingExitsComparison(
         availableRobots, availableTime, maxTrees,
         horizon, probBudget, hurtProbability,
         maxHops=maxHops, recencyLambda=recencyLambda, dt=dt, seed=seed,
+        alpha=alpha,
     )
