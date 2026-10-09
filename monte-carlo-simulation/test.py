@@ -285,7 +285,7 @@ for key, default in [
 
     ("stopping_criterion", "Computation time"),
 
-    ("computation_time", 3),
+    ("computation_time", 3.0),
 
     ("max_trees", 100),
 
@@ -297,7 +297,7 @@ for key, default in [
 
     ("baseline_stopping_criterion", "Computation time"),
 
-    ("baseline_computation_time", 3),
+    ("baseline_computation_time", 3.0),
 
     ("baseline_max_trees", 100),
 
@@ -309,7 +309,7 @@ for key, default in [
 
     ("evo_stopping_criterion", "Computation time"),
 
-    ("evo_computation_time", 3),
+    ("evo_computation_time", 3.0),
 
     ("evo_max_trees", 100),
 
@@ -327,7 +327,7 @@ for key, default in [
 
     ("ce_stopping_criterion", "Computation time"),
 
-    ("ce_computation_time", 3),
+    ("ce_computation_time", 3.0),
 
     ("ce_max_trees", 100),
 
@@ -395,6 +395,93 @@ def computePreviewGraph(detection_radius, epsilon, environment_version):
 
 
 previewG, cellpriors = computePreviewGraph(detection_radius, epsilon, environment_version)
+
+
+# ==================================================
+# TIKZ / PGFPLOTS EXPORT HELPERS
+#
+# Turn a plotted series into a self-contained pgfplots tikzpicture (data
+# inline), so a plot can be downloaded and \input{} straight into a LaTeX
+# document as a vector graphic. The preamble needs
+#   \usepackage{pgfplots}
+#   \pgfplotsset{compat=1.18}
+# ==================================================
+
+
+def sharedYRange(*valueLists, pad=0.05):
+    """One [ymin, ymax] covering every finite value of all given series (plus
+    a small margin), so plots drawn with it share the same y-axis scale.
+    None if no series has a finite value."""
+
+    values = np.array([v for vs in valueLists for v in vs], dtype=float)
+    values = values[np.isfinite(values)]
+
+    if values.size == 0:
+        return None
+
+    lo, hi = float(values.min()), float(values.max())
+    margin = (hi - lo) * pad if hi > lo else (abs(hi) * pad or 1.0)
+
+    return [lo - margin, hi + margin]
+
+
+def seriesToTikz(x, y, xLabel, yLabel, color, yRange, kind="line"):
+    """pgfplots code for one series. kind="line" draws a step line (used for
+    the best-so-far curve; only the points where the value changes plus the
+    last one are written, which keeps the file small), kind="scatter" draws
+    marks only. Non-finite y values (no clearance) are left out."""
+
+    points = [(xi, yi) for xi, yi in zip(x, y) if yi is not None and np.isfinite(yi)]
+
+    if kind == "line" and points:
+        compressed = [points[0]]
+        for p in points[1:]:
+            if p[1] != compressed[-1][1]:
+                compressed.append(p)
+        if compressed[-1] != points[-1]:
+            compressed.append(points[-1])
+        points = compressed
+        plotStyle = "const plot, color=plotcolor, thick"
+    else:
+        plotStyle = "only marks, mark=*, mark size=0.8pt, color=plotcolor"
+
+    axisOptions = [
+        "width=\\linewidth",
+        "height=6cm",
+        f"xlabel={{{xLabel}}}",
+        f"ylabel={{{yLabel}}}",
+        "grid=major",
+        "grid style={gray!20}",
+        "enlarge x limits=false",
+    ]
+    if yRange is not None:
+        axisOptions += [f"ymin={yRange[0]:.6g}", f"ymax={yRange[1]:.6g}"]
+
+    lines = [
+        "% Requires \\usepackage{pgfplots} and \\pgfplotsset{compat=1.18}",
+        f"\\definecolor{{plotcolor}}{{HTML}}{{{color.lstrip('#').upper()}}}",
+        "\\begin{tikzpicture}",
+        "\\begin{axis}[",
+        *(f"  {opt}," for opt in axisOptions),
+        "]",
+        f"\\addplot[{plotStyle}] table {{",
+        "x y",
+        *(f"{xi:.6g} {yi:.6g}" for xi, yi in points),
+        "};",
+        "\\end{axis}",
+        "\\end{tikzpicture}",
+    ]
+
+    return "\n".join(lines) + "\n"
+
+
+def tikzFileName(*parts):
+    slug = "_".join(parts).lower()
+    return "".join(c if c.isalnum() else "_" for c in slug).strip("_") + ".tex"
+
+
+# Lets the Plotly toolbar's camera button save an SVG (vector) instead of a PNG.
+PLOTLY_SVG_CONFIG = {"toImageButtonOptions": {"format": "svg", "scale": 1}}
 
 
 # ==================================================
@@ -879,9 +966,10 @@ if app_mode == "Approach Test":
 
         computation_time = st.slider(
             "Computation Time (s)",
-            1,
-            60,
-            st.session_state.computation_time,
+            0.1,
+            20.0,
+            float(st.session_state.computation_time),
+            step=0.1,
         )
 
         st.session_state.computation_time = computation_time
@@ -1015,7 +1103,7 @@ if app_mode == "Approach Test":
         # STATS TABLES
         #
         # Runs without clearance (objective value == inf) are excluded from
-        # min/max/mean/variance - they only increase the "No clearance
+        # min/max/mean/std. deviation - they only increase the "No clearance
         # possible" counter.
         # --------------------------------------------------
 
@@ -1059,7 +1147,7 @@ if app_mode == "Approach Test":
                     "Min": float(np.min(finiteValues)) if finiteValues.size > 0 else None,
                     "Max": float(np.max(finiteValues)) if finiteValues.size > 0 else None,
                     "Mean": float(np.mean(finiteValues)) if finiteValues.size > 0 else None,
-                    "Variance": float(np.var(finiteValues)) if finiteValues.size > 0 else None,
+                    "Std. Deviation": float(np.std(finiteValues)) if finiteValues.size > 0 else None,
                     "No Clearance Count": noClearanceCount,
                 })
 
@@ -1121,9 +1209,10 @@ elif app_mode == "Baseline Test":
 
         baseline_computation_time = st.slider(
             "Computation Time (s)",
-            1,
-            60,
-            st.session_state.baseline_computation_time,
+            0.1,
+            20.0,
+            float(st.session_state.baseline_computation_time),
+            step=0.1,
             key="baseline_computation_time_slider",
         )
 
@@ -1264,7 +1353,7 @@ elif app_mode == "Baseline Test":
         # STATS TABLE
         #
         # Runs without clearance (objective value == inf) are excluded from
-        # min/max/mean/variance - they only increase the "No clearance
+        # min/max/mean/std. deviation - they only increase the "No clearance
         # possible" counter. All 4 methods share the same graph AND the same
         # fixed Available Robots budget, like in Approach Test.
         # --------------------------------------------------
@@ -1312,7 +1401,7 @@ elif app_mode == "Baseline Test":
                     "Min": float(np.min(finiteValues)) if finiteValues.size > 0 else None,
                     "Max": float(np.max(finiteValues)) if finiteValues.size > 0 else None,
                     "Mean": float(np.mean(finiteValues)) if finiteValues.size > 0 else None,
-                    "Variance": float(np.var(finiteValues)) if finiteValues.size > 0 else None,
+                    "Std. Deviation": float(np.std(finiteValues)) if finiteValues.size > 0 else None,
                     "No Clearance Count": noClearanceCount,
                 })
 
@@ -1369,9 +1458,10 @@ elif app_mode == "Spanning Tree Evolution":
 
         evo_computation_time = st.slider(
             "Computation Time (s)",
-            1,
-            60,
-            st.session_state.evo_computation_time,
+            0.1,
+            20.0,
+            float(st.session_state.evo_computation_time),
+            step=0.1,
             key="evo_computation_time_slider",
         )
 
@@ -1511,6 +1601,35 @@ elif app_mode == "Spanning Tree Evolution":
                     f"no clearance found"
                 )
 
+        # One y-range for all four history plots below (both methods, best so
+        # far and per checked tree), so they share the same y-axis scale and
+        # can be compared directly.
+        historyYRange = sharedYRange(
+            *(
+                [entry[i] for entry in evoResults[method]["history"]]
+                for method in ("evolutionary", "random")
+                for i in (1, 2)
+            )
+        )
+
+        def renderTikzDownload(x, y, yLabel, color, kind, methodLabel, plotName):
+
+            st.download_button(
+                "Download as TikZ (.tex)",
+                data=seriesToTikz(
+                    x,
+                    y,
+                    "Number of Spanning Trees",
+                    yLabel,
+                    color,
+                    historyYRange,
+                    kind=kind,
+                ),
+                file_name=tikzFileName(evoResults["approach"], methodLabel, plotName),
+                mime="text/x-tex",
+                key=f"tikz_{methodLabel}_{plotName}",
+            )
+
         def renderHistoryPlots(history, methodLabel, colorBest, colorCurrent):
 
             treeIndices = [entry[0] for entry in history]
@@ -1549,10 +1668,21 @@ elif app_mode == "Spanning Tree Evolution":
                     title=dict(text="Best Objective Value", font=dict(size=20)),
                     tickfont=dict(size=14),
                     gridcolor="#eeeeee",
+                    range=historyYRange,
                 ),
             )
 
-            st.plotly_chart(bestFig, use_container_width=True)
+            st.plotly_chart(bestFig, use_container_width=True, config=PLOTLY_SVG_CONFIG)
+
+            renderTikzDownload(
+                treeIndices,
+                bestFitness,
+                "Best Objective Value",
+                colorBest,
+                "line",
+                methodLabel,
+                "best_so_far",
+            )
 
             st.markdown(f"##### {methodLabel} — Objective Value per Checked Spanning Tree")
 
@@ -1581,10 +1711,21 @@ elif app_mode == "Spanning Tree Evolution":
                     title=dict(text="Objective Value", font=dict(size=20)),
                     tickfont=dict(size=14),
                     gridcolor="#eeeeee",
+                    range=historyYRange,
                 ),
             )
 
-            st.plotly_chart(currentFig, use_container_width=True)
+            st.plotly_chart(currentFig, use_container_width=True, config=PLOTLY_SVG_CONFIG)
+
+            renderTikzDownload(
+                treeIndices,
+                currentFitness,
+                "Objective Value",
+                colorCurrent,
+                "scatter",
+                methodLabel,
+                "per_tree",
+            )
 
         st.markdown("### Evolutionary Search")
 
@@ -1611,7 +1752,7 @@ elif app_mode == "Spanning Tree Evolution":
         # --------------------------------------------------
         # COMPARISON TABLE: EVOLUTIONARY SEARCH vs. RANDOM SPANNING TREES
         #
-        # Best / mean / variance over all checked trees' objective values
+        # Best / mean / std. deviation over all checked trees' objective values
         # (trees without clearance, i.e. objective value == inf, are
         # excluded - same convention as the Approach Test stats tables).
         # --------------------------------------------------
@@ -1633,7 +1774,7 @@ elif app_mode == "Spanning Tree Evolution":
                 "Spanning Trees Checked": runResult["checkedTrees"],
                 "Best": float(np.min(finiteValues)) if finiteValues.size > 0 else None,
                 "Mean": float(np.mean(finiteValues)) if finiteValues.size > 0 else None,
-                "Variance": float(np.var(finiteValues)) if finiteValues.size > 0 else None,
+                "Std. Deviation": float(np.std(finiteValues)) if finiteValues.size > 0 else None,
                 "No Clearance Count": int(np.sum(~finiteMask)),
             }
 
@@ -1743,7 +1884,7 @@ elif app_mode == "Spanning Tree Evolution":
                 "Spanning Trees Checked (avg)": float(np.mean(checkedTrees)),
                 "Best": float(np.min(finiteValues)) if finiteValues.size > 0 else None,
                 "Mean": float(np.mean(finiteValues)) if finiteValues.size > 0 else None,
-                "Variance": float(np.var(finiteValues)) if finiteValues.size > 0 else None,
+                "Std. Deviation": float(np.std(finiteValues)) if finiteValues.size > 0 else None,
                 "No Clearance Count": int(np.sum(~finiteMask)),
             }
 
@@ -1813,9 +1954,10 @@ elif app_mode == "Closing Exits Test":
 
         ce_computation_time = st.slider(
             "Computation Time (s)",
-            1,
-            60,
-            st.session_state.ce_computation_time,
+            0.1,
+            20.0,
+            float(st.session_state.ce_computation_time),
+            step=0.1,
         )
 
         st.session_state.ce_computation_time = ce_computation_time
@@ -1972,7 +2114,7 @@ elif app_mode == "Closing Exits Test":
                 "Prob Budget": ceResults["prob_budget"],
                 "Hurt Probability q": ceResults["hurt_probability"],
                 "Mean Find Time": stats["mean_find_time"],
-                "Variance Find Time": stats["variance_find_time"],
+                "Std. Deviation Find Time": stats["std_find_time"],
                 "P90 Find Time": stats["p90_find_time"],
                 "Timeout Rate": stats["timeout_rate"],
                 "Clearance Mass": stats["clearance_mass"],

@@ -160,7 +160,7 @@ def runSpanningTreeEvolution(
 # same convention as approachTest()/baselineTest()) so the two methods are
 # directly comparable under identical conditions. For each run only the
 # final outcome (checked trees + best objective found) is kept, not the
-# full history, since only the aggregate best/mean/variance across runs is
+# full history, since only the aggregate best/mean/std. deviation across runs is
 # needed here.
 #--------------------------------------------------------
 

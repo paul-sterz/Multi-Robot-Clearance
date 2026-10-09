@@ -1309,13 +1309,15 @@ function drawPriorLegend(ctx, k, dark) {
   ctx.stroke();
 
   const font = getComputedStyle(document.body).fontFamily;
-  const title = $("#prior-legend .title").getBoundingClientRect();
+  const titleEl = $("#prior-legend .title");
+  const title = titleEl.getBoundingClientRect();
+  const titleSize = parseFloat(getComputedStyle(titleEl).fontSize);
   ctx.textBaseline = "top";
   ctx.fillStyle = text;
-  ctx.font = `11px ${font}`;
+  ctx.font = `${titleSize}px ${font}`;
   ctx.fillText("Prior per cell", title.left, title.top);
   ctx.fillStyle = dim;
-  ctx.fillText("log scale", title.left, title.top + 14.3);
+  ctx.fillText("log scale", title.left, title.top + titleSize * 1.3);
 
   const grad = ctx.createLinearGradient(0, bar.bottom, 0, bar.top);
   for (const [t, c] of stops) grad.addColorStop(t, c);
@@ -1324,14 +1326,16 @@ function drawPriorLegend(ctx, k, dark) {
   ctx.strokeStyle = line;
   ctx.strokeRect(bar.left + 0.5, bar.top + 0.5, bar.width - 1, bar.height - 1);
 
-  ctx.font = "10.5px ui-monospace, Menlo, monospace";
+  const tickEl = $("#prior-legend .ticks div");
+  const tickSize = tickEl ? parseFloat(getComputedStyle(tickEl).fontSize) : 13;
+  ctx.font = `${tickSize}px ui-monospace, Menlo, monospace`;
   ctx.textBaseline = "middle";
   for (const [t, label] of ticks) {
     const y = bar.bottom - t * bar.height;
     ctx.fillStyle = dim;
-    ctx.fillRect(bar.right + 1, y - 0.5, 5, 1);
+    ctx.fillRect(bar.right + 1, y - 0.5, 7, 1);
     ctx.fillStyle = text;
-    ctx.fillText(label, bar.right + 10, y);
+    ctx.fillText(label, bar.right + 13, y);
   }
   ctx.restore();
 }

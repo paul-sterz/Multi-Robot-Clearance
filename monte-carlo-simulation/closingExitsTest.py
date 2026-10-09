@@ -400,10 +400,10 @@ def _summarize(findTimes):
 
     timeoutRate = 1.0 - len(found) / len(findTimes) if findTimes else 0.0
     meanTime = float(np.mean(found)) if found else None
-    varianceTime = float(np.var(found)) if found else None
+    stdTime = float(np.std(found)) if found else None
     p90Time = float(np.percentile(found, 90)) if found else None
 
-    return meanTime, varianceTime, p90Time, timeoutRate
+    return meanTime, stdTime, p90Time, timeoutRate
 
 
 def runClosingExitsComparisonOnGraph(
@@ -467,20 +467,20 @@ def runClosingExitsComparisonOnGraph(
 
         print("Run Nummer " + str(i) + " beendet!")
 
-    meanCE, varianceCE, p90CE, timeoutCE = _summarize(findTimesCE)
-    meanFHPE, varianceFHPE, p90FHPE, timeoutFHPE = _summarize(findTimesFHPE)
+    meanCE, stdCE, p90CE, timeoutCE = _summarize(findTimesCE)
+    meanFHPE, stdFHPE, p90FHPE, timeoutFHPE = _summarize(findTimesFHPE)
 
     summary = {
         "Closing Exits": {
             "mean_find_time": meanCE,
-            "variance_find_time": varianceCE,
+            "std_find_time": stdCE,
             "p90_find_time": p90CE,
             "timeout_rate": timeoutCE,
             "clearance_mass": float(np.mean(clearanceMasses)) if clearanceMasses else 0.0,
         },
         "Plain FHPE_SA": {
             "mean_find_time": meanFHPE,
-            "variance_find_time": varianceFHPE,
+            "std_find_time": stdFHPE,
             "p90_find_time": p90FHPE,
             "timeout_rate": timeoutFHPE,
             "clearance_mass": 0.0,
