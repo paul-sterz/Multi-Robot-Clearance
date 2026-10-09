@@ -129,7 +129,7 @@ def buildViewerPriorLegend(lo, hi, height):
     return fig
 
 
-def renderSceneScreenshot(sceneName: str):
+def renderSceneScreenshot(sceneName: str, key: str):
 
     for ext in (".png", ".jpg", ".jpeg"):
         path = os.path.join(SCENE_SCREENSHOTS_DIR, sceneName + ext)
@@ -154,6 +154,7 @@ def renderSceneScreenshot(sceneName: str):
                     buildViewerPriorLegend(*scale, height=520),
                     use_container_width=False,
                     config={"displayModeBar": False},
+                    key=f"{key}_prior_legend",
                 )
             return
 
@@ -800,7 +801,7 @@ else:
         f"**{scene_name}** — {_sceneStats.n_vertices} vertices, "
         f"{_sceneStats.n_cells:,} cells."
     )
-    renderSceneScreenshot(scene_name)
+    renderSceneScreenshot(scene_name, key="scene_select")
 
 
 if app_mode == "Approach Test":
@@ -957,7 +958,7 @@ if app_mode == "Approach Test":
 
         if results.get("is3D"):
             st.caption(f"Scene: **{results['sceneName']}**")
-            renderSceneScreenshot(results["sceneName"])
+            renderSceneScreenshot(results["sceneName"], key="approach_results")
         else:
             st.plotly_chart(
                 buildEnvironmentFigure(
@@ -1205,7 +1206,7 @@ elif app_mode == "Baseline Test":
         )
 
         if baselineResultsState.get("is3D"):
-            renderSceneScreenshot(baselineResultsState["sceneName"])
+            renderSceneScreenshot(baselineResultsState["sceneName"], key="baseline_results")
         else:
             st.plotly_chart(
                 buildEnvironmentFigure(
@@ -1440,7 +1441,7 @@ elif app_mode == "Spanning Tree Evolution":
 
         if evoResults.get("is3D"):
             st.caption(f"Scene: **{evoResults['sceneName']}**")
-            renderSceneScreenshot(evoResults["sceneName"])
+            renderSceneScreenshot(evoResults["sceneName"], key="evolution_results")
         else:
             st.plotly_chart(
                 buildEnvironmentFigure(
@@ -1893,7 +1894,7 @@ elif app_mode == "Closing Exits Test":
 
         if ceResults.get("is3D"):
             st.caption(f"Scene: **{ceResults['sceneName']}**")
-            renderSceneScreenshot(ceResults["sceneName"])
+            renderSceneScreenshot(ceResults["sceneName"], key="closing_exits_results")
         else:
             st.plotly_chart(
                 buildEnvironmentFigure(
